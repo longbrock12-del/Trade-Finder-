@@ -6,12 +6,24 @@ const path = require("path");
 const trades = require("./api/trades.js");
 
 const PORT = Number(process.env.PORT) || 3000;
+// Home-screen app files.
+const ASSETS = {
+  "/manifest.json": "application/manifest+json",
+  "/icon-192.png": "image/png",
+  "/icon-512.png": "image/png",
+  "/apple-touch-icon.png": "image/png",
+};
 
 const server = http.createServer((req, res) => {
   const { pathname } = new URL(req.url, "http://localhost");
   if (pathname === "/" || pathname === "/index.html") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     return fs.createReadStream(path.join(__dirname, "index.html")).pipe(res);
+  }
+  const asset = ASSETS[pathname];
+  if (asset) {
+    res.writeHead(200, { "Content-Type": asset, "Cache-Control": "public, max-age=3600" });
+    return fs.createReadStream(path.join(__dirname, pathname.slice(1))).pipe(res);
   }
   if (pathname === "/api/trades") return trades(req, res);
   res.writeHead(404, { "Content-Type": "text/plain" });

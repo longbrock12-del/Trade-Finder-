@@ -87,6 +87,9 @@ async function pageTests(browser, body) {
   ok(asked.some((u) => u.includes("AMD")), "adding a symbol rescans with it");
   await page.setViewportSize({ width: 360, height: 800 });
   ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no sideways scroll on a small phone");
+  const man = await page.evaluate(async () => { const r = await fetch("/manifest.json"); const j = await r.json(); const ic = await Promise.all(j.icons.map((i) => fetch(i.src).then((x) => x.ok))); return { name: j.name, display: j.display, icons: ic.every(Boolean) }; });
+  ok(man.name === "Trade Finder" && man.display === "standalone" && man.icons, "home-screen app: named Trade Finder, opens without the address bar, icons load", JSON.stringify(man));
+  ok((await page.getAttribute("meta[name=apple-mobile-web-app-title]", "content")) === "Trade Finder", "iPhone home-screen label is Trade Finder");
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }
