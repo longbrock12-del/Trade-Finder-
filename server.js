@@ -1,0 +1,21 @@
+// Trade Finder - local server. Needs Node.js 18+, nothing to install.
+// Run:  node server.js   then open http://localhost:3000. Vercel doesn't use this file.
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const trades = require("./api/trades.js");
+
+const PORT = Number(process.env.PORT) || 3000;
+
+const server = http.createServer((req, res) => {
+  const { pathname } = new URL(req.url, "http://localhost");
+  if (pathname === "/" || pathname === "/index.html") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+    return fs.createReadStream(path.join(__dirname, "index.html")).pipe(res);
+  }
+  if (pathname === "/api/trades") return trades(req, res);
+  res.writeHead(404, { "Content-Type": "text/plain" });
+  res.end("Not found");
+});
+
+server.listen(PORT, "127.0.0.1", () => console.log("Trade Finder is running at http://localhost:" + PORT));
