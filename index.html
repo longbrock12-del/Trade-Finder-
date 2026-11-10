@@ -136,12 +136,16 @@ function pineScript(m, lines) {
 function tvBlock(m, lines, tf, key) {
   const dt = (t) => new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
   const shown = tvOpen[key];
-  return '<div class="tv"><a class="btn" href="' + esc(tvUrl(m.sym, tf)) + '" target="_blank" rel="noopener">Open ' + esc(show(m.sym)) + " on TradingView ↗</a> " +
+  // TradingView only lets a plain /chart/ link open its app (links naming a symbol are kept on the website),
+  // so the app button copies the symbol on the way: paste it into the app's search.
+  return '<div class="tv"><a class="btn" href="https://www.tradingview.com/chart/" data-sym="' + esc(tvSymbol(m.sym)) + '">Open TradingView app</a>' +
+    '<a class="btn" href="' + esc(tvUrl(m.sym, tf)) + '" target="_blank" rel="noopener">Website ↗</a> ' +
     '<button class="btn" data-tvl="' + esc(key) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide lines" : "Lines for TradingView") + "</button>" +
     (shown ? '<div class="tvp"><div class="note" style="margin-top:0">Draw with the ray tool, point A then point B (New York time):</div>' +
       lines.map((l) => '<div class="note"><b style="color:' + (l.up ? "#1fa463" : "#d64545") + '">' + esc(l.name) + "</b>: A " + dt(l.t0) + " @ " + num(l.p0, m.digits) + " → B " + dt(l.t1) + " @ " + num(l.p1, m.digits) + "</div>").join("") +
       '<div class="note">Or on a computer: copy this, open TradingView\'s Pine Editor, paste it, and click "Add to chart".</div>' +
-      '<textarea readonly rows="5" aria-label="Pine Script with the lines">' + esc(pineScript(m, lines)) + '</textarea><button class="btn" data-copy="1">Copy script</button></div>' : "") + "</div>";
+      '<textarea readonly rows="5" aria-label="Pine Script with the lines">' + esc(pineScript(m, lines)) + '</textarea><button class="btn" data-copy="1">Copy script</button></div>' : "") +
+    '<div class="note" style="width:100%;margin-top:0">"Open TradingView app" copies <b>' + esc(tvSymbol(m.sym)) + "</b>: in the app, tap search and paste it. Then pick the " + (tf === "1H" ? "1-hour" : "4-hour") + " chart.</div></div>";
 }
 
 // "Get in now": a live callout that hasn't run more than ENTER_R past its entry and isn't through its stop.
@@ -390,7 +394,11 @@ function render() {
 }
 
 document.addEventListener("click", (e) => {
-  if (e.target.closest("a")) return; // TradingView link: let it open, don't toggle the chart
+  const link = e.target.closest("a");
+  if (link) { // TradingView links: let them open (don't toggle the chart); the app button copies the symbol first
+    if (link.dataset.sym && navigator.clipboard) navigator.clipboard.writeText(link.dataset.sym).catch(() => {});
+    return;
+  }
   const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-goto],[data-tvl],[data-copy],.op,.tvp,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.tvl) { tvOpen[t.dataset.tvl] = !tvOpen[t.dataset.tvl]; render(); return; }

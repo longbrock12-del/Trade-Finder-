@@ -191,12 +191,21 @@ async function pageTests(browser, body, optBody, scanBody) {
   const cards = page.locator(".cl"), nCards = await cards.count();
   let linksOk = true;
   for (let i = 0; i < nCards; i++) {
-    const href = await cards.nth(i).locator("a.btn").getAttribute("href"), tf = await cards.nth(i).locator(".tag", { hasText: /^(4H|1H)$/ }).textContent();
+    const href = await cards.nth(i).locator("a.btn[target]").getAttribute("href"), tf = await cards.nth(i).locator(".tag", { hasText: /^(4H|1H)$/ }).textContent();
     if (!/^https:\/\/www\.tradingview\.com\/chart\/\?symbol=(COMEX|NYMEX|CBOT_MINI)%3A[A-Z]+1!&interval=(240|60)$/.test(href) || !href.endsWith(tf === "1H" ? "=60" : "=240")) linksOk = false;
   }
   ok(nCards >= 4 && linksOk, "every futures card links to TradingView with the right contract (e.g. COMEX:MGC1!) and timeframe");
   const mgc = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
-  ok((await mgc.locator("a.btn").getAttribute("href")).includes("symbol=COMEX%3AMGC1!"), "Micro Gold opens as COMEX:MGC1!");
+  ok((await mgc.locator("a.btn[target]").getAttribute("href")).includes("symbol=COMEX%3AMGC1!"), "Micro Gold's website link opens COMEX:MGC1!");
+  // The app button: a plain /chart/ link (the only kind TradingView lets open its app) that copies the symbol.
+  const app = mgc.locator("a[data-sym]");
+  ok((await app.getAttribute("href")) === "https://www.tradingview.com/chart/" && (await app.getAttribute("data-sym")) === "COMEX:MGC1!" && !(await app.getAttribute("target")), "app button is a plain TradingView /chart/ link carrying COMEX:MGC1!");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } }, configurable: true });
+    window.addEventListener("click", (e) => { if (e.target.closest("a")) e.preventDefault(); }); // stay on the page for the test
+  });
+  await app.click();
+  ok((await page.evaluate(() => window.__copied)) === "COMEX:MGC1!" && (await page.locator(".cl svg").count()) === 0, "tapping it copies COMEX:MGC1! and doesn't open the chart");
   await mgc.locator("[data-tvl]").click();
   const pine = await page.locator(".tvp textarea").first().inputValue(), mgcSig = body.markets.find((m) => m.sym === "MGC=F").signals[0];
   ok(pine.startsWith("//@version=5") && pine.includes("line.new(" + mgcSig.chart.line.t0 * 1000 + ",") && pine.includes("extend=extend.right") && (await page.locator(".tvp .note", { hasText: "Action line" }).count()) === 1,
@@ -210,7 +219,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   ok((await page.locator("text=ATR away").count()) >= 1, "watch list shows lines near price (AAPL, under Stocks)");
   const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first();
-  ok(/symbol=AAPL&interval=(240|60)$/.test(await wl.locator("a.btn").getAttribute("href")), "watch list cards link to TradingView too (AAPL)");
+  ok(/symbol=AAPL&interval=(240|60)$/.test(await wl.locator("a.btn[target]").getAttribute("href")) && (await wl.locator("a[data-sym]").getAttribute("data-sym")) === "AAPL", "watch list cards link to TradingView too (AAPL)");
   await wl.locator("[data-tvl]").click();
   ok((await page.locator(".tvp textarea").inputValue()).includes("line.new("), "watch list lines can be copied for TradingView");
   await page.click("[data-k=futures]");
