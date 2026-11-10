@@ -219,7 +219,7 @@ function checks(s) {
 function optionsBlock(m, s, k) {
   if (m.kind !== "stocks" || s.status !== "open" || s.stop == null) return "";
   const o = opts[k], shown = o && o.shown;
-  let h = '<div class="ob"><button class="btn" data-opt="' + esc(k) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide option contracts" : "Show option contracts (" + (s.dir === "long" ? "calls" : "puts") + ")") + "</button></div>";
+  let h = '<div class="ob"><button class="btn" data-opt="' + esc(k) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide option contract" : "Show best option contract (" + (s.dir === "long" ? "call" : "put") + ")") + "</button></div>";
   if (!shown) return h;
   h += '<div class="op">';
   if (o.loading) h += '<div class="note"><span class="sp"></span> Loading option prices…</div>';
@@ -229,7 +229,7 @@ function optionsBlock(m, s, k) {
     if (!d.contracts.length) h += '<div class="note">' + esc(d.note) + "</div>";
     d.contracts.forEach((c, i) => {
       const exp = new Date(c.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "UTC" });
-      h += '<div class="oc"><div class="on"><span>' + esc(d.sym) + " " + esc(exp) + " $" + num(c.strike, c.strike % 1 ? 1 : 0) + " " + (c.type === "call" ? "Call" : "Put") + "</span>" + (i === 0 ? '<span class="tag ap">Best pick</span>' : "") + "</div>" +
+      h += '<div class="oc"><div class="on"><span>' + esc(d.sym) + " " + esc(exp) + " $" + num(c.strike, c.strike % 1 ? 1 : 0) + " " + (c.type === "call" ? "Call" : "Put") + "</span>" + '<span class="tag ap">Best pick</span>' + "</div>" +
         '<div class="og">' +
         "<span>Bid / Ask <b>" + money(c.bid) + " / " + money(c.ask) + "</b></span><span>Per contract <b>$" + num(c.cost, 0) + "</b></span>" +
         "<span>Volume <b>" + num(c.volume, 0) + "</b></span><span>Open interest <b>" + num(c.oi, 0) + "</b></span>" +

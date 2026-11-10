@@ -128,7 +128,7 @@ async function optionsTests() {
   const { pick } = require(path.join(ROOT, "api/_options.js"));
   const chain = JSON.parse(fs.readFileSync(fx("cboe_AAPL.json")));
   const L = pick(chain, { dir: "long", entry: 350, stop: 340, target: 375 }, OPT_NOW), S = pick(chain, { dir: "short", entry: 350, stop: 358, target: null }, OPT_NOW);
-  ok(L.contracts.length === 3 && S.contracts.length === 3, "three contracts for a long and for a short", L.contracts.length + "/" + S.contracts.length);
+  ok(L.contracts.length === 1 && S.contracts.length === 1, "one contract (the best) for a long and for a short", L.contracts.length + "/" + S.contracts.length);
   ok(L.contracts.every((c) => c.type === "call" && c.delta > 0) && S.contracts.every((c) => c.type === "put" && c.delta < 0), "calls for longs, puts for shorts");
   const all = L.contracts.concat(S.contracts);
   ok(all.every((c) => c.dte >= 21 && c.dte <= 75), "21-75 days to expiry");
@@ -136,7 +136,6 @@ async function optionsTests() {
   ok(all.every((c) => c.oi >= 100 && c.spreadPct <= 10 && c.bid > 0 && c.ask > c.bid), "open interest 100+, spread under 10%");
   ok(all.every((c) => typeof c.theta === "number" && c.theta < 0 && typeof c.volume === "number"), "contracts include theta (time decay per day) and volume");
   ok(all.every((c) => c.atTargetPct > 0 && c.atStopPct < 0 && c.cost === Math.round(c.mid * 100)), "gains at target, loses at stop, cost is 100 shares");
-  ok([L, S].every((r) => { const n = {}; r.contracts.forEach((c) => { n[c.expiry] = (n[c.expiry] || 0) + 1; }); return Object.values(n).every((x) => x <= 2); }), "no more than 2 picks from one expiry");
   ok(S.target === 334 && S.targetIsDefault, "no target on the callout: uses 2R");
   ok(L.contracts[0].contract === "AAPL261218C00350000", "AAPL long 350 to 375: best pick is the Dec 18 350 call", L.contracts[0].contract);
   const none = pick(chain, { dir: "long", entry: 350, stop: 340, target: 375 }, Date.UTC(2027, 5, 1));
@@ -150,7 +149,7 @@ async function optionsTests() {
   const f = await call("/api/options?sym=GC%3DF&dir=long&entry=4000&stop=3900");
   const z = await call("/api/options?sym=ZZZZ&dir=long&entry=10&stop=9");
   global.fetch = saved; Date.now = realNow;
-  ok(a.status === 200 && a.body.contracts.length === 3, "options API returns contracts");
+  ok(a.status === 200 && a.body.contracts.length === 1, "options API returns the best contract");
   ok(f.status === 400 && /futures/.test(f.body.error), "options API turns away futures");
   ok(z.status === 404 && /No listed options/.test(z.body.error), "options API explains a stock with no options");
   return a.body;
@@ -239,7 +238,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("[data-opt]").count()) === 1, "live stock callout has an options button");
   ok((await page.locator(".cl", { hasText: "GC=F" }).locator("[data-opt]").count()) === 0, "futures callouts have no options button");
   await page.click("[data-opt]"); await page.waitForSelector(".oc", { timeout: 5000 }).catch(() => {});
-  ok((await page.locator(".oc").count()) === 3 && (await page.locator(".oc .tag", { hasText: "Best pick" }).count()) === 1, "three contracts show, one marked Best pick");
+  ok((await page.locator(".oc").count()) === 1 && (await page.locator(".oc .tag", { hasText: "Best pick" }).count()) === 1, "only the best contract shows, marked Best pick");
   ok(/sym=TEST/.test(optAsk) && optAsk.includes("dir=" + sig.dir) && optAsk.includes("stop=" + sig.stop0) && !/target=/.test(optAsk), "options request carries the direction and starting stop (no target: 2R)", optAsk);
   const box = await page.locator(".oc").first().textContent();
   ok(["Bid / Ask $", "Volume ", "Open interest ", "Delta ", "Theta ", "/day)", "Implied volatility ", "%"].every((x) => box.includes(x)), "each contract shows bid/ask, volume, open interest, delta, theta and implied volatility", box);

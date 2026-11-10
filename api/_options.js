@@ -58,14 +58,8 @@ function pick(chain, q, now = Date.now()) {
     });
   });
   rows.sort((a, b) => b.score - a.score);
-  // Top 3, but not three strikes of the same expiry: at most 2 per expiry.
-  const out = [], per = {};
-  for (const r of rows) {
-    if ((per[r.expiry] || 0) >= 2) continue;
-    per[r.expiry] = (per[r.expiry] || 0) + 1;
-    out.push(r);
-    if (out.length === 3) break;
-  }
+  // Just the best contract.
+  const out = rows.slice(0, 1);
   out.forEach((r) => { delete r.score; });
   return {
     sym: d.symbol, price: r2(S), target: r2(target), stop: r2(q.stop), targetIsDefault: q.target == null, contracts: out,
