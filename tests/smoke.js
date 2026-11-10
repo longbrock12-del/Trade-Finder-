@@ -1,7 +1,9 @@
 // Trade Finder - smoke test. Run before pushing:  node tests/smoke.js
-// Uses saved Yahoo hourly bars in tests/fixtures (six months to Nov 9 2026: platinum, crude, gold and Dow
-// futures, plus the Dow cut to stock hours as "TEST") and a saved Cboe AAPL options chain (cboe_AAPL.json,
-// trimmed to 120 days and strikes within 20%), so no live prices are fetched.
+// Uses saved Yahoo data in tests/fixtures, so no live prices are fetched:
+//   yahoo_<X>.json        6 months of hourly bars to Nov 9 2026 (gold, crude, Dow, platinum futures; AAPL;
+//                         "TEST" = the Dow cut to stock hours)
+//   yahoo_daily_<X>.json  10 years of daily bars for the same markets (TEST uses the Dow's)
+//   cboe_AAPL.json        a Cboe AAPL options chain, trimmed to 120 days and strikes within 20%
 // Checks the scanner follows the strategy rules, then loads the page in a headless browser.
 // Needs Playwright with Chromium (npm i -g playwright && npx playwright install chromium). Exits 1 on failure.
 const path = require("path"), fs = require("fs"), { spawn } = require("child_process");
@@ -12,90 +14,108 @@ try { ({ chromium } = require("playwright")); } catch (e) { console.error("Playw
 let failed = 0;
 const ok = (cond, what, extra) => { console.log((cond ? "  pass  " : "  FAIL  ") + what + (extra != null && !cond ? "  (" + extra + ")" : "")); if (!cond) failed++; };
 const fx = (f) => path.join(FX, f);
+const load = (f) => JSON.parse(fs.readFileSync(fx(f)));
+const NOW = 1794264531; // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
 
-const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
-async function tradesApi(url) {
-  const saved = global.fetch;
-  global.fetch = async (u) => {
-    const s = decodeURIComponent(String(u)).match(/chart\/([^?]+)/)[1];
-    if (!YF[s]) return { ok: false, status: 404 };
-    return { ok: true, status: 200, json: async () => JSON.parse(fs.readFileSync(fx("yahoo_" + YF[s] + ".json"))) };
+const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", AAPL: "AAPL", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
+// A fake Yahoo: hourly or daily saved bars for the symbols above, 404 for anything else.
+function fakeYahoo(map) {
+  return async (u) => {
+    u = decodeURIComponent(String(u));
+    const s = u.match(/chart\/([^?]+)/)[1], f = map(s);
+    if (!f) return { ok: false, status: 404 };
+    return { ok: true, status: 200, json: async () => load((/interval=1d/.test(u) ? "yahoo_daily_" : "yahoo_") + f + ".json") };
   };
-  const handler = require(path.join(ROOT, "api/trades.js")), realNow = Date.now;
-  Date.now = () => 1794264531000; // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
+}
+async function call(file, url, fetcher, now = NOW * 1000) {
+  const saved = global.fetch, realNow = Date.now;
+  global.fetch = fetcher; Date.now = () => now;
+  const handler = require(path.join(ROOT, file));
   const out = await new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; handler({ method: "GET", url }, res); });
   global.fetch = saved; Date.now = realNow;
   return out;
 }
+const tradesApi = (url) => call("api/trades.js", url, fakeYahoo((s) => YF[s]));
 
 async function scannerTests() {
   console.log("Scanner");
-  const { hourly, fourHour, scan } = require(path.join(ROOT, "api/_trendlines.js"));
+  const { hourly, fourHour, oneHour, chain, scan } = require(path.join(ROOT, "api/_trendlines.js"));
   const etH = (t) => new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(t * 1000)).replace(/^24/, "00");
-  const fut = fourHour(hourly(JSON.parse(fs.readFileSync(fx("yahoo_GC.json")))).bars, true, 2e9);
+  const fut = fourHour(hourly(load("yahoo_GC.json")).bars, true, 2e9);
   ok(fut.every((b) => ["18:00", "22:00", "02:00", "06:00", "10:00", "14:00"].includes(etH(b.t))), "futures 4H candles start 6 PM, 10 PM, 2 AM, 6 AM, 10 AM, 2 PM New York", etH(fut[0].t));
-  const stk = fourHour(hourly(JSON.parse(fs.readFileSync(fx("yahoo_TEST.json")))).bars, false, 2e9);
+  const stk = fourHour(hourly(load("yahoo_AAPL.json")).bars, false, 2e9);
   ok(stk.length > 200 && stk.every((b) => ["09:30", "13:30"].includes(etH(b.t))), "stock 4H candles start 9:30 and 1:30", stk.length + " " + etH(stk[0].t));
+  const h1 = oneHour(hourly(load("yahoo_AAPL.json")).bars, false, 2e9);
+  ok(h1.length > 800 && h1.every((b) => { const [h, m] = etH(b.t).split(":").map(Number); return h * 60 + m >= 570 && h * 60 + m < 960; }), "stock 1H candles are regular hours only");
+
+  // Her line rules on 10 years of real gold lows and highs: start at the extreme, each line steeper than the
+  // last (point B becomes point A), and no candle pokes through any line.
+  const gd = hourly(load("yahoo_daily_GC.json")).bars;
+  [["l", true], ["h", false]].forEach(([k, up]) => {
+    const pts = gd.map((b, i) => ({ x: i, p: b[k], t: b.t })), c = chain(pts, up), ext = up ? Math.min(...pts.map((q) => q.p)) : Math.max(...pts.map((q) => q.p));
+    const sl = c.slice(1).map((q, i) => (q.p - c[i].p) / (q.x - c[i].x));
+    const poke = c.slice(1).some((q, i) => pts.some((r) => r.x >= c[i].x && (up ? r.p < c[i].p + sl[i] * (r.x - c[i].x) - 1e-6 : r.p > c[i].p + sl[i] * (r.x - c[i].x) - -1e-6)));
+    ok(c[0].p === ext && sl.every((s, i) => !i || (up ? s > sl[i - 1] : s < sl[i - 1])) && !poke,
+      (up ? "rising" : "falling") + " chain: starts at the " + (up ? "lowest" : "highest") + " point, each line " + (up ? "steeper" : "steeper down") + ", nothing pokes through (" + (c.length - 1) + " lines)");
+  });
 
   const api = await tradesApi("/api/trades?s=PL=F,CL=F,GC=F,YM=F,TEST,ZZZ,bad%20sym,MGC=F");
   const M = api.body.markets;
   ok(api.status === 200 && M.length === 7, "API scans each valid symbol and drops junk ones", M.map((m) => m.sym).join(","));
   ok(M.find((m) => m.sym === "ZZZ").error === "unknown symbol", "unknown symbol comes back as an error, not a crash");
   const good = M.filter((m) => !m.error), sigs = [], watch = [];
+  ok(good.length === 6 && good.every((m) => m.price > 0 && m.dailyBars > 2000), "every market has a price and 10 years of daily candles");
   // Rule checks run on every callout the scanner finds (all: true), not just the newest one per market.
+  const full = {};
   good.forEach((m) => {
-    const full = scan(JSON.parse(fs.readFileSync(fx("yahoo_" + YF[m.sym] + ".json"))), { sym: m.sym, all: true, now: 1794264531 });
-    full.signals.forEach((s) => sigs.push({ m: full, s })); m.watch.forEach((w) => watch.push({ m, w }));
+    full[m.sym] = scan(load("yahoo_" + YF[m.sym] + ".json"), load("yahoo_daily_" + YF[m.sym] + ".json"), { sym: m.sym, all: true, now: NOW });
+    full[m.sym].signals.forEach((s) => sigs.push({ m: full[m.sym], s })); m.watch.forEach((w) => watch.push({ m, w }));
   });
   ok(good.every((m) => m.signals.length <= 1), "only one callout per market", good.map((m) => m.sym + ":" + m.signals.length).join(" "));
-  ok(good.filter((m) => m.signals.length).every((m) => { const n = sigs.filter((x) => x.m.sym === m.sym).map((x) => x.s.t); return m.signals[0].t === Math.max(...n); }), "the callout shown is the newest one");
-  ok(good.filter((m) => m.signals.length).every((m) => m.signals[0].replaced === sigs.filter((x) => x.m.sym === m.sym).length - 1 || (!m.signals[0].replaced && sigs.filter((x) => x.m.sym === m.sym).length === 1)), "it says how many older callouts it replaced");
-  ok(good.length === 6 && good.every((m) => m.bars.length >= 240 && m.price > 0 && m.atr > 0), "every market has 4H candles, a price and an ATR");
-  ok(sigs.length >= 10, "saved data produces callouts", sigs.length);
-  ok(sigs.some((x) => x.s.setup === "3-touch break") && sigs.some((x) => x.s.setup === "bounce"), "finds both break and bounce setups");
-  ok(sigs.every(({ s }) => s.angle < 45 && s.days >= 7 && s.taps >= 2), "every callout line is under 45 degrees, 1+ week old, 2+ taps");
-  ok(sigs.every(({ s }) => s.grade !== "A+" || (s.taps >= 3 && s.days >= 21)), "A+ means 3+ taps and 3+ weeks");
-  ok(sigs.every(({ s }) => s.tapIdx.every((t, i) => !i || t - s.tapIdx[i - 1] >= 6)), "taps are 6+ candles apart");
-  const priced = sigs.filter(({ s }) => s.stop != null);
-  ok(priced.length >= 5 && priced.every(({ s }) => (s.dir === "long" ? s.stop < s.entry : s.stop > s.entry)), "stops sit on the losing side of entry");
-  ok(priced.filter(({ s }) => s.target != null).every(({ s }) => s.rr >= 2 && (s.dir === "long" ? s.target > s.entry : s.target < s.entry)), "targets pay at least 2R");
-  ok(sigs.filter(({ s }) => s.setup !== "bounce" && s.stop != null).every(({ s }) => s.safety && s.safety.slope * (s.dir === "long" ? 1 : -1) > 0), "break stops sit on an opposing safety line");
-  ok(sigs.every(({ s }) => ["open", "target", "stopped", "too-far", "no-safety"].includes(s.status)), "every callout has a known status");
-  ok(watch.every(({ w }) => w.dist <= 1.5 && w.lineNow > 0), "watch list only holds lines near price");
-  const keys = sigs.map(({ m, s }) => m.sym + s.setup.slice(0, 1) + s.dir + s.at);
-  ok(new Set(keys).size === keys.length, "one callout per candle per direction (copies of a line merged)");
-  const late = scan(JSON.parse(fs.readFileSync(fx("yahoo_CL.json"))), { now: 2e9 }).signals;
-  ok(!late.some((x) => x.setup === "bounce" && x.dir === "long") && late.some((x) => x.dir === "short" && x.t === 1794250800), "crude: once the 2 PM candle closes below the line, the long bounce is replaced by a short break");
-  ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.at === s.at && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
-  const gc = sigs.filter((x) => x.m.sym === "GC=F").map((x) => x.s).find((s) => s.setup === "3-touch break" && s.status === "open");
-  ok(gc && gc.dir === "long" && gc.entry === 4037.3 && gc.stop === 3928.9 && gc.target === 4259, "gold 3-touch long break: entry, safety-line stop and 2R target", gc && [gc.entry, gc.stop, gc.target].join("/"));
+  ok(good.filter((m) => m.signals.length).every((m) => m.signals[0].t === Math.max(...full[m.sym].signals.map((x) => x.t))), "the callout shown is the newest one");
+  ok(good.filter((m) => m.signals.length).every((m) => (m.signals[0].replaced || 0) === full[m.sym].signals.length - 1), "it says how many older callouts it replaced");
+  ok(sigs.length >= 20, "saved data produces callouts", sigs.length);
+  ok(["4H", "1H"].every((tf) => sigs.some((x) => x.s.tf === tf)) && sigs.some((x) => x.s.setup === "3-touch break") && sigs.some((x) => x.s.setup === "bounce"), "finds breaks and bounces on both 4-hour and 1-hour charts");
+  ok(sigs.every(({ s }) => s.t >= NOW - 9 * 86400), "callouts are from the last 5 trading days");
+  ok(sigs.every(({ s }) => ["Monthly", "Weekly", "Daily", "4-hour", "1-hour"].includes(s.lineTF)) && sigs.some(({ s }) => ["Weekly", "Daily"].includes(s.lineTF)), "lines are labeled with the chart they come from, including higher timeframes");
+  ok(sigs.every(({ s }) => s.grade !== "A+" || (s.checks.taps && s.checks.angle && s.checks.history && s.taps >= 3 && s.angle < 45 && s.days >= 21)), "A+ means 3+ taps, under 45 degrees and 3+ weeks");
+  ok(sigs.every(({ s }) => s.chart.line && (s.setup === "bounce" ? s.chart.line.slope * (s.dir === "long" ? 1 : -1) > 0 : s.chart.line.slope * (s.dir === "long" ? -1 : 1) > 0)), "long breaks are of falling lines, short breaks of rising lines; bounces off the matching line");
+  const priced = sigs.filter(({ s }) => s.stop0 != null);
+  ok(priced.length >= 10 && priced.every(({ s }) => (s.dir === "long" ? s.stop0 < s.entry : s.stop0 > s.entry) && s.risk > 0), "the starting stop sits on the losing side of entry");
+  ok(priced.filter(({ s }) => s.setup !== "bounce").every(({ s }) => s.chart.safety && s.chart.safety.slope * (s.dir === "long" ? 1 : -1) > 0), "break stops sit on the opposite chain's line (the safety line)");
+  ok(priced.every(({ s }) => (s.dir === "long" ? s.stop >= s.stop0 : s.stop <= s.stop0)), "the trailing stop only ever tightens");
+  const closed = priced.filter(({ s }) => s.status === "closed");
+  ok(closed.length >= 3 && closed.every(({ s }) => (s.dir === "long" ? s.exitPx < s.stop : s.exitPx > s.stop) && s.exitR != null), "closed trades ended on a candle closing through the safety line");
+  ok(sigs.every(({ s }) => ["open", "closed", "too-far", "no-safety"].includes(s.status) && s.target === undefined), "every callout has a known status and no fixed target");
+  const aw = scan(load("yahoo_AAPL.json"), load("yahoo_daily_AAPL.json"), { sym: "AAPL", now: NOW }).watch;
+  ok(aw.length >= 1 && watch.concat(aw.map((w) => ({ w }))).every(({ w }) => w.dist <= 1.5 && w.lineNow > 0 && ["4H", "1H"].includes(w.tf)), "watch list holds the newest lines near price (AAPL has one)");
+  ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.t === s.t && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
+  const gc = full["GC=F"].signals.find((s) => s.tf === "4H" && s.setup === "3-touch break" && s.dir === "long" && s.grade === "A+");
+  ok(gc && gc.lineTF === "Daily" && gc.entry === 4057 && gc.status === "too-far", "gold: 4H close above a falling Daily line on Nov 4 (A+), skipped as too far from the safety line", gc && [gc.lineTF, gc.entry, gc.status].join("/"));
+  const cl = full["CL=F"].signals.find((s) => s.tf === "1H" && s.dir === "short" && s.lineTF === "Weekly");
+  ok(cl && cl.entry === 85.94 && cl.stop0 === 90.08 && cl.stop === 89.76 && cl.status === "open", "crude: 1H close below a rising Weekly line, stop trailed from 90.08 to 89.76", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
   const def = await tradesApi("/api/trades");
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
-  ok(M.find((m) => m.sym === "MGC=F").signals.length === M.find((m) => m.sym === "GC=F").signals.length, "Micro Gold callouts match gold's chart");
-  const cl = JSON.parse(fs.readFileSync(fx("yahoo_CL.json")));
-  ok(JSON.stringify(scan(cl, { now: 2e9 }).signals) === JSON.stringify(scan(cl, { now: 2e9 }).signals), "same data gives the same callouts");
-  return api.body;
+  ok(JSON.stringify(M.find((m) => m.sym === "MGC=F").signals.map((x) => x.t)) === JSON.stringify(M.find((m) => m.sym === "GC=F").signals.map((x) => x.t)), "Micro Gold callouts match gold's chart");
+  const t0 = Date.now(), a1 = scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }), ms = Date.now() - t0;
+  ok(JSON.stringify(a1.signals) === JSON.stringify(scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }).signals), "same data gives the same callouts");
+  ok(ms < 3000, "one futures market scans in under 3 seconds", ms + "ms");
+  // The page test also gets AAPL, a real stock with a line near price.
+  const aapl = await tradesApi("/api/trades?s=AAPL");
+  return { ...api.body, markets: api.body.markets.concat(aapl.body.markets) };
 }
 
 async function scanTests() {
   console.log("Stock scan");
-  const handler = require(path.join(ROOT, "api/scan.js")), U = handler.UNIVERSE, saved = global.fetch, realNow = Date.now;
-  const run = () => new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; handler({ method: "GET", url: "/api/scan" }, res); });
-  const test = fs.readFileSync(fx("yahoo_TEST.json"), "utf8");
-  let calls = 0;
-  // Every stock gets the same saved chart except a few that fail, like a delisted ticker would.
-  global.fetch = async (u) => { calls++; const s = decodeURIComponent(String(u)).match(/chart\/([^?]+)/)[1];
-    return ["NIO", "PDD"].includes(s) ? { ok: false, status: 404 } : { ok: true, status: 200, json: async () => JSON.parse(test) }; };
-  Date.now = () => 1794264531000;
-  const t0 = realNow(); const r = await run(); const ms = realNow() - t0;
-  global.fetch = saved; Date.now = realNow;
+  const U = require(path.join(ROOT, "api/scan.js")).UNIVERSE;
+  // Every stock gets AAPL's saved charts except two that fail, like a delisted ticker would.
+  const t0 = Date.now(), r = await call("api/scan.js", "/api/scan", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AAPL"))), ms = Date.now() - t0;
   const B = r.body;
   ok(U.length >= 100 && new Set(U).size === U.length, "scan list has 100+ different stocks and ETFs", U.length);
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
   ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0 && m.signals.length <= 1), "scan returns only stocks with a setup, one callout each, under their own symbols");
-  ok(B.markets.every((m) => m.signals.every((s) => s.at >= m.lastIdx - 10)), "stock callouts are from the last ~5 trading days");
-  ok(ms < 20000, "full scan runs in under 20 seconds of work", ms + "ms");
+  ok(ms < 30000, "full scan runs in under 30 seconds of work", ms + "ms");
   return B;
 }
 
@@ -134,7 +154,8 @@ async function optionsTests() {
 
 // Opens every collapsed list (Finished, Skipped) on the Callouts tab.
 async function openFolds(page) {
-  for (const b of await page.locator("[data-fold][aria-expanded=false]").all()) await b.click();
+  // Each click redraws the list, so click the first closed one until none are left.
+  for (let n = 0; n < 5 && (await page.locator("[data-fold][aria-expanded=false]").count()); n++) await page.locator("[data-fold][aria-expanded=false]").first().click();
 }
 
 async function pageTests(browser, body, optBody, scanBody) {
@@ -145,22 +166,25 @@ async function pageTests(browser, body, optBody, scanBody) {
   let scanJson = { at: Date.now(), scanned: 108, failed: ["NIO", "PDD"], markets: [] };
   await page.route("**/api/scan", (r) => r.fulfill({ json: scanJson }));
   await page.goto("http://127.0.0.1:" + PORT + "/");
-  await page.waitForSelector(".cl", { timeout: 8000 }).catch(() => {});
-  ok((await page.locator("h2", { hasText: "Live callouts" }).count()) === 1, "page shows a Live callouts section");
-  ok((await page.locator(".cl").count()) >= 3, "callout cards render", await page.locator(".cl").count());
+  await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
+  await openFolds(page);
+  ok((await page.locator(".cl").count()) >= 4, "callout cards render", await page.locator(".cl").count());
+  ok((await page.locator(".cl .tag", { hasText: /^(4H|1H)$/ }).count()) === (await page.locator(".cl").count()), "every card says which chart it's on (4H or 1H)");
+  ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
   ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
   ok(asked.length && asked[0].includes("s=MGC=F,MCL=F"), "page asks for Micro Gold and Micro Crude", asked[0]);
   const syms = await page.locator(".cl .sym").allTextContents();
   ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));
   ok(!/=F/.test(await page.textContent("#mkList")), "your-markets list shows MGC, MCL without =F");
-  ok(/Per micro contract: risk \$[\d,]+ · reward \$[\d,]+ \(\$10 per 1\.00 move\)/.test(await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent()), "Micro Gold callout shows risk and reward per contract");
+  ok(/Per micro contract: starting risk \$[\d,]+.*\(\$10 per 1\.00 move\)/.test(await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent()), "Micro Gold callout shows risk per contract");
   await page.locator(".cl").first().click();
-  ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its 4H chart");
+  ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
+  ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]");
   ok((await page.locator("text=ATR away").count()) >= 1, "watch list shows lines near price");
   await page.click("[data-tab=rules]");
-  ok((await page.locator("text=safety line").count()) >= 1, "rules tab explains the checklist");
+  ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
   ok((await page.locator(".cl .sym", { hasText: "TEST" }).count()) >= 1 && (await page.locator(".cl .sym", { hasText: /^M?GC$/ }).count()) === 0, "Stocks filter hides futures; collapsed lists open");
@@ -182,7 +206,8 @@ async function pageTests(browser, body, optBody, scanBody) {
 
   // A live stock callout gets an options button; the panel loads contracts and doesn't flip the chart.
   const b2 = JSON.parse(JSON.stringify(body)), stock = b2.markets.find((m) => m.sym === "TEST");
-  const sig = stock.signals.find((x) => x.stop != null); sig.status = "open";
+  const sig = stock.signals.find((x) => x.stop0 != null) || stock.signals[0]; sig.status = "open";
+  if (sig.stop0 == null) Object.assign(sig, { stop0: sig.entry * 0.97, stop: sig.entry * 0.97, risk: sig.entry * 0.03, dir: "long" });
   await page.unroute("**/api/trades**");
   await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
   let optAsk = "";
@@ -194,7 +219,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl", { hasText: "GC=F" }).locator("[data-opt]").count()) === 0, "futures callouts have no options button");
   await page.click("[data-opt]"); await page.waitForSelector(".oc", { timeout: 5000 }).catch(() => {});
   ok((await page.locator(".oc").count()) === 3 && (await page.locator(".oc .tag", { hasText: "Best pick" }).count()) === 1, "three contracts show, one marked Best pick");
-  ok(/sym=TEST/.test(optAsk) && optAsk.includes("dir=" + sig.dir) && optAsk.includes("stop=" + sig.stop), "options request carries the callout's direction and stop", optAsk);
+  ok(/sym=TEST/.test(optAsk) && optAsk.includes("dir=" + sig.dir) && optAsk.includes("stop=" + sig.stop0) && !/target=/.test(optAsk), "options request carries the direction and starting stop (no target: 2R)", optAsk);
   ok((await page.locator(".oc .on").first().textContent()).includes("Dec 18, 26 $350 Call"), "contract name reads like a broker's", await page.locator(".oc .on").first().textContent());
   ok((await page.locator(".cl svg").count()) === 0, "opening options doesn't open the chart");
   await page.click(".op .oc"); 

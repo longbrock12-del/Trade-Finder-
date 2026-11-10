@@ -1,9 +1,9 @@
 // Trade Finder - GET /api/scan
-// Scans a list of big, heavily traded US stocks and ETFs (all with active options) on 4-hour charts with
-// the same trendline rules as futures, and returns only the ones with a callout or a line near price.
+// Scans a list of big, heavily traded US stocks and ETFs (all with active options) top-down, on 4-hour and
+// 1-hour charts with the same trendline rules as futures, and returns only ones with a callout or a line near price.
 // Cached 15 minutes at Vercel's edge, so Yahoo sees one scan per 15 minutes however many people look.
 const { scan } = require("./_trendlines.js");
-const { chart } = require("./trades.js");
+const { both } = require("./trades.js");
 
 const UNIVERSE = [
   // ETFs
@@ -22,7 +22,7 @@ const UNIVERSE = [
   "BA", "CAT", "DE", "GE", "LMT", "RTX", "XOM", "CVX", "OXY", "SLB", "FDX", "UPS", "F", "GM", "RIVN", "T", "VZ", "CMCSA",
   "BABA", "PDD", "NIO",
 ];
-const POOL = 8; // Yahoo requests at a time
+const POOL = 6; // stocks at a time (2 Yahoo requests each)
 
 function send(res, status, secs, obj) {
   res.statusCode = status;
@@ -39,7 +39,7 @@ async function handler(req, res) {
     while (next < UNIVERSE.length) {
       const sym = UNIVERSE[next++];
       try {
-        const m = { ...scan(await chart(sym), { sym }), sym };
+        const m = { ...scan(...(await both(sym)), { sym }), sym };
         if (m.error) failed.push(sym);
         else if (m.signals.length || m.watch.length) found.push(m);
       } catch (e) { failed.push(sym); }
