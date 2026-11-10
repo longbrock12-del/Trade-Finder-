@@ -51,6 +51,11 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .mk span button{border:0;background:none;color:var(--mu);font-size:15px;line-height:1;padding:0 5px}
 .rules ol{padding-left:20px;margin:6px 0}.rules li{margin:6px 0}.rules p{margin:6px 0}
 .err{border-color:var(--bad)}
+.op{margin-top:10px;border-top:1px solid var(--bd);padding-top:10px;cursor:default}
+.oc{background:var(--soft);border-radius:10px;padding:9px 10px;margin-top:8px;font-size:13px}
+.oc .on{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
+.oc .og{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin-top:5px;color:var(--mu)}.oc .og b{color:var(--tx);font-weight:600}
+.ob{margin-top:8px}
 .foot{font-size:12px;color:var(--mu);margin-top:20px;line-height:1.5}
 .sp{display:inline-block;width:10px;height:10px;border:2px solid var(--mu);border-top-color:transparent;border-radius:50%;animation:r 1s linear infinite;vertical-align:-1px}
 @keyframes r{to{transform:rotate(360deg)}}
@@ -86,7 +91,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tl:" + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-let folds = {}, data = null, tab = "calls", kind = store.get("kind", "all"), open = {}, loading = false, lastErr = null;
+let opts = {}, folds = {}, data = null, tab = "calls", kind = store.get("kind", "all"), open = {}, loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -186,6 +191,45 @@ function checks(s) {
   return '<div class="ck">' + it(c.taps, s.taps + " taps (3+)") + it(true, "6+ candles apart") + it(c.angle, s.angle + "° (under 45°)") + it(c.history, s.days + " days (3+ weeks)") + "</div>";
 }
 
+// Option contracts for live stock callouts (calls for longs, puts for shorts). Loaded when asked.
+function optionsBlock(m, s, k) {
+  if (m.kind !== "stocks" || s.status !== "open" || s.stop == null) return "";
+  const o = opts[k], shown = o && o.shown;
+  let h = '<div class="ob"><button class="btn" data-opt="' + esc(k) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide option contracts" : "Show option contracts (" + (s.dir === "long" ? "calls" : "puts") + ")") + "</button></div>";
+  if (!shown) return h;
+  h += '<div class="op">';
+  if (o.loading) h += '<div class="note"><span class="sp"></span> Loading option prices…</div>';
+  else if (o.error) h += '<div class="note bad">' + esc(o.error) + "</div>";
+  else {
+    const d = o.data, money = (x) => "$" + num(x, 2);
+    if (!d.contracts.length) h += '<div class="note">' + esc(d.note) + "</div>";
+    d.contracts.forEach((c, i) => {
+      const exp = new Date(c.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "UTC" });
+      h += '<div class="oc"><div class="on"><span>' + esc(d.sym) + " " + esc(exp) + " $" + num(c.strike, c.strike % 1 ? 1 : 0) + " " + (c.type === "call" ? "Call" : "Put") + "</span>" + (i === 0 ? '<span class="tag ap">Best pick</span>' : "") + "</div>" +
+        '<div class="og"><span>Price <b>' + money(c.mid) + "</b> (" + money(c.bid) + "–" + money(c.ask) + ")</span><span>Per contract <b>$" + num(c.cost, 0) + "</b></span>" +
+        "<span>Expires in <b>" + c.dte + " days</b></span><span>Delta <b>" + num(Math.abs(c.delta), 2) + "</b> · IV <b>" + c.iv + "%</b></span>" +
+        "<span>At target " + money(d.target) + ': <b class="ok">~' + money(c.atTarget) + " (+" + c.atTargetPct + "%)</b></span>" +
+        "<span>At stop " + money(d.stop) + ': <b class="bad">~' + money(c.atStop) + " (" + c.atStopPct + "%)</b></span>" +
+        "<span>Breakeven at expiry <b>" + money(c.breakeven) + "</b></span><span>Open interest <b>" + num(c.oi, 0) + "</b></span></div></div>";
+    });
+    h += '<div class="note">Prices from Cboe, 15 minutes delayed. "At target" and "at stop" are estimates if the move happens soon; time decay lowers them the longer it takes. ' +
+      (d.targetIsDefault ? "No target level on this callout, so 2R is used. " : "") + "Exit the option when the stock hits the callout's stop or target. Options aren't part of Tori's strategy. See Rules.</div>";
+  }
+  return h + "</div>";
+}
+
+async function loadOptions(m, s, k) {
+  opts[k] = { shown: true, loading: true }; render();
+  const q = new URLSearchParams({ sym: m.sym, dir: s.dir, entry: s.entry, stop: s.stop });
+  if (s.target != null) q.set("target", s.target);
+  try {
+    const r = await fetch("/api/options?" + q.toString());
+    const j = await r.json();
+    opts[k] = j.error ? { shown: true, error: j.error } : { shown: true, data: j };
+  } catch (e) { opts[k] = { shown: true, error: "Option prices didn't load. Try again in a minute." }; }
+  render();
+}
+
 function card(m, s) {
   const k = keyOf(m, s), st = STATUS[s.status] || [s.status, "mu"], d = m.digits, isNew = window._fresh && window._fresh.has(k);
   const now = s.status === "open" && s.nowR != null ? ' · now <b class="' + (s.nowR >= 0 ? "ok" : "bad") + '">' + (s.nowR >= 0 ? "+" : "") + s.nowR.toFixed(2) + "R</b>" : "";
@@ -199,7 +243,7 @@ function card(m, s) {
     (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged the line" : "4H candle closed through the line") + " · " + when(s.t) + (s.also ? " · also broke " + s.also + " weaker line" + (s.also > 1 ? "s" : "") : "") + " · tap for chart</div>" +
-    (open[k] ? chart(m, s) : "") + "</article>";
+    (open[k] ? chart(m, s) : "") + optionsBlock(m, s, k) + "</article>";
 }
 
 function renderCalls() {
@@ -241,6 +285,7 @@ function renderRules() {
     "<li><b>Bounce entry</b>: price tags a line with 2–3 clean taps and at least a week of history. The same line is the stop, with room for wicks. Exit on a 4-hour close through it and trail the stop along the line.</li>" +
     "<li><b>Journal every trade</b> and tag it bounce, 2-touch break or 3-touch break. Compare them after 30–50 trades.</li></ol>" +
     '<div class="st" style="margin-top:12px">Where the computer had to pick a number</div><p class="note">Her wording is loose in a few places, so the scanner uses these settings. They\'re my picks, not hers: a wick within 0.3 ATR of the line counts as a tap. A wick may poke 0.5 ATR past the line before the line is ruined. "Too far from the safety line" means risk over 3 ATR. Bounce stops sit 0.5 ATR past the line. 45° is measured on a 16:9 chart showing 3 months.</p>' +
+    '<div class="st" style="margin-top:12px">Option contracts (stocks only, my add-on)</div><p class="note">Tori trades futures, not options, so this part isn\'t from her. On a live stock callout, tap "Show option contracts". Longs get calls and shorts get puts. The picks have 21–75 days left so the trade has time to work, a delta of 0.45–0.75 (at or a little in the money, so the option moves with the stock), open interest of 100+, and a bid-ask spread under 10%. They\'re ranked by estimated gain at the target against estimated loss at the stop. Use the stock\'s stop and target to exit, and risk the same dollars you would on shares.</p>' +
     '<p class="note">Sources: her FX Replay checklist "Tori Trades Trend Line Strategy (swing trading)" and the TradeZella playbook "Tori\'s Trendline Strategy".</p></div>';
 }
 
@@ -266,8 +311,14 @@ function render() {
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],#retry,.cl,#alerts");
-  if (!t) return;
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],.op,#retry,.cl,#alerts");
+  if (!t || t.classList.contains("op")) return;
+  if (t.dataset.opt) {
+    const k = t.dataset.opt, o = opts[k];
+    if (o && (o.data || o.loading)) { o.shown = !o.shown; render(); return; } // a failed load retries
+    data.markets.forEach((m) => (m.signals || []).forEach((s) => { if (keyOf(m, s) === k) loadOptions(m, s, k); }));
+    return;
+  }
   if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; render(); }
   else if (t.dataset.tab) { tab = t.dataset.tab; render(); }
   else if (t.dataset.k && t.closest("#kinds")) { kind = t.dataset.k; store.set("kind", kind); render(); }

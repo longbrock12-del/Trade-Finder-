@@ -1,6 +1,7 @@
 // Trade Finder - smoke test. Run before pushing:  node tests/smoke.js
 // Uses saved Yahoo hourly bars in tests/fixtures (six months to Nov 9 2026: platinum, crude, gold and Dow
-// futures, plus the Dow cut to stock hours as "TEST"), so no live prices are fetched.
+// futures, plus the Dow cut to stock hours as "TEST") and a saved Cboe AAPL options chain (cboe_AAPL.json,
+// trimmed to 120 days and strikes within 20%), so no live prices are fetched.
 // Checks the scanner follows the strategy rules, then loads the page in a headless browser.
 // Needs Playwright with Chromium (npm i -g playwright && npx playwright install chromium). Exits 1 on failure.
 const path = require("path"), fs = require("fs"), { spawn } = require("child_process");
@@ -64,7 +65,40 @@ async function scannerTests() {
   return api.body;
 }
 
-async function pageTests(browser, body) {
+const OPT_NOW = Date.UTC(2026, 10, 10, 1); // when the saved AAPL chain was taken
+async function optionsTests() {
+  console.log("Option contracts");
+  const { pick } = require(path.join(ROOT, "api/_options.js"));
+  const chain = JSON.parse(fs.readFileSync(fx("cboe_AAPL.json")));
+  const L = pick(chain, { dir: "long", entry: 350, stop: 340, target: 375 }, OPT_NOW), S = pick(chain, { dir: "short", entry: 350, stop: 358, target: null }, OPT_NOW);
+  ok(L.contracts.length === 3 && S.contracts.length === 3, "three contracts for a long and for a short", L.contracts.length + "/" + S.contracts.length);
+  ok(L.contracts.every((c) => c.type === "call" && c.delta > 0) && S.contracts.every((c) => c.type === "put" && c.delta < 0), "calls for longs, puts for shorts");
+  const all = L.contracts.concat(S.contracts);
+  ok(all.every((c) => c.dte >= 21 && c.dte <= 75), "21-75 days to expiry");
+  ok(all.every((c) => Math.abs(c.delta) >= 0.45 && Math.abs(c.delta) <= 0.75), "delta 0.45-0.75");
+  ok(all.every((c) => c.oi >= 100 && c.spreadPct <= 10 && c.bid > 0 && c.ask > c.bid), "open interest 100+, spread under 10%");
+  ok(all.every((c) => c.atTargetPct > 0 && c.atStopPct < 0 && c.cost === Math.round(c.mid * 100)), "gains at target, loses at stop, cost is 100 shares");
+  ok([L, S].every((r) => { const n = {}; r.contracts.forEach((c) => { n[c.expiry] = (n[c.expiry] || 0) + 1; }); return Object.values(n).every((x) => x <= 2); }), "no more than 2 picks from one expiry");
+  ok(S.target === 334 && S.targetIsDefault, "no target on the callout: uses 2R");
+  ok(L.contracts[0].contract === "AAPL261218C00350000", "AAPL long 350 to 375: best pick is the Dec 18 350 call", L.contracts[0].contract);
+  const none = pick(chain, { dir: "long", entry: 350, stop: 340, target: 375 }, Date.UTC(2027, 5, 1));
+  ok(none.contracts.length === 0 && /21-75 days/.test(none.note), "explains when nothing qualifies");
+
+  const handler = require(path.join(ROOT, "api/options.js")), saved = global.fetch, realNow = Date.now;
+  const call = (url) => new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; handler({ method: "GET", url }, res); });
+  global.fetch = async (u) => (String(u).includes("/AAPL.json") ? { ok: true, status: 200, json: async () => chain } : { ok: false, status: 403 });
+  Date.now = () => OPT_NOW;
+  const a = await call("/api/options?sym=AAPL&dir=long&entry=350&stop=340&target=375");
+  const f = await call("/api/options?sym=GC%3DF&dir=long&entry=4000&stop=3900");
+  const z = await call("/api/options?sym=ZZZZ&dir=long&entry=10&stop=9");
+  global.fetch = saved; Date.now = realNow;
+  ok(a.status === 200 && a.body.contracts.length === 3, "options API returns contracts");
+  ok(f.status === 400 && /futures/.test(f.body.error), "options API turns away futures");
+  ok(z.status === 404 && /No listed options/.test(z.body.error), "options API explains a stock with no options");
+  return a.body;
+}
+
+async function pageTests(browser, body, optBody) {
   console.log("Page");
   const page = await browser.newPage({ viewport: { width: 390, height: 900 } }), errors = [], asked = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -90,6 +124,27 @@ async function pageTests(browser, body) {
   const man = await page.evaluate(async () => { const r = await fetch("/manifest.json"); const j = await r.json(); const ic = await Promise.all(j.icons.map((i) => fetch(i.src).then((x) => x.ok))); return { name: j.name, display: j.display, icons: ic.every(Boolean) }; });
   ok(man.name === "Trade Finder" && man.display === "standalone" && man.icons, "home-screen app: named Trade Finder, opens without the address bar, icons load", JSON.stringify(man));
   ok((await page.getAttribute("meta[name=apple-mobile-web-app-title]", "content")) === "Trade Finder", "iPhone home-screen label is Trade Finder");
+  // A live stock callout gets an options button; the panel loads contracts and doesn't flip the chart.
+  const b2 = JSON.parse(JSON.stringify(body)), stock = b2.markets.find((m) => m.sym === "TEST");
+  const sig = stock.signals.find((x) => x.stop != null); sig.status = "open";
+  await page.unroute("**/api/trades**");
+  await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
+  let optAsk = "";
+  await page.route("**/api/options**", (r) => { optAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: optBody }); });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.reload(); await page.waitForSelector(".cl");
+  await page.click("[data-k=stocks]");
+  ok((await page.locator("[data-opt]").count()) === 1, "live stock callout has an options button");
+  ok((await page.locator(".cl", { hasText: "GC=F" }).locator("[data-opt]").count()) === 0, "futures callouts have no options button");
+  await page.click("[data-opt]"); await page.waitForSelector(".oc", { timeout: 5000 }).catch(() => {});
+  ok((await page.locator(".oc").count()) === 3 && (await page.locator(".oc .tag", { hasText: "Best pick" }).count()) === 1, "three contracts show, one marked Best pick");
+  ok(/sym=TEST/.test(optAsk) && optAsk.includes("dir=" + sig.dir) && optAsk.includes("stop=" + sig.stop), "options request carries the callout's direction and stop", optAsk);
+  ok((await page.locator(".oc .on").first().textContent()).includes("Dec 18, 26 $350 Call"), "contract name reads like a broker's", await page.locator(".oc .on").first().textContent());
+  ok((await page.locator(".cl svg").count()) === 0, "opening options doesn't open the chart");
+  await page.click(".op .oc"); 
+  ok((await page.locator(".cl svg").count()) === 0, "tapping inside the options panel doesn't open the chart");
+  await page.click("[data-opt]");
+  ok((await page.locator(".oc").count()) === 0, "options button hides the panel again");
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }
@@ -97,10 +152,12 @@ async function pageTests(browser, body) {
 (async () => {
   let body;
   try { body = await scannerTests(); } catch (e) { ok(false, "scanner tests crashed", e.message); }
+  let optBody;
+  try { optBody = await optionsTests(); } catch (e) { ok(false, "options tests crashed", e.message); }
   const server = spawn(process.execPath, ["server.js"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT) }, stdio: "ignore" });
   await new Promise((r) => setTimeout(r, 1000));
   const browser = await chromium.launch();
-  try { if (body) await pageTests(browser, body); } catch (e) { ok(false, "page tests crashed", e.message); }
+  try { if (body && optBody) await pageTests(browser, body, optBody); } catch (e) { ok(false, "page tests crashed", e.message); }
   await browser.close(); server.kill();
   console.log(failed ? "\n" + failed + " check(s) FAILED" : "\nAll checks passed");
   process.exit(failed ? 1 : 0);
