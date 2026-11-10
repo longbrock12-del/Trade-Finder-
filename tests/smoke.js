@@ -201,11 +201,12 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
   const futR = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.totalR, 0);
   const trk = (await page.locator(".trk").textContent());
+  ok(await page.evaluate(() => { const o = document.getElementById("out"); return o.firstElementChild.classList.contains("trk") && o.children[1].classList.contains("gi"); }), "the track record box is at the top, above the get-in box");
   ok(!trk.includes("Overall") && !trk.includes("stocks") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures tab shows only the futures ROI: total % at 1% risk per trade", trk.slice(0, 160));
   await page.click("[data-fold=track]");
   ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
   await page.click("[data-fold=track]");
-  ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) === 1, "Live callouts starts as a closed bar under the get-in box");
+  ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) === 1, "Live callouts starts as a closed bar under the boxes");
   await page.click("[data-fold=live]");
   ok((await page.locator("[data-fold=live][aria-expanded=true]").count()) === 1 && (await page.evaluate(() => localStorage.getItem("tl:liveOpen"))) === "true", "its button opens it, and the choice is remembered");
   await openFolds(page);

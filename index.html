@@ -350,7 +350,7 @@ function trackBox() {
 
 function renderCalls() {
   const all = callouts();
-  if (!all.length) return getInBox(all) + trackBox() + '<div class="c empty">No callouts in the last 5 trading days that pass 3 of the 4 checklist rules.</div>';
+  if (!all.length) return trackBox() + getInBox(all) + '<div class="c empty">No callouts in the last 5 trading days that pass 3 of the 4 checklist rules.</div>';
   const grp = { live: [], wait: [], done: [], skip: [] };
   // Live trades you can no longer get into (over a day old, or already past 0.5R) aren't listed. They still count in the track record.
   all.forEach((x) => { const st = x.s.status; if (st === "open" && !canEnter(x.s)) return; (st === "open" ? grp.live : st === "no-safety" ? grp.wait : st === "too-far" ? grp.skip : grp.done).push(x); });
@@ -359,7 +359,7 @@ function renderCalls() {
     (folds[id] ? (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "") : "");
   // Live callouts: a small bar you open and close; remembered per browser (closed to start - the box above has the entries).
   if (folds.live == null) folds.live = store.get("liveOpen", false);
-  return getInBox(all) + trackBox() +
+  return trackBox() + getInBox(all) +
     fold("live", "Live callouts", grp.live, "Trades you can still get into: fired in the last day and still near the entry price. Only lines passing 3 of 4 checklist rules.") +
     sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
     fold("done", "Finished: closed on the safety line", grp.done, "Her exit: a candle closed through the safety line, with the stop trailed along it. Results are in R (multiples of the starting risk).") +
