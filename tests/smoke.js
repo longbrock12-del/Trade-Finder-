@@ -210,7 +210,7 @@ async function optionsTests() {
   return a.body;
 }
 
-// Opens every collapsed list (Finished, Skipped) on the Callouts tab.
+// Opens every collapsed list (Live, Skipped) on the Callouts tab.
 async function openFolds(page) {
   // Each click redraws the list, so click the first closed one until none are left.
   for (let n = 0; n < 5 && (await page.locator("[data-fold][aria-expanded=false]").count()); n++) await page.locator("[data-fold][aria-expanded=false]").first().click();
@@ -248,6 +248,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-fold=live]");
   await openFolds(page);
   ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
+  ok((await page.locator("[data-fold=done]").count()) === 0 && !/Finished/.test(await page.locator("#out").textContent()), "no Finished list (closed trades only count in the track record)");
   ok((await page.locator(".cl .note", { hasText: "Size:" }).count()) === 0, "no position size until you enter an account size");
   await page.fill("#acct", "10,000"); await page.fill("#riskP", "1"); await page.click("#sizeF button");
   const mgcLive = body.markets.find((m) => m.sym === "MGC=F").signals[0], perC = mgcLive.risk * 10, nC = Math.floor(100 / perC);
@@ -257,7 +258,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl .gr", { hasText: "Stop order now (trailing)" }).count()) >= 1 && (await page.locator(".cl .note", { hasText: "just past the safety line" }).count()) >= 1, "live cards show the stop order to set, just past the safety line");
   const fut = await page.locator(".cl .st", { hasText: "GET IN NOW" }).allTextContents();
   ok(fut.length >= 1 && fut.every((x) => /GET IN NOW: (BUY|SELL) [A-Z]+ near/.test(x)), "futures cards say GET IN NOW: BUY or SELL (no calls or puts)", fut.join(","));
-  ok((await page.locator(".cl").count()) >= 3, "callout cards render", await page.locator(".cl").count());
+  ok((await page.locator(".cl").count()) >= 2, "callout cards render", await page.locator(".cl").count());
   ok((await page.locator(".cl .tag", { hasText: /^(A\+ · 4|B · 3)\/4$/ }).count()) === (await page.locator(".cl").count()), "every card shows how many checklist rules it passes (3/4 or 4/4)");
   ok((await page.locator(".cl .tag", { hasText: /^(4H|1H)$/ }).count()) === (await page.locator(".cl").count()), "every card says which chart it's on (4H or 1H)");
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");
@@ -305,7 +306,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("text=How the computer does it").count()) === 0 && (await page.locator("#out >> text=Option contracts").count()) === 0, "rules tab has no computer or options sections");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
-  ok((await page.locator(".cl .sym", { hasText: "TEST" }).count()) >= 1 && (await page.locator(".cl .sym", { hasText: /^M?GC$/ }).count()) === 0, "Stocks filter hides futures; collapsed lists open");
+  ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Track record: stocks" }).count() + await page.locator(".gi.none", { hasText: "stocks" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
   await page.fill("#addIn", "amd"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
   ok(asked.some((u) => u.includes("AMD")), "adding a symbol rescans with it");
   await page.fill("#addIn", "gc"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);

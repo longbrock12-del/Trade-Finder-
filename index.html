@@ -444,7 +444,6 @@ function renderCalls() {
   return trackBox() + getInBox(all) +
     fold("live", "Live callouts", grp.live, "Trades you can still get into: fired in the last day and still near the entry price. Only lines passing 3 of 4 checklist rules, always with 3+ taps.") +
     sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
-    fold("done", "Finished: closed on the safety line", grp.done, "Her exit: a candle closed through the safety line, with the stop trailed along it. Results are in R (multiples of the starting risk).") +
     fold("skip", "Skipped: too far from the safety line", grp.skip, "The break closed too far from the safety line, so the risk was too big to take.");
 }
 
