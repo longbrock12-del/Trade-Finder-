@@ -451,6 +451,11 @@ function scan(hChart, dChart, opts = {}) {
       at: x.at - off, from: x.from == null ? null : x.from - off, closedAt: x.closedAt == null ? null : x.closedAt - off,
       chains: edges(ch.up, true).concat(edges(ch.dn, false)),
       lines, zoom: daily.slice(zoff).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
+      // Middle view: about 3 months of 4-hour candles. X of candle k = X0 + k * dX (same daily-candle units as the lines).
+      mid: (() => {
+        const s4 = S["4H"], b4 = s4.bars, f4 = Math.max(0, b4.findIndex((q) => q.t >= b4[b4.length - 1].t - 91 * DAY));
+        return { bars: b4.slice(f4).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]), X0: (s4.x0 + f4) / s4.ppd - zoff, dX: 1 / s4.ppd };
+      })(),
     };
   };
   const clean = (x) => {

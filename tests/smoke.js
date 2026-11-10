@@ -100,6 +100,12 @@ async function scannerTests() {
   ok(sigs.every(({ s }) => s.chart.lines.some((l) => l.action) && (s.setup === "bounce" || !s.chart.safety || s.chart.lines.some((l) => l.safety))), "every callout's line list includes its action and safety lines");
   ok(sigs.every(({ s }) => s.chart.lines.every((l) => ["Monthly", "Weekly", "Daily", "4-hour", "1-hour"].includes(l.tf) && Math.abs(l.P0 + l.slopeX * 0 - l.P0) === 0 && l.now > 0)) && sigs.some(({ s }) => s.chart.lines.some((l) => l.tf === "Monthly")), "line lists go from Monthly lines down to the entry chart");
   ok(sigs.every(({ s }) => s.chart.zoom.length >= 400), "zoomed-out chart gets about 2 years of daily candles");
+  ok(sigs.every(({ s }) => { const M2 = s.chart.mid, d = (M2.bars[M2.bars.length - 1][0] - M2.bars[0][0]) / 86400; return M2.bars.length >= 60 && d > 80 && d < 95 && M2.dX > 0; }), "3-month view gets about 3 months of 4-hour candles");
+  // Lines line up across views: a 1-hour callout's action line, mapped into the 3-month 4-hour view, passes through the same price at the same time.
+  const c1h = sigs.find(({ s }) => s.tf === "1H" && s.chart.lines.some((l) => l.action)).s, al = c1h.chart.lines.find((l) => l.action), M3 = c1h.chart.mid;
+  const lastK = M3.bars.length - 1, Xk = M3.X0 + lastK * M3.dX, vMid = al.P0 + al.slopeX * (Xk - al.X0);
+  const near = c1h.chart.bars.findIndex((b) => b[0] >= M3.bars[lastK][0]), v1h = c1h.chart.line.p0 + c1h.chart.line.slope * (near - c1h.chart.line.i0);
+  ok(Math.abs(vMid - v1h) / v1h < 0.003, "a line sits at the same price in the 1-hour and 3-month views", vMid.toFixed(2) + " vs " + v1h.toFixed(2));
   ok(sigs.every(({ s }) => s.chart.chains.every((e) => e.i1 - e.i0 >= 6)), "charts only draw real trendlines: no short pieces that would look curved");
   ok(sigs.every(({ s }) => s.chart.line.t0 < s.chart.line.t1 && (!s.chart.safety || s.chart.safety.t0 < s.chart.safety.t1)), "every line carries its point A and point B times (for TradingView)");
   // The fast, candle-by-candle lines are the same as rebuilding the chains from scratch.
@@ -242,10 +248,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
   ok((await page.locator(".cl .lns .lnr").count()) >= 3 && (await page.locator(".cl .lns .lnr.now").count()) === 1 && (await page.locator(".cl .lns .tag", { hasText: "action" }).count()) === 1, "under the chart: every line on the market, with price now and the action line marked");
-  await page.click(".cl [data-zoom]");
-  ok((await page.locator(".cl svg[aria-label^='Daily chart']").count()) === 1 && (await page.locator(".cl [data-zoom]").textContent()).startsWith("Back to"), "Zoom out switches to the daily chart with every line");
-  await page.click(".cl [data-zoom]");
-  ok((await page.locator(".cl svg[aria-label^='Daily chart']").count()) === 0 && (await page.locator(".cl svg").count()) === 1, "and back again; zooming doesn't close the chart");
+  ok((await page.locator(".cl .zsw .btn").allTextContents()).length === 3, "three chart choices: the callout's chart, 3 months, 2 years");
+  await page.click(".cl [data-mode=zoom]");
+  ok((await page.locator(".cl svg[aria-label^='Daily chart, 2 years']").count()) === 1, "2 years: daily candles with every line");
+  await page.click(".cl [data-mode=mid]");
+  ok((await page.locator(".cl svg[aria-label^='4-hour chart, 3 months']").count()) === 1, "3 months: 4-hour candles with the Daily and 4-hour lines");
+  await page.click(".cl [data-mode='']");
+  ok((await page.locator(".cl svg[aria-label*='3 months'], .cl svg[aria-label*='2 years']").count()) === 0 && (await page.locator(".cl svg").count()) === 1, "and back to the callout's chart; switching doesn't close it");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().locator(".mu", { hasText: "away" }).first().textContent();
