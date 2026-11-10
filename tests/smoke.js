@@ -142,7 +142,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
   ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
   ok(asked.length && asked[0].includes("s=MGC=F,MCL=F"), "page asks for Micro Gold and Micro Crude", asked[0]);
-  ok(/Per micro contract: risk \$[\d,]+ · reward \$[\d,]+ \(\$10 per 1\.00 move\)/.test(await page.locator(".cl", { hasText: "MGC=F" }).first().textContent()), "Micro Gold callout shows risk and reward per contract");
+  const syms = await page.locator(".cl .sym").allTextContents();
+  ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));
+  ok(!/=F/.test(await page.textContent("#mkList")), "your-markets list shows MGC, MCL without =F");
+  ok(/Per micro contract: risk \$[\d,]+ · reward \$[\d,]+ \(\$10 per 1\.00 move\)/.test(await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent()), "Micro Gold callout shows risk and reward per contract");
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its 4H chart");
   await page.click("[data-tab=watch]");
@@ -151,9 +154,11 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("text=safety line").count()) >= 1, "rules tab explains the checklist");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
-  ok((await page.locator(".cl .sym", { hasText: "TEST" }).count()) >= 1 && (await page.locator(".cl .sym", { hasText: "GC=F" }).count()) === 0, "Stocks filter hides futures; collapsed lists open");
+  ok((await page.locator(".cl .sym", { hasText: "TEST" }).count()) >= 1 && (await page.locator(".cl .sym", { hasText: /^M?GC$/ }).count()) === 0, "Stocks filter hides futures; collapsed lists open");
   await page.fill("#addIn", "amd"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
   ok(asked.some((u) => u.includes("AMD")), "adding a symbol rescans with it");
+  await page.fill("#addIn", "gc"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
+  ok(asked.some((u) => /s=[^&]*GC=F/.test(u) && /,GC=F/.test(u)), "typing GC adds the gold futures contract (GC=F)", asked[asked.length - 1]);
   await page.setViewportSize({ width: 360, height: 800 });
   ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "no sideways scroll on a small phone");
   const man = await page.evaluate(async () => { const r = await fetch("/manifest.json"); const j = await r.json(); const ic = await Promise.all(j.icons.map((i) => fetch(i.src).then((x) => x.ok))); return { name: j.name, display: j.display, icons: ic.every(Boolean) }; });

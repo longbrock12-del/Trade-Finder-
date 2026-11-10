@@ -76,8 +76,8 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 
 <section class="c" id="mine" style="margin-top:18px">
   <div class="st">Your markets</div>
-  <div class="note" style="margin-top:2px">Futures: <b>Micro Gold (MGC)</b> and <b>Micro Crude (MCL)</b>. Stocks: about 110 of the biggest, most-traded stocks and ETFs are scanned automatically every 15 minutes, and only ones with a setup show up. Add any other symbol here, like <b>AMD</b> or <b>SOUN</b>.</div>
-  <form class="bar" id="add"><input id="addIn" placeholder="Add symbol, e.g. AMD or HG=F" maxlength="15" autocomplete="off" aria-label="Add symbol"><button class="btn">Add</button></form>
+  <div class="note" style="margin-top:2px">Futures: <b>Micro Gold (MGC)</b> and <b>Micro Crude (MCL)</b>, always the front-month contract. Stocks: about 110 of the biggest, most-traded stocks and ETFs are scanned automatically every 15 minutes, and only ones with a setup show up. Add any other symbol here, like <b>AMD</b> or <b>SOUN</b>, or a futures contract like <b>GC</b>.</div>
+  <form class="bar" id="add"><input id="addIn" placeholder="Add symbol, e.g. AMD or MGC" maxlength="15" autocomplete="off" aria-label="Add symbol"><button class="btn">Add</button></form>
   <div class="mk" id="mkList"></div>
 </section>
 
@@ -94,6 +94,9 @@ const store = {
 let opts = {}, folds = {}, data = null, tab = "calls", kind = store.get("kind", "all"), open = {}, loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
+// Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
+const show = (sym) => String(sym).replace(/=F$/, "");
+const FUT_ROOTS = ["MGC", "MCL", "GC", "CL", "SI", "SIL", "HG", "PL", "NG", "ES", "MES", "NQ", "MNQ", "YM", "MYM", "RTY", "M2K", "ZB", "ZN", "ZC", "ZS", "ZW"];
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const etFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const when = (t) => etFmt.format(new Date(t * 1000)) + " ET";
@@ -149,7 +152,7 @@ function notifyNew() {
   document.title = "(" + fresh.length + ") Trade Finder";
   if (store.get("alerts", false) && "Notification" in window && Notification.permission === "granted") {
     fresh.slice(0, 3).forEach(({ m, s }) => {
-      try { new Notification(m.sym + ": " + s.dir.toUpperCase() + " " + s.setup, { body: "Entry " + num(s.entry, m.digits) + " · stop " + num(s.stop, m.digits) + (s.target != null ? " · target " + num(s.target, m.digits) : ""), tag: keyOf(m, s) }); } catch (e) { /* some phones only allow notifications from an installed app */ }
+      try { new Notification(show(m.sym) + ": " + s.dir.toUpperCase() + " " + s.setup, { body: "Entry " + num(s.entry, m.digits) + " · stop " + num(s.stop, m.digits) + (s.target != null ? " · target " + num(s.target, m.digits) : ""), tag: keyOf(m, s) }); } catch (e) { /* some phones only allow notifications from an installed app */ }
     });
   }
 }
@@ -187,7 +190,7 @@ function chart(m, s) {
   g += '<line x1="' + X(s.at) + '" x2="' + X(s.at) + '" y1="' + T + '" y2="' + (H - Bm) + '" stroke="var(--mu)" stroke-width="1" opacity=".35"/>';
   const d0 = etFmt.format(new Date(view[0][0] * 1000)).split(",").slice(0, 2).join(","), d1 = etFmt.format(new Date(view[view.length - 1][0] * 1000)).split(",").slice(0, 2).join(",");
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + esc(d0) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + esc(d1) + "</text>";
-  return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="4-hour chart of ' + esc(m.sym) + ' with the trendline">' + g + "</svg>" +
+  return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="4-hour chart of ' + esc(show(m.sym)) + ' with the trendline">' + g + "</svg>" +
     '<div class="lg"><span><i style="background:var(--line)"></i>Action line (circles = taps)</span>' + (s.safety ? '<span><i style="background:var(--safe)"></i>Safety line</span>' : "") + "<span>4-hour candles</span></div></div>";
 }
 
@@ -240,7 +243,7 @@ function card(m, s) {
   const k = keyOf(m, s), st = STATUS[s.status] || [s.status, "mu"], d = m.digits, isNew = window._fresh && window._fresh.has(k);
   const now = s.status === "open" && s.nowR != null ? ' · now <b class="' + (s.nowR >= 0 ? "ok" : "bad") + '">' + (s.nowR >= 0 ? "+" : "") + s.nowR.toFixed(2) + "R</b>" : "";
   return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '">' +
-    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(m.sym) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + "</span>" +
+    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + "</span>" +
     '<span class="tag">' + esc(s.setup) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + "</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") +
     '<div class="nm">' + esc(m.name) + " · " + num(m.price, d) + "</div></div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + "</div></div>" +
@@ -275,7 +278,7 @@ function renderWatch() {
   rows.sort((a, b) => (a.w.grade === b.w.grade ? a.w.dist - b.w.dist : a.w.grade === "A+" ? -1 : 1));
   if (!rows.length) return '<div class="c empty">No valid trendlines within 1.5 ATR of price right now.</div>';
   return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">Set a price alert on these. Lines are unbroken and passed the checklist. Distance is in 4-hour ATRs.</div>' +
-    rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(m.sym) + '</span> <span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + '</span><span class="tag">' + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
+    rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + '</span><span class="tag">' + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
       '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + w.dist + " ATR away</div></div></div>" +
       '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) + "</article>").join("");
 }
@@ -305,7 +308,7 @@ function render() {
     const bad = data.markets.filter((m) => m.error);
     sub.innerHTML = "Tori Trades' 4-hour trendline strategy · updated " + esc(new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + (loading ? ' <span class="sp"></span>' : "") +
       (data.scanned ? " · scanned " + data.scanned + " stocks" : data.scanErr ? ' · <span class="warn">stock scan failed</span>' : "") +
-      (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => m.sym).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
+      (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => show(m.sym)).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
   const out = $("out");
   if (tab === "rules") out.innerHTML = renderRules();
@@ -314,7 +317,7 @@ function render() {
   const al = store.get("alerts", false);
   $("alerts").textContent = al ? "🔔 Alerts on" : "🔔 Alerts off";
   $("alerts").classList.toggle("on", al); $("alerts").setAttribute("aria-pressed", String(al));
-  $("mkList").innerHTML = symbols().map((s) => "<span>" + esc(s) + '<button data-rm="' + esc(s) + '" aria-label="Remove ' + esc(s) + '">×</button></span>').join("") +
+  $("mkList").innerHTML = symbols().map((s) => "<span>" + esc(show(s)) + '<button data-rm="' + esc(s) + '" aria-label="Remove ' + esc(show(s)) + '">×</button></span>').join("") +
     (removed.length ? '<span style="padding-right:10px"><button data-reset="1" style="color:var(--ac);font-size:12px;padding:0">Restore defaults</button></span>' : "");
 }
 
@@ -339,7 +342,8 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("cl")) { e.preventDefault(); e.target.click(); } });
 $("add").addEventListener("submit", (e) => {
   e.preventDefault();
-  const s = $("addIn").value.trim().toUpperCase();
+  let s = $("addIn").value.trim().toUpperCase();
+  if (FUT_ROOTS.includes(s)) s += "=F"; // typing MGC means the futures contract
   if (!/^[A-Z0-9^][A-Z0-9.=^-]{0,14}$/.test(s)) return;
   removed = removed.filter((x) => x !== s); if (!symbols().includes(s)) extra.push(s);
   store.set("extra", extra); store.set("removed", removed); $("addIn").value = ""; render(); load();
