@@ -33,22 +33,34 @@ function send(res, status, secs, obj) {
 
 async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
-  const found = [], failed = [];
+  const found = [], failed = [], recs = [];
   let next = 0;
   async function worker() {
     while (next < UNIVERSE.length) {
       const sym = UNIVERSE[next++];
       try {
         const m = { ...scan(...(await both(sym)), { sym }), sym };
-        if (m.error) failed.push(sym);
-        else if (m.signals.length || m.watch.length) found.push(m);
+        if (m.error) { failed.push(sym); continue; }
+        if (m.record) recs.push({ sym, ...m.record });
+        if (m.signals.length || m.watch.length) found.push(m);
       } catch (e) { failed.push(sym); }
     }
   }
   await Promise.all(Array.from({ length: POOL }, worker));
   const scanned = UNIVERSE.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
-  send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found });
+  send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs) });
+}
+
+// The track record of every scanned stock added up, plus the best and worst stocks by total R.
+function combine(recs) {
+  const r2 = (x) => Math.round(x * 100) / 100, used = recs.filter((r) => r.trades);
+  const trades = used.reduce((a, r) => a + r.trades, 0), totalR = used.reduce((a, r) => a + r.totalR, 0);
+  const by = used.map((r) => ({ sym: r.sym, trades: r.trades, totalR: r.totalR })).sort((a, b) => b.totalR - a.totalR);
+  return {
+    stocks: used.length, from: used.length ? Math.min(...used.map((r) => r.from)) : null, trades, wins: used.reduce((a, r) => a + r.wins, 0),
+    totalR: r2(totalR), avgR: trades ? r2(totalR / trades) : null, best: by.slice(0, 5), worst: by.slice(-5).reverse(),
+  };
 }
 
 module.exports = handler;

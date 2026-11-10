@@ -98,6 +98,26 @@ async function scannerTests() {
   const cl = full["CL=F"].signals.find((s) => s.tf === "1H" && s.dir === "short" && s.lineTF === "Weekly");
   ok(cl && cl.entry === 85.94 && cl.stop0 === 90.08 && cl.stop === 89.76 && cl.status === "open", "crude: 1H close below a rising Weekly line, stop trailed from 90.08 to 89.76", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
   ok(sigs.every(({ s }) => s.chart.line.t0 < s.chart.line.t1 && (!s.chart.safety || s.chart.safety.t0 < s.chart.safety.t1)), "every line carries its point A and point B times (for TradingView)");
+  // The fast, candle-by-candle lines are the same as rebuilding the chains from scratch.
+  const T = require(path.join(ROOT, "api/_trendlines.js"));
+  let mism = 0, nChk = 0;
+  [["GC", true], ["AAPL", false]].forEach(([f, isF]) => ["4H", "1H"].forEach((tf) => {
+    const hb = hourly(load("yahoo_" + f + ".json")).bars, d = hourly(load("yahoo_daily_" + f + ".json")).bars;
+    const b = tf === "4H" ? fourHour(hb, isF, NOW) : oneHour(hb, isF, NOW), S = T.setup(d, b, isF, tf);
+    for (let i = 0; i <= b.length; i += Math.max(1, Math.floor(b.length / 120))) {
+      nChk++; const c = S.chainsBefore(i);
+      ["up", "dn"].forEach((k) => { const A = T.active(c[k]), B = S.act[i][k]; if (!((!A && !B) || (A && B && A.a.x === B.a.x && A.b.x === B.b.x))) mism++; });
+    }
+  }));
+  ok(nChk > 400 && mism === 0, "fast candle-by-candle lines match rebuilding the chains (" + nChk + " candles)", mism + " mismatches");
+
+  // Track record: the same rules replayed over the 6 months.
+  const recs = good.map((m) => m.record);
+  ok(recs.every((r) => r && r.trades >= 10 && r.wins <= r.trades && Math.abs(r.avgR * r.trades - r.totalR) < 0.02 * r.trades + 0.05 && r.worstR <= r.bestR && r.maxDrawdownR <= 0), "every market has a 6-month track record that adds up");
+  ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
+  ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced"].includes(x.how))), "trades end on the safety line or when a newer callout replaces them");
+  const clr = M.find((m) => m.sym === "CL=F").record;
+  ok(clr.trades === 80 && clr.totalR === 38.8, "crude's 6 months: 80 trades, +38.8R", clr.trades + " / " + clr.totalR);
   const def = await tradesApi("/api/trades");
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
@@ -110,6 +130,10 @@ async function scannerTests() {
   return { ...api.body, markets: api.body.markets.concat(aapl.body.markets) };
 }
 
+function full_aapl_record() {
+  return require(path.join(ROOT, "api/_trendlines.js")).scan(load("yahoo_AAPL.json"), load("yahoo_daily_AAPL.json"), { sym: "AAPL", now: NOW }).record;
+}
+
 async function scanTests() {
   console.log("Stock scan");
   const U = require(path.join(ROOT, "api/scan.js")).UNIVERSE;
@@ -120,6 +144,9 @@ async function scanTests() {
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
   ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0 && m.signals.length <= 1), "scan returns only stocks with a setup, one callout each, under their own symbols");
   ok(ms < 30000, "full scan runs in under 30 seconds of work", ms + "ms");
+  const ar = full_aapl_record();
+  ok(B.record && B.record.stocks === U.length - 2 && B.record.trades === ar.trades * (U.length - 2) && Math.abs(B.record.totalR - ar.totalR * (U.length - 2)) < 0.01 && B.record.best.length === 5 && B.record.worst.length === 5,
+    "stock track record adds up every scanned stock (with best and worst 5)", JSON.stringify({ stocks: B.record.stocks, trades: B.record.trades, totalR: B.record.totalR }));
   return B;
 }
 
@@ -171,6 +198,12 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.route("**/api/scan", (r) => r.fulfill({ json: scanJson }));
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
+  const futR = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.totalR, 0);
+  const trk = (await page.locator(".trk").textContent());
+  ok(trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures track record shows the total % at 1% risk per trade", trk.slice(0, 160));
+  await page.click("[data-fold=track]");
+  ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
+  await page.click("[data-fold=track]");
   ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) === 1, "Live callouts starts as a closed bar under the get-in box");
   await page.click("[data-fold=live]");
   ok((await page.locator("[data-fold=live][aria-expanded=true]").count()) === 1 && (await page.evaluate(() => localStorage.getItem("tl:liveOpen"))) === "true", "its button opens it, and the choice is remembered");
@@ -228,6 +261,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.getAttribute("meta[name=apple-mobile-web-app-title]", "content")) === "Trade Finder", "iPhone home-screen label is Trade Finder");
   // Stocks found by the scan show up next to your own symbols.
   scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") };
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
+  const sr = scanBody.record, strk = await page.locator(".trk").textContent();
+  ok(strk.includes("Track record: stocks") && strk.includes(sr.trades + " trades") && strk.includes((sr.totalR >= 0 ? "+" : "−") + Math.abs(sr.totalR).toFixed(1) + "%"), "stocks track record shows all scanned stocks added up", strk.slice(0, 160));
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
   await page.click("[data-tab=watch]");
   ok((await page.locator(".c .sym", { hasText: "NVDA" }).count()) >= 1, "stocks from the scan appear under Stocks (on the Watch list)");

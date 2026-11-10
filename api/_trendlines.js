@@ -88,15 +88,15 @@ function fourHour(bars, isFuture, now) {
   });
   const last = out[out.length - 1];
   if (last && now < last.end) last.live = true; // still forming: never used for a signal
-  return out.map((x) => ({ t: x.t, o: x.o, h: x.h, l: x.l, c: x.c, live: !!x.live }));
+  return out.map((x) => ({ t: x.t, e: x.end, o: x.o, h: x.h, l: x.l, c: x.c, live: !!x.live }));
 }
 
 // Hourly candles as-is (stocks: regular hours only). The newest is "live" until its hour ends.
 function oneHour(bars, isFuture, now) {
   const out = bars.filter((b) => { if (isFuture) return true; const s = et(b.t), m = s.h * 60 + s.m - 570; return m >= 0 && m < 390; })
-    .map((b) => ({ t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, live: false }));
+    .map((b) => { const s = et(b.t); return { t: b.t, e: !isFuture && s.h * 60 + s.m === 930 ? b.t + 1800 : b.t + HOUR, o: b.o, h: b.h, l: b.l, c: b.c, live: false }; });
   const last = out[out.length - 1];
-  if (last) { const s = et(last.t), end = !isFuture && s.h * 60 + s.m === 930 ? last.t + 1800 : last.t + HOUR; if (now < end) last.live = true; }
+  if (last && now < last.e) last.live = true;
   return out;
 }
 
@@ -187,7 +187,36 @@ function setup(daily, bars, isFuture, tf) {
     };
     return { up: make(dUp, "l", true), dn: make(dDn, "h", false) };
   }
-  return { tf, ppd, D, x0, A, dA, bars, chainsBefore };
+  // The action lines as they stood before each candle (act[i]), built one candle at a time: the same chains
+  // chainsBefore() makes, without rebuilding them for every candle. act[bars.length] = after the last candle.
+  const act = new Array(bars.length + 1), st = { up: dUp.slice(), dn: dDn.slice() };
+  const ext = { up: dUp.length ? dUp[0].p : null, dn: dDn.length ? dDn[0].p : null }, sws = { up: iSw.lo, dn: iSw.hi };
+  const pivAt = (q, i) => (q.daily ? q.piv : sws[q.side][q.j] && q.j + PIVOT < i);
+  const activeAt = (c, i) => {
+    for (let k = c.length - 1; k >= 1; k--) {
+      const a = c[k - 1], b = c[k];
+      if (b.p !== a.p && b.x - a.x >= MIN_GAP && pivAt(a, i) && pivAt(b, i)) return lineOf(a, b);
+    }
+    return null;
+  };
+  const add = (side, q) => {
+    const up = side === "up";
+    if (ext[side] == null || (up ? q.p <= ext[side] : q.p >= ext[side])) { st[side] = [q]; ext[side] = q.p; return; } // new extreme: chain restarts
+    const c = st[side];
+    while (c.length >= 2) {
+      const o = c[c.length - 2], a = c[c.length - 1], cr = (a.x - o.x) * (q.p - o.p) - (a.p - o.p) * (q.x - o.x);
+      if (up ? cr <= 0 : cr >= 0) c.pop(); else break;
+    }
+    c.push(q);
+  };
+  for (let i = 0; i <= bars.length; i++) {
+    act[i] = { up: activeAt(st.up, i), dn: activeAt(st.dn, i) };
+    if (i < bars.length) {
+      add("up", { x: x0 + i, p: bars[i].l, t: bars[i].t, j: i, side: "up" });
+      add("dn", { x: x0 + i, p: bars[i].h, t: bars[i].t, j: i, side: "dn" });
+    }
+  }
+  return { tf, ppd, D, x0, A, dA, bars, chainsBefore, act };
 }
 
 // Taps on a line from its start up to (not including) candle `upto`: candles whose wick is within TOUCH_ATR of
@@ -234,20 +263,20 @@ function grade(S, ln, i, up) {
 function follow(S, long, from, last, stop0) {
   let stop = stop0;
   for (let i = from + 1; i <= last; i++) {
-    const ch = S.chainsBefore(i), sl = active(long ? ch.up : ch.dn);
+    const sl = long ? S.act[i].up : S.act[i].dn;
     if (sl) { const v = val(sl, S.x0 + i); stop = long ? Math.max(stop, v) : Math.min(stop, v); }
     if (long ? S.bars[i].c < stop : S.bars[i].c > stop) return { status: "closed", at: i, px: S.bars[i].c, stop };
   }
-  const ch = S.chainsBefore(last + 1), sl = active(long ? ch.up : ch.dn);
+  const sl = long ? S.act[last + 1].up : S.act[last + 1].dn;
   if (sl) { const v = val(sl, S.x0 + last + 1); stop = long ? Math.max(stop, v) : Math.min(stop, v); }
   return { status: "open", stop, safety: sl };
 }
 
-// All callouts on one entry chart in the last RECENT_DAYS trading days.
-function events(S, last) {
-  const out = [], from = Math.max(2, last - RECENT_DAYS * S.ppd + 1), b = S.bars;
-  for (let i = from; i <= last; i++) {
-    const ch = S.chainsBefore(i), up = active(ch.up), dn = active(ch.dn), x = S.x0 + i;
+// All callouts on one entry chart from candle `from` to `last`.
+function events(S, from, last) {
+  const out = [], b = S.bars;
+  for (let i = Math.max(2, from); i <= last; i++) {
+    const { up, dn } = S.act[i], x = S.x0 + i;
     // Breaks: this candle closes through the newest line; the one before hadn't.
     [[up, false], [dn, true]].forEach(([ln, long]) => {
       if (!ln) return;
@@ -271,6 +300,68 @@ function events(S, last) {
 }
 
 const r2 = (x, a) => (x == null ? null : Number(x.toFixed(a)));
+const WARMUP = 30; // candles before the replay starts (ATR and swing points need some history)
+
+// One callout from one event: grade, entry, safety line, starting stop, and how it has gone since.
+function callout(s, e, last, live, px) {
+  const b = s.bars, tf = s.tf;
+  const g = grade(s, e.action, e.at, e.kind === "bounce" ? e.long : !e.long); // rising line under lows?
+  const entry = b[e.at].c;
+  const c = { tf, setup: e.kind === "bounce" ? "bounce" : g.taps >= 3 ? "3-touch break" : "2-touch break", dir: e.long ? "long" : "short",
+    at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
+    lineTF: tfOfLine(e.action), lineFrom: e.action.a.t, action: e.action, tapX: g.tapX };
+  let sl = e.safety, from = e.at;
+  if (!sl) {
+    // Her rule: no safety line yet - wait for one to form, then enter if price is still past the action line.
+    for (let j = e.at + 1; j <= last && !sl; j++) {
+      const cand = e.long ? s.act[j].up : s.act[j].dn, still = e.long ? b[j].c > val(e.action, s.x0 + j) : b[j].c < val(e.action, s.x0 + j);
+      if (cand && still) { sl = cand; from = j; }
+    }
+    if (!sl) return { ...c, status: "no-safety", note: "No safety line yet. Wait for a clear swing " + (e.long ? "low" : "high") + " to form, then draw one." };
+    c.late = true; c.entry = px(b[from].c);
+  }
+  const ent = b[from].c, line0 = val(sl, s.x0 + from), room = e.kind === "bounce" ? BOUNCE_ROOM * s.A[from] : 0;
+  const stop0 = e.long ? line0 - room : line0 + room, risk = e.long ? ent - stop0 : stop0 - ent;
+  if (!(risk > 0)) return { ...c, status: "no-safety", note: "The safety line is on the wrong side of the entry." };
+  const out = follow(s, e.long, from, last, stop0);
+  const far = risk > FAR_ATR * s.A[from];
+  const sign = e.long ? 1 : -1;
+  return { ...c, from, stop0: px(stop0), risk: px(risk), stop: px(out.stop), safety: out.safety || sl,
+    entryT: b[from].e, exitT: out.at == null ? null : b[out.at].e, entryRaw: ent, riskRaw: risk,
+    status: far ? "too-far" : out.status, closedAt: out.at, exitPx: px(out.px), exitR: out.px == null ? null : r2((sign * (out.px - ent)) / risk, 2),
+    nowR: r2((sign * (live - ent)) / risk, 2), liveThrough: out.status === "open" && (e.long ? live < out.stop : live > out.stop),
+    note: far ? "Break closed too far from the safety line (risk over " + FAR_ATR + " ATR). Her rule: skip it." : c.late ? "Safety line formed after the break. Entry is that later close." : null };
+}
+
+// Track record: every callout you'd have taken over the window (3+ of 4 checklist rules, not skipped),
+// one position per market. A newer callout replaces the one you're in at its entry price, like the page shows;
+// otherwise a trade ends on its safety line. R = profit in multiples of the starting risk.
+function record(hist) {
+  const rank = (x) => (x.tf === "4H" ? 0 : 4) + (x.grade === "A+" ? 0 : 2) + (x.setup === "bounce" ? 1 : 0);
+  const take = hist.filter((x) => x.passed >= MIN_PASSED && (x.status === "open" || x.status === "closed"))
+    .sort((p, q) => p.entryT - q.entryT || rank(p) - rank(q));
+  const done = [];
+  let pos = null;
+  take.forEach((x) => {
+    if (pos && x.entryT === pos.entryT) return; // two charts at once: keep the first (higher-ranked) one
+    if (pos) {
+      if (pos.exitT != null && pos.exitT <= x.entryT) done.push({ ...pos, r: pos.exitR, how: "safety line" });
+      else done.push({ ...pos, r: r2(((pos.dir === "long" ? 1 : -1) * (x.entryRaw - pos.entryRaw)) / pos.riskRaw, 2), how: "replaced", exitT: x.entryT });
+    }
+    pos = x;
+  });
+  let open = null;
+  if (pos) { if (pos.exitT != null) done.push({ ...pos, r: pos.exitR, how: "safety line" }); else open = pos; }
+  const rs = done.map((x) => x.r), tot = rs.reduce((a, r) => a + r, 0);
+  let peak = 0, run = 0, dd = 0;
+  rs.forEach((r) => { run += r; peak = Math.max(peak, run); dd = Math.min(dd, run - peak); });
+  return {
+    from: take.length ? take[0].entryT : null, trades: done.length, wins: rs.filter((r) => r > 0).length,
+    totalR: r2(tot, 2), avgR: done.length ? r2(tot / done.length, 2) : null, bestR: rs.length ? Math.max(...rs) : null, worstR: rs.length ? Math.min(...rs) : null,
+    maxDrawdownR: r2(dd, 2), openR: open ? open.nowR : null,
+    recent: done.slice(-10).reverse().map((x) => ({ t: x.entryT, out: x.exitT, tf: x.tf, dir: x.dir, setup: x.setup, grade: x.grade, r: x.r, how: x.how })),
+  };
+}
 
 // hChart: Yahoo hourly bars (6 months). dChart: Yahoo daily bars (10 years).
 function scan(hChart, dChart, opts = {}) {
@@ -289,42 +380,21 @@ function scan(hChart, dChart, opts = {}) {
   const px = (x) => r2(x, tick);
   const all = [], watch = [], S = {};
 
+  const hist = []; // every callout over the whole window, for the track record
   Object.keys(sets).forEach((tf) => {
     const b = sets[tf];
     if (b.length < 30) return;
     const s = (S[tf] = setup(daily, b, isFuture, tf));
     const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
     s.last = last;
-    events(s, last).forEach((e) => {
-      const g = grade(s, e.action, e.at, e.kind === "bounce" ? e.long : !e.long); // rising line under lows?
-      const entry = b[e.at].c, x = s.x0 + e.at;
-      const c = { tf, setup: e.kind === "bounce" ? "bounce" : g.taps >= 3 ? "3-touch break" : "2-touch break", dir: e.long ? "long" : "short",
-        at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
-        lineTF: tfOfLine(e.action), lineFrom: e.action.a.t, action: e.action, tapX: g.tapX };
-      let sl = e.safety, from = e.at;
-      if (!sl) {
-        // Her rule: no safety line yet - wait for one to form, then enter if price is still past the action line.
-        for (let j = e.at + 1; j <= last && !sl; j++) {
-          const ch = s.chainsBefore(j), cand = active(e.long ? ch.up : ch.dn), still = e.long ? b[j].c > val(e.action, s.x0 + j) : b[j].c < val(e.action, s.x0 + j);
-          if (cand && still) { sl = cand; from = j; }
-        }
-        if (!sl) { all.push({ ...c, status: "no-safety", note: "No safety line yet. Wait for a clear swing " + (e.long ? "low" : "high") + " to form, then draw one." }); return; }
-        c.late = true; c.entry = px(b[from].c);
-      }
-      const ent = b[from].c, line0 = val(sl, s.x0 + from), room = e.kind === "bounce" ? BOUNCE_ROOM * s.A[from] : 0;
-      const stop0 = e.long ? line0 - room : line0 + room, risk = e.long ? ent - stop0 : stop0 - ent;
-      if (!(risk > 0)) { all.push({ ...c, status: "no-safety", note: "The safety line is on the wrong side of the entry." }); return; }
-      const out = follow(s, e.long, from, last, stop0);
-      const far = risk > FAR_ATR * s.A[from];
-      const sign = e.long ? 1 : -1;
-      all.push({ ...c, from, stop0: px(stop0), risk: px(risk), stop: px(out.stop), safety: out.safety || sl,
-        status: far ? "too-far" : out.status, closedAt: out.at, exitPx: px(out.px), exitR: out.px == null ? null : r2((sign * (out.px - ent)) / risk, 2),
-        nowR: r2((sign * (live - ent)) / risk, 2), liveThrough: out.status === "open" && (e.long ? live < out.stop : live > out.stop),
-        note: far ? "Break closed too far from the safety line (risk over " + FAR_ATR + " ATR). Her rule: skip it." : c.late ? "Safety line formed after the break. Entry is that later close." : null });
+    const recentFrom = last - RECENT_DAYS * s.ppd + 1;
+    events(s, opts.history === false ? recentFrom : WARMUP, last).forEach((e) => {
+      const c = callout(s, e, last, live, px);
+      hist.push(c);
+      if (e.at >= recentFrom) all.push(c);
     });
     // Watch list: the newest line of each chain, if price is close to it.
-    const ch = s.chainsBefore(last + 1);
-    [[active(ch.up), true], [active(ch.dn), false]].forEach(([ln, up]) => {
+    [[s.act[last + 1].up, true], [s.act[last + 1].dn, false]].forEach(([ln, up]) => {
       if (!ln) return;
       const v = val(ln, s.x0 + last + 1), d = Math.abs(live - v) / s.A[last];
       if (d > WATCH_ATR) return;
@@ -363,15 +433,15 @@ function scan(hChart, dChart, opts = {}) {
   };
   const clean = (x) => {
     const o = { ...x, chart: chartFor(x) };
-    ["action", "safety", "tapX", "from"].forEach((k) => delete o[k]);
+    ["action", "safety", "tapX", "from", "entryRaw", "riskRaw"].forEach((k) => delete o[k]);
     return o;
   };
   const b4 = sets["4H"], l4 = b4[b4.length - 1].live ? b4.length - 2 : b4.length - 1, prev = b4[Math.max(0, l4 - 6)].c;
   return {
     sym, name: meta.shortName || meta.longName || sym, kind: isFuture ? "futures" : "stocks",
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
-    dailyBars: daily.length, signals: sigs.map(clean), watch: wl.slice(0, 4),
+    dailyBars: daily.length, signals: sigs.map(clean), watch: wl.slice(0, 4), record: opts.history === false ? null : record(hist),
   };
 }
 
-module.exports = { scan, fourHour, oneHour, hourly, atr, chain, active };
+module.exports = { scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
