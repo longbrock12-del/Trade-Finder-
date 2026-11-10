@@ -30,6 +30,7 @@ const ASPECT = 1.8;       // my number: chart width / height of a normal screen,
 const TOUCH_ATR = 0.3;    // my number: a wick within 0.3 ATR of the line counts as a tap
 const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
 const BOUNCE_ROOM = 0.5;  // my number: room below a bounce line for wicks, used for the risk number
+const MIN_PASSED = 3;      // your rule: a callout's line must pass at least 3 of the 4 checklist rules
 const WATCH_ATR = 1.5;    // my number: lines within 1.5 ATR of price go on the watch list
 const RECENT_DAYS = 5;    // callouts from the last 5 trading days
 const KEEP = 150;         // candles sent for the chart
@@ -224,7 +225,8 @@ function angleOf(slope, S, last) {
 function grade(S, ln, i, up) {
   const tp = taps(S, ln, i, up), days = (S.bars[i].t - ln.a.t) / DAY, angle = angleOf(ln.slope, S, i);
   const checks = { taps: tp.length >= 3, spacing: true, angle: angle < MAX_ANGLE, history: days >= 21 };
-  return { grade: checks.taps && checks.angle && checks.history ? "A+" : "B", checks, taps: tp.length, tapX: tp, days: Math.round(days), angle: Math.round(angle) };
+  const passed = Object.values(checks).filter(Boolean).length; // out of 4
+  return { grade: passed === 4 ? "A+" : "B", passed, checks, taps: tp.length, tapX: tp, days: Math.round(days), angle: Math.round(angle) };
 }
 
 // Walk a trade forward. The stop trails along the newest line of the safety chain (never loosening) and the
@@ -297,7 +299,7 @@ function scan(hChart, dChart, opts = {}) {
       const g = grade(s, e.action, e.at, e.kind === "bounce" ? e.long : !e.long); // rising line under lows?
       const entry = b[e.at].c, x = s.x0 + e.at;
       const c = { tf, setup: e.kind === "bounce" ? "bounce" : g.taps >= 3 ? "3-touch break" : "2-touch break", dir: e.long ? "long" : "short",
-        at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
+        at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
         lineTF: tfOfLine(e.action), lineFrom: e.action.a.t, action: e.action, tapX: g.tapX };
       let sl = e.safety, from = e.at;
       if (!sl) {
@@ -327,18 +329,20 @@ function scan(hChart, dChart, opts = {}) {
       const v = val(ln, s.x0 + last + 1), d = Math.abs(live - v) / s.A[last];
       if (d > WATCH_ATR) return;
       const g = grade(s, ln, last + 1 > b.length - 1 ? b.length - 1 : last + 1, up);
-      watch.push({ tf, grade: g.grade, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln), key: ln.a.t + ":" + ln.b.t,
+      watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln), key: ln.a.t + ":" + ln.b.t,
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),
         plan: up ? tf + " close below " + px(v) + " = short break. Tag and hold = long bounce." : tf + " close above " + px(v) + " = long break. Tag and reject = short bounce." });
     });
   });
 
-  // One callout per market: the newest. Same time: 4-hour before 1-hour, A+ before B, break before bounce.
+  // Only callouts whose line passes at least 3 of the 4 checklist rules. Of those, one per market: the newest.
+  // Same time: 4-hour before 1-hour, A+ before B, break before bounce. (opts.all: every callout, for tests.)
   const rank = (x) => (x.tf === "4H" ? 0 : 4) + (x.grade === "A+" ? 0 : 2) + (x.setup === "bounce" ? 1 : 0);
   all.sort((p, q) => q.t - p.t || rank(p) - rank(q));
-  all.forEach((x) => { if (all.some((y) => y !== x && y.t === x.t && y.dir !== x.dir)) x.mixed = true; });
-  const sigs = opts.all ? all : all.slice(0, 1);
-  if (!opts.all && all.length > 1) sigs[0].replaced = all.length - 1;
+  const fit = all.filter((x) => x.passed >= MIN_PASSED);
+  fit.forEach((x) => { if (fit.some((y) => y !== x && y.t === x.t && y.dir !== x.dir)) x.mixed = true; });
+  const sigs = opts.all ? all : fit.slice(0, 1);
+  if (!opts.all && fit.length > 1) sigs[0].replaced = fit.length - 1;
   const seen = new Set(), wl = [];
   watch.sort((p, q) => (p.tf === q.tf ? p.dist - q.dist : p.tf === "4H" ? -1 : 1)).forEach((w) => { if (!seen.has(w.key)) { seen.add(w.key); wl.push(w); } });
 

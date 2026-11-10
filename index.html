@@ -51,6 +51,9 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .mk span button{border:0;background:none;color:var(--mu);font-size:15px;line-height:1;padding:0 5px}
 .rules ol{padding-left:20px;margin:6px 0}.rules li{margin:6px 0}.rules p{margin:6px 0}
 .err{border-color:var(--bad)}
+.gi{border:2px solid var(--gd);border-radius:14px;padding:12px 13px;margin-bottom:12px;background:var(--card)}
+.gi.none{border-color:var(--bd)}.gi h3{margin:0 0 4px;font-size:16px}.gi .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--bd);cursor:pointer}
+.gi .row:first-of-type{border-top:0}.gi .big{font-size:17px;font-weight:800}.gi .row small{color:var(--mu);font-size:12px}
 .op{margin-top:10px;border-top:1px solid var(--bd);padding-top:10px;cursor:default}
 .oc{background:var(--soft);border-radius:10px;padding:9px 10px;margin-top:8px;font-size:13px}
 .oc .on{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
@@ -63,7 +66,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 </style></head>
 <body><div class="w">
 <header>
-  <div><h1>Trade Finder</h1><div class="sub" id="sub">Tori Trades' 4-hour trendline strategy · loading…</div></div>
+  <div><h1>Trade Finder</h1><div class="sub" id="sub">Tori Trades' top-down trendline strategy · loading…</div></div>
   <button class="btn" id="alerts" aria-pressed="false">🔔 Alerts off</button>
 </header>
 <div class="tabs" role="tablist">
@@ -71,7 +74,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
   <button data-tab="watch" role="tab">Watch list</button>
   <button data-tab="rules" role="tab">Rules</button>
 </div>
-<div class="chips" id="kinds"><button class="on" data-k="all">All</button><button data-k="futures">Futures</button><button data-k="stocks">Stocks</button></div>
+<div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button></div>
 <main id="out"><div class="empty"><span class="sp"></span> Scanning 4-hour charts…</div></main>
 
 <section class="c" id="mine" style="margin-top:18px">
@@ -91,7 +94,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tl:" + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-let opts = {}, folds = {}, openCharts = {}, data = null, tab = "calls", kind = store.get("kind", "all"), loading = false, lastErr = null;
+let opts = {}, folds = {}, openCharts = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 // Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
@@ -112,6 +115,9 @@ const STATUS = {
 };
 const TFNAME = { "4H": "4-hour", "1H": "1-hour" };
 const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+// "Get in now": a live callout that hasn't run more than ENTER_R past its entry and isn't through its stop.
+const ENTER_R = 0.5;
+const canEnter = (s) => s.status === "open" && !s.liveThrough && s.nowR != null && s.nowR <= ENTER_R;
 const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
 
 async function load() {
@@ -136,7 +142,7 @@ async function load() {
 function callouts() {
   if (!data) return [];
   const out = [];
-  data.markets.forEach((m) => { if (!m.error && (kind === "all" || m.kind === kind)) (m.signals || []).forEach((s) => out.push({ m, s })); });
+  data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.signals || []).forEach((s) => out.push({ m, s })); });
   return out;
 }
 
@@ -254,14 +260,16 @@ function card(m, s) {
   const lineWord = s.dir === "long" ? (s.setup === "bounce" ? "rising" : "falling") : s.setup === "bounce" ? "falling" : "rising";
   return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '">' +
     '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + "</span>" +
-    '<span class="tag">' + esc(s.tf) + '</span><span class="tag">' + esc(s.setup) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + "</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") +
+    '<span class="tag">' + esc(s.tf) + '</span><span class="tag">' + esc(s.setup) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") +
     '<div class="nm">' + esc(m.name) + " · " + num(m.price, d) + "</div></div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + "</div></div>" +
     '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop now (trailing)" : "Stop") + "</small>" + num(s.stop, d) + "</div>" +
     "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
     (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" : "—") + "</div></div>" +
     (pv && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: starting risk <b>' + perC(s.risk) + "</b>" + (res != null ? " · " + (open ? "now " : "result ") + '<b class="' + (res >= 0 ? "ok" : "bad") + '">' + (res >= 0 ? "+" : "−") + perC(res * s.risk) + "</b>" : "") + " ($" + pv + " per 1.00 move)</div>" : "") +
-    '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) : "") + "</div>" +
+    (canEnter(s) ? '<div class="st ok" style="font-size:15px">▶ GET IN NOW: ' + (s.dir === "long" ? "BUY" : "SELL") + " " + esc(show(m.sym)) + " near " + num(m.price, d) + "</div>"
+      : open ? '<div class="st warn">Live, but already ' + signR(s.nowR) + " past entry. Late to get in: wait for the next callout.</div>"
+      : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) : "") + "</div>") +
     (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
     (open ? '<div class="note">Move your stop to ' + num(s.stop, d) + " and keep trailing it along the safety line. Exit when a " + TFNAME[s.tf] + " candle closes through it.</div>" : "") +
     (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
@@ -271,16 +279,28 @@ function card(m, s) {
     (openCharts[k] ? chart(m, s) : "") + optionsBlock(m, s, k) + "</article>";
 }
 
+// The box at the top of Callouts: what to get into right now, for the chosen market type.
+function getInBox(all) {
+  const name = kind === "futures" ? "futures" : "stocks", go = all.filter(({ s }) => canEnter(s));
+  if (!go.length) return '<div class="gi none"><h3>No ' + name + " entries right now</h3>" +
+    '<div class="note" style="margin:0">Nothing has triggered that passes 3 of the 4 checklist rules and is still near its entry price. Check the Watch list for lines price is close to.</div></div>';
+  return '<div class="gi"><h3 class="ok">▶ Get in now: ' + go.length + " " + name + " trade" + (go.length > 1 ? "s" : "") + "</h3>" +
+    go.map(({ m, s }) => '<div class="row" data-goto="' + esc(keyOf(m, s)) + '"><div><div class="big ' + (s.dir === "long" ? "ok" : "bad") + '">' + (s.dir === "long" ? "BUY " : "SELL ") + esc(show(m.sym)) + "</div>" +
+      "<small>" + esc(s.tf) + " · " + esc(s.setup) + " · " + s.grade + " " + s.passed + "/4 · " + ago(s.t) + "</small></div>" +
+      '<div style="text-align:right"><div><small>Entry</small> <b>' + num(s.entry, m.digits) + "</b></div><div><small>Stop</small> <b>" + num(s.stop, m.digits) + "</b></div></div></div>").join("") +
+    '<div class="note" style="margin:6px 0 0">Put your stop just past the safety line and trail it. Tap a trade for its chart.</div></div>';
+}
+
 function renderCalls() {
   const all = callouts();
-  if (!all.length) return '<div class="c empty">No breaks or bounces in the last few days on these markets. Check the Watch list for lines price is close to.</div>';
+  if (!all.length) return getInBox(all) + '<div class="c empty">No callouts in the last 5 trading days that pass 3 of the 4 checklist rules.</div>';
   const grp = { live: [], wait: [], done: [], skip: [] };
   all.forEach((x) => { const st = x.s.status; (st === "open" ? grp.live : st === "no-safety" ? grp.wait : st === "too-far" ? grp.skip : grp.done).push(x); });
   const sec = (t, list, hint) => (list.length ? "<h2>" + t + " (" + list.length + ")</h2>" + (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "");
   const fold = (id, t, list, hint) => (list.length ? '<h2><button class="btn" data-fold="' + id + '" aria-expanded="' + !!folds[id] + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' + (folds[id] ? "▾ " : "▸ ") + t + " (" + list.length + ")</button></h2>" +
     (folds[id] ? (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "") : "");
-  return (grp.live.length ? "" : '<div class="c empty">No live trades right now. Check the Watch list for lines price is close to.</div>') +
-    sec("Live callouts", grp.live, "Setups that triggered and haven't closed through their safety line yet. Newest first.") +
+  return getInBox(all) +
+    sec("Live callouts", grp.live, "Triggered and not closed through the safety line yet. Only lines passing 3 of 4 checklist rules. Newest first.") +
     sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
     fold("done", "Finished: closed on the safety line", grp.done, "Her exit: a candle closed through the safety line, with the stop trailed along it. Results are in R (multiples of the starting risk).") +
     fold("skip", "Skipped: too far from the safety line", grp.skip, "The break closed too far from the safety line, so the risk was too big to take.");
@@ -289,11 +309,11 @@ function renderCalls() {
 function renderWatch() {
   if (!data) return "";
   const rows = [];
-  data.markets.forEach((m) => { if (!m.error && (kind === "all" || m.kind === kind)) (m.watch || []).forEach((w) => rows.push({ m, w })); });
+  data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
   rows.sort((a, b) => (a.w.grade === b.w.grade ? a.w.dist - b.w.dist : a.w.grade === "A+" ? -1 : 1));
   if (!rows.length) return '<div class="c empty">No trendlines within 1.5 ATR of price right now.</div>';
   return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts. Set a price alert on these. Distance is in ATRs of that chart.</div>' +
-    rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + '</span><span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
+    rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + '/4</span><span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
       '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + w.dist + " ATR away</div></div></div>" +
       '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) + "</article>").join("");
 }
@@ -306,7 +326,7 @@ function renderRules() {
     "<li><b>Trail it:</b> move your stop along the safety line as price respects it. Exit when price closes through the safety line. There's no fixed target.</li>" +
     "<li><b>Upkeep:</b> after price breaks a line, redraw. Move point B to the new high or low so nothing pokes through. She does this daily.</li>" +
     "<li><b>Bounces</b> (from her playbook): price tags the newest line, which already has 2–3 taps, and closes back on the right side. That line is your safety line.</li>" +
-    "<li><b>Grade A+</b> (from her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. Otherwise B. Log them separately.</li></ol>" +
+    "<li><b>Grade A+</b> (from her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. Trade Finder only lists callouts whose line passes at least 3 of the 4 (B = 3 of 4). Log A+ and B trades separately.</li></ol>" +
     '<p class="note">Sources: her video "This boring trading strategy made me $526,454", her FX Replay checklist "Tori Trades Trend Line Strategy (swing trading)", and the TradeZella playbook "Tori\'s Trendline Strategy".</p></div>';
 }
 
@@ -317,7 +337,7 @@ function render() {
   const sub = $("sub");
   if (data) {
     const bad = data.markets.filter((m) => m.error);
-    sub.innerHTML = "Tori Trades' 4-hour trendline strategy · updated " + esc(new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + (loading ? ' <span class="sp"></span>' : "") +
+    sub.innerHTML = "Tori Trades' top-down trendline strategy · updated " + esc(new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + (loading ? ' <span class="sp"></span>' : "") +
       (data.scanned ? " · scanned " + data.scanned + " stocks" : data.scanErr ? ' · <span class="warn">stock scan failed</span>' : "") +
       (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => show(m.sym)).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
@@ -333,7 +353,7 @@ function render() {
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],.op,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-goto],.op,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.opt) {
     const k = t.dataset.opt, o = opts[k];
@@ -341,6 +361,7 @@ document.addEventListener("click", (e) => {
     data.markets.forEach((m) => (m.signals || []).forEach((s) => { if (keyOf(m, s) === k) loadOptions(m, s, k); }));
     return;
   }
+  if (t.dataset.goto) { openCharts[t.dataset.goto] = true; render(); const el = document.querySelector('.cl[data-k="' + CSS.escape(t.dataset.goto) + '"]'); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
   if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; render(); }
   else if (t.dataset.tab) { tab = t.dataset.tab; render(); }
   else if (t.dataset.k && t.closest("#kinds")) { kind = t.dataset.k; store.set("kind", kind); render(); }

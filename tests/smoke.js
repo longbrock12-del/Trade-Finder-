@@ -72,8 +72,11 @@ async function scannerTests() {
     full[m.sym].signals.forEach((s) => sigs.push({ m: full[m.sym], s })); m.watch.forEach((w) => watch.push({ m, w }));
   });
   ok(good.every((m) => m.signals.length <= 1), "only one callout per market", good.map((m) => m.sym + ":" + m.signals.length).join(" "));
-  ok(good.filter((m) => m.signals.length).every((m) => m.signals[0].t === Math.max(...full[m.sym].signals.map((x) => x.t))), "the callout shown is the newest one");
-  ok(good.filter((m) => m.signals.length).every((m) => (m.signals[0].replaced || 0) === full[m.sym].signals.length - 1), "it says how many older callouts it replaced");
+  const fit = (sym) => full[sym].signals.filter((x) => x.passed >= 3);
+  ok(good.every((m) => m.signals.every((x) => x.passed >= 3)), "only callouts passing at least 3 of the 4 checklist rules are listed");
+  ok(sigs.some(({ s }) => s.passed < 3) && sigs.every(({ s }) => s.passed === Object.values(s.checks).filter(Boolean).length && (s.grade === "A+") === (s.passed === 4)), "weaker lines are found but filtered out; A+ = 4/4, B = 3/4");
+  ok(good.filter((m) => m.signals.length).every((m) => m.signals[0].t === Math.max(...fit(m.sym).map((x) => x.t))), "the callout shown is the newest one that passes");
+  ok(good.filter((m) => m.signals.length).every((m) => (m.signals[0].replaced || 0) === fit(m.sym).length - 1), "it says how many older passing callouts it replaced");
   ok(sigs.length >= 20, "saved data produces callouts", sigs.length);
   ok(["4H", "1H"].every((tf) => sigs.some((x) => x.s.tf === tf)) && sigs.some((x) => x.s.setup === "3-touch break") && sigs.some((x) => x.s.setup === "bounce"), "finds breaks and bounces on both 4-hour and 1-hour charts");
   ok(sigs.every(({ s }) => s.t >= NOW - 9 * 86400), "callouts are from the last 5 trading days");
@@ -168,7 +171,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
   await openFolds(page);
+  ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
+  ok((await page.locator(".gi h3").textContent()).includes("futures"), "Callouts starts with a futures get-in box", await page.locator(".gi h3").textContent());
   ok((await page.locator(".cl").count()) >= 4, "callout cards render", await page.locator(".cl").count());
+  ok((await page.locator(".cl .tag", { hasText: /^(A\+ · 4|B · 3)\/4$/ }).count()) === (await page.locator(".cl").count()), "every card shows how many checklist rules it passes (3/4 or 4/4)");
   ok((await page.locator(".cl .tag", { hasText: /^(4H|1H)$/ }).count()) === (await page.locator(".cl").count()), "every card says which chart it's on (4H or 1H)");
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
@@ -181,8 +187,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
-  await page.click("[data-tab=watch]");
-  ok((await page.locator("text=ATR away").count()) >= 1, "watch list shows lines near price");
+  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
+  ok((await page.locator("text=ATR away").count()) >= 1, "watch list shows lines near price (AAPL, under Stocks)");
+  await page.click("[data-k=futures]");
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");
   ok((await page.locator("text=How the computer does it").count()) === 0 && (await page.locator("#out >> text=Option contracts").count()) === 0, "rules tab has no computer or options sections");
@@ -201,13 +208,14 @@ async function pageTests(browser, body, optBody, scanBody) {
   // Stocks found by the scan show up next to your own symbols.
   scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") };
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
-  await openFolds(page);
-  ok((await page.locator(".cl .sym", { hasText: "NVDA" }).count()) >= 1, "stocks from the scan appear under Stocks");
+  await page.click("[data-tab=watch]");
+  ok((await page.locator(".c .sym", { hasText: "NVDA" }).count()) >= 1, "stocks from the scan appear under Stocks (on the Watch list)");
+  await page.click("[data-tab=calls]");
   scanJson = { at: Date.now(), scanned: 108, failed: [], markets: [] };
 
   // A live stock callout gets an options button; the panel loads contracts and doesn't flip the chart.
   const b2 = JSON.parse(JSON.stringify(body)), stock = b2.markets.find((m) => m.sym === "TEST");
-  const sig = stock.signals.find((x) => x.stop0 != null) || stock.signals[0]; sig.status = "open";
+  const sig = stock.signals.find((x) => x.stop0 != null) || stock.signals[0]; sig.status = "open"; sig.nowR = 0.1; sig.liveThrough = false;
   if (sig.stop0 == null) Object.assign(sig, { stop0: sig.entry * 0.97, stop: sig.entry * 0.97, risk: sig.entry * 0.03, dir: "long" });
   await page.unroute("**/api/trades**");
   await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
@@ -216,6 +224,17 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.setViewportSize({ width: 390, height: 900 });
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-k=stocks]");
+  ok((await page.locator(".gi .row").count()) === 1 && /^(BUY|SELL) TEST$/.test((await page.locator(".gi .big").textContent()).trim()), "stocks get-in box shows the live trade: BUY/SELL TEST", await page.locator(".gi").textContent());
+  ok((await page.locator(".cl .st", { hasText: "GET IN NOW" }).count()) === 1, "the card itself says GET IN NOW");
+  await page.locator(".gi .row").click(); await page.waitForTimeout(200);
+  ok((await page.locator(".cl svg").count()) === 1, "tapping the get-in row opens that trade's chart");
+  await page.locator(".cl .sym").first().click(); // close the chart again
+  const late = JSON.parse(JSON.stringify(b2)); late.markets.find((m) => m.sym === "TEST").signals[0].nowR = 1.4;
+  await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: late }));
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  ok((await page.locator(".gi.none").count()) === 1 && (await page.locator(".cl .st", { hasText: "Late to get in" }).count()) === 1, "a trade already 1.4R past entry isn't a get-in: marked late");
+  await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   ok((await page.locator("[data-opt]").count()) === 1, "live stock callout has an options button");
   ok((await page.locator(".cl", { hasText: "GC=F" }).locator("[data-opt]").count()) === 0, "futures callouts have no options button");
   await page.click("[data-opt]"); await page.waitForSelector(".oc", { timeout: 5000 }).catch(() => {});
