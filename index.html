@@ -52,8 +52,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .rules ol{padding-left:20px;margin:6px 0}.rules li{margin:6px 0}.rules p{margin:6px 0}
 .err{border-color:var(--bad)}
 .gi{border:2px solid var(--gd);border-radius:14px;padding:12px 13px;margin-bottom:12px;background:var(--card)}
-.gi.none{border-color:var(--bd)}.gi h3{margin:0 0 4px;font-size:16px}.gi.row{display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px}
-.gi .big{font-size:17px;font-weight:800}.gi.row small{color:var(--mu);font-size:12px}
+.gi.none{border-color:var(--bd)}.gi h3{margin:0 0 4px;font-size:16px}
 .tv{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}.tv a.btn{text-decoration:none;color:var(--ac)}
 .tvp{width:100%;margin-top:4px;cursor:default}.tvp textarea{width:100%;font:11px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--bd);border-radius:8px;background:var(--soft);color:var(--tx);padding:6px;margin:6px 0}
 .trk .big{font-size:24px;font-weight:800;margin:2px 0}.trr{display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:6px 0 2px;border-top:1px solid var(--bd);font-size:14px}
@@ -314,10 +313,7 @@ function getInBox(all) {
   const name = kind === "futures" ? "futures" : "stocks", go = all.filter(({ s }) => canEnter(s));
   if (!go.length) return '<div class="gi none"><h3>No ' + name + " entries right now</h3>" +
     '<div class="note" style="margin:0">Nothing has triggered that passes 3 of the 4 checklist rules and is still near its entry price. Check the Watch list for lines price is close to.</div></div>';
-  // Each trade you can get into now is its own box; tap it for the card, chart and (stocks) best contract.
-  return go.map(({ m, s }) => '<div class="gi row" data-goto="' + esc(keyOf(m, s)) + '"><div><div class="big ' + (s.dir === "long" ? "ok" : "bad") + '">' + action(m, s) + " " + esc(show(m.sym)) + "</div>" +
-      "<small>" + esc(s.tf) + " · " + esc(s.setup) + " · " + s.grade + " " + s.passed + "/4 · " + ago(s.t) + "</small></div>" +
-      '<div style="text-align:right"><div><small>Entry</small> <b>' + num(s.entry, m.digits) + "</b></div><div><small>Stop</small> <b>" + num(s.stop, m.digits) + "</b></div></div></div>").join("");
+  return ""; // trades you can get into are the cards under Live callouts
 }
 
 // Track record: the same rules replayed over the last 6 months of prices (see record() in api/_trendlines.js).
@@ -356,8 +352,8 @@ function renderCalls() {
   const sec = (t, list, hint) => (list.length ? "<h2>" + t + " (" + list.length + ")</h2>" + (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "");
   const fold = (id, t, list, hint) => (list.length ? '<h2><button class="btn" data-fold="' + id + '" aria-expanded="' + !!folds[id] + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' + (folds[id] ? "▾ " : "▸ ") + t + " (" + list.length + ")</button></h2>" +
     (folds[id] ? (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "") : "");
-  // Live callouts: a small bar you open and close; remembered per browser (closed to start - the box above has the entries).
-  if (folds.live == null) folds.live = store.get("liveOpen", false);
+  // Live callouts: a bar you open and close; remembered per browser (open to start).
+  if (folds.live == null) folds.live = store.get("liveOpen", true);
   return trackBox() + getInBox(all) +
     fold("live", "Live callouts", grp.live, "Trades you can still get into: fired in the last day and still near the entry price. Only lines passing 3 of 4 checklist rules.") +
     sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
@@ -422,7 +418,7 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-goto],[data-tvl],[data-copy],.op,.tvp,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],.op,.tvp,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.tvl) { tvOpen[t.dataset.tvl] = !tvOpen[t.dataset.tvl]; render(); return; }
   if (t.dataset.copy) {
@@ -439,7 +435,6 @@ document.addEventListener("click", (e) => {
     data.markets.forEach((m) => (m.signals || []).forEach((s) => { if (keyOf(m, s) === k) loadOptions(m, s, k); }));
     return;
   }
-  if (t.dataset.goto) { openCharts[t.dataset.goto] = true; folds.live = true; render(); const el = document.querySelector('.cl[data-k="' + CSS.escape(t.dataset.goto) + '"]'); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
   if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; if (t.dataset.fold === "live") store.set("liveOpen", folds.live); render(); }
   else if (t.dataset.tab) { tab = t.dataset.tab; render(); }
   else if (t.dataset.k && t.closest("#kinds")) { kind = t.dataset.k; store.set("kind", kind); render(); }
