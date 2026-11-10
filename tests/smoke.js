@@ -171,6 +171,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.route("**/api/scan", (r) => r.fulfill({ json: scanJson }));
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
+  ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) === 1, "Live callouts starts as a closed bar under the get-in box");
+  await page.click("[data-fold=live]");
+  ok((await page.locator("[data-fold=live][aria-expanded=true]").count()) === 1 && (await page.evaluate(() => localStorage.getItem("tl:liveOpen"))) === "true", "its button opens it, and the choice is remembered");
   await openFolds(page);
   ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
   ok((await page.locator(".gi h3").textContent()).includes("futures"), "Callouts starts with a futures get-in box", await page.locator(".gi h3").textContent());

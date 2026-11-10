@@ -327,8 +327,10 @@ function renderCalls() {
   const sec = (t, list, hint) => (list.length ? "<h2>" + t + " (" + list.length + ")</h2>" + (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "");
   const fold = (id, t, list, hint) => (list.length ? '<h2><button class="btn" data-fold="' + id + '" aria-expanded="' + !!folds[id] + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' + (folds[id] ? "▾ " : "▸ ") + t + " (" + list.length + ")</button></h2>" +
     (folds[id] ? (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "") : "");
+  // Live callouts: a small bar you open and close; remembered per browser (closed to start - the box above has the entries).
+  if (folds.live == null) folds.live = store.get("liveOpen", false);
   return getInBox(all) +
-    sec("Live callouts", grp.live, "Triggered and not closed through the safety line yet. Only lines passing 3 of 4 checklist rules. Newest first.") +
+    fold("live", "Live callouts", grp.live, "Triggered and not closed through the safety line yet. Only lines passing 3 of 4 checklist rules. Newest first.") +
     sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
     fold("done", "Finished: closed on the safety line", grp.done, "Her exit: a candle closed through the safety line, with the stop trailed along it. Results are in R (multiples of the starting risk).") +
     fold("skip", "Skipped: too far from the safety line", grp.skip, "The break closed too far from the safety line, so the risk was too big to take.");
@@ -409,7 +411,7 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (t.dataset.goto) { openCharts[t.dataset.goto] = true; render(); const el = document.querySelector('.cl[data-k="' + CSS.escape(t.dataset.goto) + '"]'); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
-  if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; render(); }
+  if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; if (t.dataset.fold === "live") store.set("liveOpen", folds.live); render(); }
   else if (t.dataset.tab) { tab = t.dataset.tab; render(); }
   else if (t.dataset.k && t.closest("#kinds")) { kind = t.dataset.k; store.set("kind", kind); render(); }
   else if (t.dataset.rm) { const s = t.dataset.rm; extra = extra.filter((x) => x !== s); if (!removed.includes(s) && (DEF.futures.includes(s) || DEF.stocks.includes(s))) removed.push(s); store.set("extra", extra); store.set("removed", removed); render(); load(); }
