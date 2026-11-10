@@ -141,7 +141,8 @@ function tvBlock(m, lines, tf, key) {
 const ENTER_R = 0.5;
 // What to do: futures are bought or sold directly; stocks are traded with options (long = call, short = put).
 const action = (m, s) => (m.kind === "stocks" ? (s.dir === "long" ? "BUY CALL" : "BUY PUT") : s.dir === "long" ? "BUY" : "SELL");
-const canEnter = (s) => s.status === "open" && !s.liveThrough && s.nowR != null && s.nowR <= ENTER_R;
+const ENTER_AGE = 24 * 3600; // a callout older than a day is too old to get into
+const canEnter = (s) => s.status === "open" && !s.liveThrough && s.nowR != null && s.nowR <= ENTER_R && Date.now() / 1000 - s.t <= ENTER_AGE;
 const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
 
 async function load() {
@@ -342,7 +343,11 @@ function trackBox() {
       '<div class="note" style="margin:0 0 4px"><b class="ok">Best:</b> ' + list(r.best) + '</div><div class="note" style="margin:0 0 6px"><b class="bad">Worst:</b> ' + list(r.worst) + "</div>";
   }
   const open = !!folds.track;
-  return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
+  // Overall: every callout on both futures and stocks, added up.
+  const fAll = data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades), sR = data.stockRecord && data.stockRecord.trades ? data.stockRecord : null;
+  const ov = fAll.reduce((a, m) => ({ trades: a.trades + m.record.trades, wins: a.wins + m.record.wins, totalR: a.totalR + m.record.totalR }), sR ? { trades: sR.trades, wins: sR.wins, totalR: sR.totalR } : { trades: 0, wins: 0, totalR: 0 });
+  const overall = ov.trades ? '<div class="trr ov" style="border-top:0;padding-top:0"><span>Overall, futures + stocks' + (sR ? "" : " (stock scan not loaded)") + ": " + ov.trades + " trades · " + Math.round((100 * ov.wins) / ov.trades) + '% wins</span><b class="' + (ov.totalR >= 0 ? "ok" : "bad") + '">' + pct(ov.totalR) + "</b></div>" : "";
+  return '<div class="c trk">' + overall + '<div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div></div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
     (open ? '<div style="margin-top:8px">' + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout passing 3 of 4 checklist rules is taken, except ones skipped as too far from the safety line or with no safety line. One position per market: a newer callout replaces the one you\'re in, otherwise you exit when a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
@@ -351,14 +356,15 @@ function renderCalls() {
   const all = callouts();
   if (!all.length) return getInBox(all) + trackBox() + '<div class="c empty">No callouts in the last 5 trading days that pass 3 of the 4 checklist rules.</div>';
   const grp = { live: [], wait: [], done: [], skip: [] };
-  all.forEach((x) => { const st = x.s.status; (st === "open" ? grp.live : st === "no-safety" ? grp.wait : st === "too-far" ? grp.skip : grp.done).push(x); });
+  // Live trades you can no longer get into (over a day old, or already past 0.5R) aren't listed. They still count in the track record.
+  all.forEach((x) => { const st = x.s.status; if (st === "open" && !canEnter(x.s)) return; (st === "open" ? grp.live : st === "no-safety" ? grp.wait : st === "too-far" ? grp.skip : grp.done).push(x); });
   const sec = (t, list, hint) => (list.length ? "<h2>" + t + " (" + list.length + ")</h2>" + (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "");
   const fold = (id, t, list, hint) => (list.length ? '<h2><button class="btn" data-fold="' + id + '" aria-expanded="' + !!folds[id] + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' + (folds[id] ? "▾ " : "▸ ") + t + " (" + list.length + ")</button></h2>" +
     (folds[id] ? (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "") : "");
   // Live callouts: a small bar you open and close; remembered per browser (closed to start - the box above has the entries).
   if (folds.live == null) folds.live = store.get("liveOpen", false);
   return getInBox(all) + trackBox() +
-    fold("live", "Live callouts", grp.live, "Triggered and not closed through the safety line yet. Only lines passing 3 of 4 checklist rules. Newest first.") +
+    fold("live", "Live callouts", grp.live, "Trades you can still get into: fired in the last day and still near the entry price. Only lines passing 3 of 4 checklist rules.") +
     sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
     fold("done", "Finished: closed on the safety line", grp.done, "Her exit: a candle closed through the safety line, with the stop trailed along it. Results are in R (multiples of the starting risk).") +
     fold("skip", "Skipped: too far from the safety line", grp.skip, "The break closed too far from the safety line, so the risk was too big to take.");
@@ -438,7 +444,7 @@ document.addEventListener("click", (e) => {
     data.markets.forEach((m) => (m.signals || []).forEach((s) => { if (keyOf(m, s) === k) loadOptions(m, s, k); }));
     return;
   }
-  if (t.dataset.goto) { openCharts[t.dataset.goto] = true; render(); const el = document.querySelector('.cl[data-k="' + CSS.escape(t.dataset.goto) + '"]'); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+  if (t.dataset.goto) { openCharts[t.dataset.goto] = true; folds.live = true; render(); const el = document.querySelector('.cl[data-k="' + CSS.escape(t.dataset.goto) + '"]'); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
   if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; if (t.dataset.fold === "live") store.set("liveOpen", folds.live); render(); }
   else if (t.dataset.tab) { tab = t.dataset.tab; render(); }
   else if (t.dataset.k && t.closest("#kinds")) { kind = t.dataset.k; store.set("kind", kind); render(); }

@@ -196,13 +196,14 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
   let scanJson = { at: Date.now(), scanned: 108, failed: ["NIO", "PDD"], markets: [] };
   await page.route("**/api/scan", (r) => r.fulfill({ json: scanJson }));
+  await page.clock.setFixedTime(NOW * 1000); // the browser's "now" = when the saved data was taken
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
   const futR = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.totalR, 0);
   const trk = (await page.locator(".trk").textContent());
-  ok(trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures track record shows the total % at 1% risk per trade", trk.slice(0, 160));
+  ok(trk.includes("Overall, futures + stocks (stock scan not loaded)") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures track record shows the total % at 1% risk per trade", trk.slice(0, 160));
   await page.click("[data-fold=track]");
-  ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
+  ok((await page.locator(".trk .trr:not(.ov)").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
   await page.click("[data-fold=track]");
   ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) === 1, "Live callouts starts as a closed bar under the get-in box");
   await page.click("[data-fold=live]");
@@ -263,6 +264,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") };
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   const sr = scanBody.record, strk = await page.locator(".trk").textContent();
+  const ovR = futR + sr.totalR, ovTxt = "Overall, futures + stocks: " + (sr.trades + body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.trades, 0)) + " trades";
+  ok(strk.includes(ovTxt) && strk.includes((ovR >= 0 ? "+" : "−") + Math.abs(ovR).toFixed(1) + "%"), "overall ROI adds futures and stocks together", strk.slice(0, 200));
   ok(strk.includes("Track record: stocks") && strk.includes(sr.trades + " trades") && strk.includes((sr.totalR >= 0 ? "+" : "−") + Math.abs(sr.totalR).toFixed(1) + "%"), "stocks track record shows all scanned stocks added up", strk.slice(0, 160));
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
   await page.click("[data-tab=watch]");
@@ -272,7 +275,7 @@ async function pageTests(browser, body, optBody, scanBody) {
 
   // A live stock callout gets an options button; the panel loads contracts and doesn't flip the chart.
   const b2 = JSON.parse(JSON.stringify(body)), stock = b2.markets.find((m) => m.sym === "TEST");
-  const sig = stock.signals.find((x) => x.stop0 != null) || stock.signals[0]; sig.status = "open"; sig.nowR = 0.1; sig.liveThrough = false;
+  const sig = stock.signals.find((x) => x.stop0 != null) || stock.signals[0]; sig.status = "open"; sig.nowR = 0.1; sig.liveThrough = false; sig.t = NOW - 3600; // fired an hour ago
   if (sig.stop0 == null) Object.assign(sig, { stop0: sig.entry * 0.97, stop: sig.entry * 0.97, risk: sig.entry * 0.03, dir: "long" });
   await page.unroute("**/api/trades**");
   await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
@@ -283,15 +286,21 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-k=stocks]");
   ok((await page.locator(".gi .row").count()) === 1 && /^BUY (CALL|PUT) TEST$/.test((await page.locator(".gi .big").textContent()).trim()), "stocks get-in box says BUY CALL or BUY PUT", await page.locator(".gi").textContent());
   ok((await page.locator(".cl .st", { hasText: /GET IN NOW: BUY (CALL|PUT) TEST \(stock near/ }).count()) === 1, "the card itself says GET IN NOW: BUY CALL/PUT");
+  if (await page.locator("[data-fold=live][aria-expanded=true]").count()) await page.click("[data-fold=live]"); // close the bar first
   await page.locator(".gi .row").click(); await page.waitForTimeout(200);
-  ok((await page.locator(".cl svg").count()) === 1, "tapping the get-in row opens that trade's chart");
+  ok((await page.locator(".cl svg").count()) === 1, "tapping the get-in row opens that trade's chart, even with the Live bar closed");
   await page.locator(".cl .sym").first().click(); // close the chart again
   const late = JSON.parse(JSON.stringify(b2)); late.markets.find((m) => m.sym === "TEST").signals[0].nowR = 1.4;
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: late }));
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
-  ok((await page.locator(".gi.none").count()) === 1 && (await page.locator(".cl .st", { hasText: "Late to get in" }).count()) === 1, "a trade already 1.4R past entry isn't a get-in: marked late");
+  ok((await page.locator(".gi.none").count()) === 1 && (await page.locator(".cl .sym", { hasText: /^TEST$/ }).count()) === 0, "a live trade already 1.4R past entry is no longer listed");
+  const old2 = JSON.parse(JSON.stringify(b2)); Object.assign(old2.markets.find((m) => m.sym === "TEST").signals[0], { t: NOW - 2 * 86400 });
+  await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: old2 }));
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  ok((await page.locator(".gi.none").count()) === 1 && (await page.locator(".cl .sym", { hasText: /^TEST$/ }).count()) === 0, "a live trade from 2 days ago is no longer listed (still counted in the track record)");
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await openFolds(page);
   ok((await page.locator("[data-opt]").count()) === 1, "live stock callout has an options button");
   ok((await page.locator(".cl", { hasText: "GC=F" }).locator("[data-opt]").count()) === 0, "futures callouts have no options button");
   await page.click("[data-opt]"); await page.waitForSelector(".oc", { timeout: 5000 }).catch(() => {});
