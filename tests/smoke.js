@@ -307,6 +307,19 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const order = await page.locator("#out article.c").evaluateAll((els) => els.map((e) => (e.textContent.includes("A+ in 4 days") ? "soon" : /A\+ · 4\/4/.test(e.textContent) ? "A+" : "B")));
   ok(order.slice(0, 3).join() === "A+,soon,B" && (await page.locator("#out .tag", { hasText: "A+ in 4 days" }).count()) === 1, "watch list: A+ first, then \"A+ in 4 days\", then other B lines", order.join());
+  // Stocks watch list: top 5, then a button for the rest. Futures: no button.
+  const many = JSON.parse(JSON.stringify(body)), amz = many.markets.find((m) => m.sym === "AMZN");
+  amz.watch = Array.from({ length: 8 }, (_, k) => ({ ...amz.watch[0], key: "k" + k, dist: 0.1 * (k + 1) }));
+  await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: many }));
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
+  ok((await page.locator("#out article.c").count()) === 5 && (await page.locator("[data-wall]").textContent()) === "Show all 8", "stocks watch list shows the top 5 with a \"Show all 8\" button");
+  await page.click("[data-wall]");
+  ok((await page.locator("#out article.c").count()) === 8 && (await page.locator("[data-wall]").textContent()).startsWith("Show only the top 5"), "Show all opens the rest, and the button shrinks it back");
+  await page.click("[data-wall]");
+  ok((await page.locator("#out article.c").count()) === 5, "back to 5");
+  await page.click("[data-k=futures]");
+  ok((await page.locator("[data-wall]").count()) === 0, "futures watch list has no show-all button");
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");

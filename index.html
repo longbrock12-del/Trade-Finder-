@@ -463,6 +463,7 @@ function soonAplus(w) {
   return left >= 1 && left <= 7 ? left : null;
 }
 
+const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
 function renderWatch() {
   if (!data) return "";
   const rows = [];
@@ -471,11 +472,14 @@ function renderWatch() {
   const tier = (w) => (w.grade === "A+" ? 0 : soonAplus(w) != null ? 1 : 2);
   rows.sort((a, b) => tier(a.w) - tier(b.w) || a.w.dist - b.w.dist);
   if (!rows.length) return '<div class="c empty">No callout-quality trendlines within 1.5 ATR of price right now.</div>';
+  // Stocks: show the top 5, with a button to see the rest. Futures always show everything.
+  const cut = kind === "stocks" && rows.length > WATCH_SHOW, all = !!store.get("watchAll", false), shown = cut && !all ? rows.slice(0, WATCH_SHOW) : rows;
+  const more = cut ? '<button class="btn" data-wall="1" aria-expanded="' + all + '" style="width:100%;margin-bottom:12px">' + (all ? "Show only the top " + WATCH_SHOW : "Show all " + rows.length) + "</button>" : "";
   return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts, only if it passes the same rules as callouts (3 of 4, always 3+ taps, 1+ week old), so a break or bounce here would be a real callout. Set a price alert on these. Distance is shown in price and in ATRs (typical candle sizes on that chart).</div>' +
-    rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + '/4</span>' + (soonAplus(w) != null ? '<span class="tag ap">A+ in ' + soonAplus(w) + " day" + (soonAplus(w) > 1 ? "s" : "") + "</span>" : "") + '<span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
+    shown.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + '/4</span>' + (soonAplus(w) != null ? '<span class="tag ap">A+ in ' + soonAplus(w) + " day" + (soonAplus(w) > 1 ? "s" : "") + "</span>" : "") + '<span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
       '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + away(m, w) + "</div></div></div>" +
       '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) +
-      (w.line ? tvBlock(m, [{ ...w.line, name: (w.line.up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key) : "") + "</article>").join("");
+      (w.line ? tvBlock(m, [{ ...w.line, name: (w.line.up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key) : "") + "</article>").join("") + more;
 }
 
 function renderRules() {
@@ -520,8 +524,9 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],.op,.tvp,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],.op,.tvp,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
+  if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;
   if (t.dataset.tvl) { tvOpen[t.dataset.tvl] = !tvOpen[t.dataset.tvl]; render(); return; }
