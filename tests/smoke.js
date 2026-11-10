@@ -201,9 +201,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
   const futR = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.totalR, 0);
   const trk = (await page.locator(".trk").textContent());
-  ok(trk.includes("Overall, futures + stocks (stock scan not loaded)") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures track record shows the total % at 1% risk per trade", trk.slice(0, 160));
+  ok(!trk.includes("Overall") && !trk.includes("stocks") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures tab shows only the futures ROI: total % at 1% risk per trade", trk.slice(0, 160));
   await page.click("[data-fold=track]");
-  ok((await page.locator(".trk .trr:not(.ov)").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
+  ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
   await page.click("[data-fold=track]");
   ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) === 1, "Live callouts starts as a closed bar under the get-in box");
   await page.click("[data-fold=live]");
@@ -264,8 +264,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") };
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   const sr = scanBody.record, strk = await page.locator(".trk").textContent();
-  const ovR = futR + sr.totalR, ovTxt = "Overall, futures + stocks: " + (sr.trades + body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.trades, 0)) + " trades";
-  ok(strk.includes(ovTxt) && strk.includes((ovR >= 0 ? "+" : "−") + Math.abs(ovR).toFixed(1) + "%"), "overall ROI adds futures and stocks together", strk.slice(0, 200));
+  ok(!strk.includes("Overall") && !strk.includes("futures"), "stocks tab shows only the stocks ROI");
   ok(strk.includes("Track record: stocks") && strk.includes(sr.trades + " trades") && strk.includes((sr.totalR >= 0 ? "+" : "−") + Math.abs(sr.totalR).toFixed(1) + "%"), "stocks track record shows all scanned stocks added up", strk.slice(0, 160));
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
   await page.click("[data-tab=watch]");
