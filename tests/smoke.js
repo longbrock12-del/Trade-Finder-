@@ -206,12 +206,12 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-fold=track]");
   ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
   await page.click("[data-fold=track]");
-  ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) === 1, "Live callouts starts as a closed bar under the boxes");
+  ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.locator(".gi").count()) >= 1, "Live callouts starts as a closed bar under the boxes");
   await page.click("[data-fold=live]");
   ok((await page.locator("[data-fold=live][aria-expanded=true]").count()) === 1 && (await page.evaluate(() => localStorage.getItem("tl:liveOpen"))) === "true", "its button opens it, and the choice is remembered");
   await openFolds(page);
   ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
-  ok((await page.locator(".gi h3").textContent()).includes("futures"), "Callouts starts with a futures get-in box", await page.locator(".gi h3").textContent());
+  ok((await page.locator(".gi.row").count()) >= 1 && !/Get in now:/.test(await page.locator("#out").textContent()), "trades to get into show as boxes, with no \"Get in now\" heading");
   const fut = (await page.locator(".gi .big").allTextContents()).map((x) => x.trim());
   ok(fut.length >= 1 && fut.every((x) => /^(BUY|SELL) [A-Z]+$/.test(x)), "futures get-ins say BUY or SELL (no calls or puts)", fut.join(","));
   ok((await page.locator(".cl").count()) >= 4, "callout cards render", await page.locator(".cl").count());
@@ -284,10 +284,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.setViewportSize({ width: 390, height: 900 });
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-k=stocks]");
-  ok((await page.locator(".gi .row").count()) === 1 && /^BUY (CALL|PUT) TEST$/.test((await page.locator(".gi .big").textContent()).trim()), "stocks get-in box says BUY CALL or BUY PUT", await page.locator(".gi").textContent());
+  ok((await page.locator(".gi.row").count()) === 1 && /^BUY (CALL|PUT) TEST$/.test((await page.locator(".gi .big").textContent()).trim()), "stocks get-in box says BUY CALL or BUY PUT", await page.locator(".gi").textContent());
   ok((await page.locator(".cl .st", { hasText: /GET IN NOW: BUY (CALL|PUT) TEST \(stock near/ }).count()) === 1, "the card itself says GET IN NOW: BUY CALL/PUT");
   if (await page.locator("[data-fold=live][aria-expanded=true]").count()) await page.click("[data-fold=live]"); // close the bar first
-  await page.locator(".gi .row").click(); await page.waitForTimeout(200);
+  await page.locator(".gi.row").click(); await page.waitForTimeout(200);
   ok((await page.locator(".cl svg").count()) === 1, "tapping the get-in row opens that trade's chart, even with the Live bar closed");
   await page.locator(".cl .sym").first().click(); // close the chart again
   const late = JSON.parse(JSON.stringify(b2)); late.markets.find((m) => m.sym === "TEST").signals[0].nowR = 1.4;
