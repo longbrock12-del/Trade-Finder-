@@ -458,6 +458,7 @@ function scan(hChart, dChart, opts = {}) {
       const v = val(ln, s.x0 + last + 1), d = Math.abs(live - v) / s.A[last];
       if (d > WATCH_ATR) return;
       const g = grade(s, ln, last + 1 > b.length - 1 ? b.length - 1 : last + 1, up);
+      if (!qualifies(g)) return; // only lines that would make a real callout if price breaks or bounces off them
       watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln, tf), key: ln.a.t + ":" + ln.b.t,
         line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up },
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),

@@ -1,6 +1,6 @@
 // Trade Finder - smoke test. Run before pushing:  node tests/smoke.js
 // Uses saved Yahoo data in tests/fixtures, so no live prices are fetched:
-//   yahoo_<X>.json        6 months of hourly bars to Nov 9 2026 (gold, crude, Dow, platinum futures; AAPL;
+//   yahoo_<X>.json        6 months of hourly bars to Nov 9 2026 (gold, crude, Dow, platinum futures; AAPL; AMZN to Nov 10;
 //                         "TEST" = the Dow cut to stock hours)
 //   yahoo_daily_<X>.json  10 years of daily bars for the same markets (TEST uses the Dow's)
 //   cboe_AAPL.json        a Cboe AAPL options chain, trimmed to 120 days and strikes within 20%
@@ -15,7 +15,8 @@ let failed = 0;
 const ok = (cond, what, extra) => { console.log((cond ? "  pass  " : "  FAIL  ") + what + (extra != null && !cond ? "  (" + extra + ")" : "")); if (!cond) failed++; };
 const fx = (f) => path.join(FX, f);
 const load = (f) => JSON.parse(fs.readFileSync(fx(f)));
-const NOW = 1794264531; // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
+const NOW = 1794264531;
+const AMZN_NOW = 1794340000; // the AMZN data was saved later (Nov 10 2026) // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
 
 const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", AAPL: "AAPL", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
 // A fake Yahoo: hourly or daily saved bars for the symbols above, 404 for anything else.
@@ -94,8 +95,8 @@ async function scannerTests() {
   ok(priced.every(({ s }) => (s.dir === "long" ? s.stop < s.line : s.stop > s.line)), "the stop order sits past the safety line, never on it (her rule)");
   ok(closed.filter(({ s }) => s.exitHow === "stop order").length >= 1, "some trades are stopped out by the stop order (it's a real stop, not just a line)");
   ok(sigs.every(({ s }) => ["open", "closed", "too-far", "no-safety"].includes(s.status) && s.target === undefined), "every callout has a known status and no fixed target");
-  const aw = scan(load("yahoo_AAPL.json"), load("yahoo_daily_AAPL.json"), { sym: "AAPL", now: NOW }).watch;
-  ok(aw.length >= 1 && watch.concat(aw.map((w) => ({ w }))).every(({ w }) => w.dist <= 1.5 && w.lineNow > 0 && ["4H", "1H"].includes(w.tf)), "watch list holds the newest lines near price (AAPL has one)");
+  const aw = scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: AMZN_NOW }).watch;
+  ok(aw.length >= 1 && watch.concat(aw.map((w) => ({ w }))).every(({ w }) => w.dist <= 1.5 && w.lineNow > 0 && ["4H", "1H"].includes(w.tf) && w.passed >= 3 && w.checks.taps && w.days >= 7), "watch list only holds callout-quality lines near price (AMZN has one): 3 of 4, 3+ taps, 1+ week; newest lines near price (AAPL has one)");
   ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.t === s.t && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
   const gc = full["GC=F"].signals.find((s) => s.tf === "4H" && s.setup === "3-touch break" && s.dir === "long" && s.grade === "A+");
   ok(gc && gc.lineTF === "Daily" && gc.entry === 4057 && gc.status === "too-far", "gold: 4H close above a falling Daily line on Nov 4 (A+), skipped as too far from the safety line", gc && [gc.lineTF, gc.entry, gc.status].join("/"));
@@ -152,20 +153,20 @@ async function scannerTests() {
   const t0 = Date.now(), a1 = scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }), ms = Date.now() - t0;
   ok(JSON.stringify(a1.signals) === JSON.stringify(scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }).signals), "same data gives the same callouts");
   ok(ms < 3000, "one futures market scans in under 3 seconds", ms + "ms");
-  // The page test also gets AAPL, a real stock with a line near price.
-  const aapl = await tradesApi("/api/trades?s=AAPL");
-  return { ...api.body, markets: api.body.markets.concat(aapl.body.markets) };
+  // The page test also gets AMZN, a real stock with a callout-quality line near price.
+  const amzn = { ...scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: AMZN_NOW }), sym: "AMZN" };
+  return { ...api.body, markets: api.body.markets.concat([amzn]) };
 }
 
 function full_aapl_record() {
-  return require(path.join(ROOT, "api/_trendlines.js")).scan(load("yahoo_AAPL.json"), load("yahoo_daily_AAPL.json"), { sym: "AAPL", now: NOW }).record;
+  return require(path.join(ROOT, "api/_trendlines.js")).scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: AMZN_NOW }).record;
 }
 
 async function scanTests() {
   console.log("Stock scan");
   const U = require(path.join(ROOT, "api/scan.js")).UNIVERSE;
-  // Every stock gets AAPL's saved charts except two that fail, like a delisted ticker would.
-  const t0 = Date.now(), r = await call("api/scan.js", "/api/scan", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AAPL"))), ms = Date.now() - t0;
+  // Every stock gets AMZN's saved charts except two that fail, like a delisted ticker would.
+  const t0 = Date.now(), r = await call("api/scan.js", "/api/scan", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AMZN")), AMZN_NOW * 1000), ms = Date.now() - t0;
   const B = r.body;
   ok(U.length >= 100 && new Set(U).size === U.length, "scan list has 100+ different stocks and ETFs", U.length);
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
@@ -291,10 +292,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl svg[aria-label*='3 months'], .cl svg[aria-label*='2 years']").count()) === 0 && (await page.locator(".cl svg").count()) === 1, "and back to the callout's chart; switching doesn't close it");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
-  const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().locator(".mu", { hasText: "away" }).first().textContent();
-  const aw0 = body.markets.find((m) => m.sym === "AAPL"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
-  ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AAPL)", awayTxt + " vs " + wantAway);
-  const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first();
+  const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".mu", { hasText: "away" }).first().textContent();
+  const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
+  ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
+  const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first();
   await wl.locator("[data-tvl]").click();
   ok((await page.locator(".tvp textarea").inputValue()).includes("line.new("), "watch list lines can be copied for TradingView");
   await page.click("[data-k=futures]");
@@ -317,7 +318,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(man.name === "Trade Finder" && man.display === "standalone" && man.icons, "home-screen app: named Trade Finder, opens without the address bar, icons load", JSON.stringify(man));
   ok((await page.getAttribute("meta[name=apple-mobile-web-app-title]", "content")) === "Trade Finder", "iPhone home-screen label is Trade Finder");
   // Stocks found by the scan show up next to your own symbols.
-  scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") };
+  scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") }; // NVDA here carries AMZN's charts
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   const sr = scanBody.record, strk = await page.locator(".trk").textContent();
   ok(!strk.includes("Overall") && !strk.includes("futures"), "stocks tab shows only the stocks ROI");

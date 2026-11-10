@@ -460,8 +460,8 @@ function renderWatch() {
   const rows = [];
   data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
   rows.sort((a, b) => (a.w.grade === b.w.grade ? a.w.dist - b.w.dist : a.w.grade === "A+" ? -1 : 1));
-  if (!rows.length) return '<div class="c empty">No trendlines within 1.5 ATR of price right now.</div>';
-  return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts. Set a price alert on these. Distance is shown in price and in ATRs (typical candle sizes on that chart).</div>' +
+  if (!rows.length) return '<div class="c empty">No callout-quality trendlines within 1.5 ATR of price right now.</div>';
+  return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts, only if it passes the same rules as callouts (3 of 4, always 3+ taps, 1+ week old), so a break or bounce here would be a real callout. Set a price alert on these. Distance is shown in price and in ATRs (typical candle sizes on that chart).</div>' +
     rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + '/4</span><span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
       '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + away(m, w) + "</div></div></div>" +
       '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) +
