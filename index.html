@@ -76,7 +76,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 
 <section class="c" id="mine" style="margin-top:18px">
   <div class="st">Your markets</div>
-  <div class="note" style="margin-top:2px">Her four futures (platinum, crude, gold, Dow) plus a few big names are scanned by default. Add any Yahoo symbol: stocks like <b>AMD</b>, futures like <b>HG=F</b>.</div>
+  <div class="note" style="margin-top:2px">Futures: <b>Micro Gold (MGC)</b> and <b>Micro Crude (MCL)</b>. Stocks: about 110 of the biggest, most-traded stocks and ETFs are scanned automatically every 15 minutes, and only ones with a setup show up. Add any other symbol here, like <b>AMD</b> or <b>SOUN</b>.</div>
   <form class="bar" id="add"><input id="addIn" placeholder="Add symbol, e.g. AMD or HG=F" maxlength="15" autocomplete="off" aria-label="Add symbol"><button class="btn">Add</button></form>
   <div class="mk" id="mkList"></div>
 </section>
@@ -85,7 +85,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 </div>
 <script>
 "use strict";
-const DEF = { futures: ["PL=F", "CL=F", "GC=F", "YM=F", "ES=F", "NQ=F", "SI=F"], stocks: ["SPY", "QQQ", "AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "META"] };
+const DEF = { futures: ["MGC=F", "MCL=F"], stocks: [] }; // stocks: the server scans ~110 big names (api/scan.js)
 const REFRESH = 5 * 60 * 1000;
 const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -112,10 +112,16 @@ async function load() {
   if (loading) return;
   loading = true; render();
   try {
-    const r = await fetch("/api/trades?s=" + encodeURIComponent(symbols().join(",")), { cache: "no-store" });
-    const j = await r.json();
-    if (!j.markets) throw new Error(j.error || "no data");
-    data = j; lastErr = null;
+    // Your futures and added symbols, plus the server's stock scan, side by side.
+    const mine = symbols();
+    const [a, b] = await Promise.all([
+      mine.length ? fetch("/api/trades?s=" + encodeURIComponent(mine.join(",")), { cache: "no-store" }).then((r) => r.json()) : Promise.resolve({ markets: [], at: Date.now() }),
+      fetch("/api/scan").then((r) => r.json()).catch(() => ({ error: "scan failed" })),
+    ]);
+    if (!a.markets && !b.markets) throw new Error(a.error || b.error || "no data");
+    const have = new Set((a.markets || []).map((m) => m.sym));
+    data = { at: a.at || b.at, markets: (a.markets || []).concat((b.markets || []).filter((m) => !have.has(m.sym))), scanned: b.scanned, scanErr: !b.markets };
+    lastErr = null;
     notifyNew();
   } catch (e) { lastErr = e.message || "load failed"; }
   loading = false; render();
@@ -239,6 +245,7 @@ function card(m, s) {
     '<div class="nm">' + esc(m.name) + " · " + num(m.price, d) + "</div></div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + "</div></div>" +
     '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>Stop</small>" + num(s.stop, d) + "</div><div><small>Target</small>" + num(s.target, d) + "</div><div><small>Reward : risk</small>" + (s.rr != null ? s.rr.toFixed(1) + " : 1" : "—") + "</div></div>" +
+    (m.pointValue && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: risk <b>$' + num(s.risk * m.pointValue, 0) + "</b>" + (s.target != null ? " · reward <b>$" + num(Math.abs(s.target - s.entry) * m.pointValue, 0) + "</b>" : "") + " ($" + m.pointValue + " per 1.00 move)</div>" : "") +
     '<div class="st ' + st[1] + '">' + st[0] + now + "</div>" +
     (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
@@ -297,6 +304,7 @@ function render() {
   if (data) {
     const bad = data.markets.filter((m) => m.error);
     sub.innerHTML = "Tori Trades' 4-hour trendline strategy · updated " + esc(new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + (loading ? ' <span class="sp"></span>' : "") +
+      (data.scanned ? " · scanned " + data.scanned + " stocks" : data.scanErr ? ' · <span class="warn">stock scan failed</span>' : "") +
       (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => m.sym).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
   const out = $("out");

@@ -23,7 +23,9 @@ const TOUCH_ATR = 0.3;    // my number: a wick within 0.3 ATR of the line counts
 const POKE_ATR = 0.5;     // my number: a wick may stab past the line by this much before the line is ruined
 const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
 const BOUNCE_ROOM = 0.5;  // my number: bounce stop sits 0.5 ATR past the line ("give it room for wicks")
-const RECENT = 30;        // breaks in the last 30 candles are listed (about 5 trading days of futures)
+const RECENT = { futures: 30, stocks: 10 }; // breaks from the last ~5 trading days are listed (6 futures / 2 stock candles a day)
+// Dollars per 1.00 move for one contract, so callouts can show risk and reward per contract.
+const POINT_VALUE = { "MGC=F": 10, "MCL=F": 100, "GC=F": 100, "CL=F": 1000 };
 
 const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" });
 function et(ts) {
@@ -216,7 +218,7 @@ const r2 = (x, a) => (x == null ? null : Number(x.toFixed(a)));
 function scan(chart, opts = {}) {
   const now = opts.now || Date.now() / 1000;
   const { meta, bars: hb } = hourly(chart);
-  const isFuture = (meta.instrumentType || "").toUpperCase() === "FUTURE" || /=F$/.test(meta.symbol || "");
+  const isFuture = (meta.instrumentType || "").toUpperCase() === "FUTURE" || /=F$/.test(opts.sym || meta.symbol || "");
   const b = fourHour(hb, isFuture, now);
   if (b.length < 60) return { sym: meta.symbol, error: "not enough price history" };
   const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
@@ -233,7 +235,7 @@ function scan(chart, opts = {}) {
       const base = { grade: g.grade, checks: g.checks, taps: ln.taps.length, days: Math.round(ln.days), angle: Math.round(ln.angle), line: { i0: ln.i0, p0: ln.p0, slope: ln.slope }, tapIdx: ln.taps };
 
       if (ln.brk >= 0) {
-        if (ln.brk < last - RECENT) return;
+        if (ln.brk < last - RECENT[isFuture ? "futures" : "stocks"]) return;
         const long = res, brk = ln.brk;
         const sig = { ...base, setup: ln.taps.length >= 3 ? "3-touch break" : "2-touch break", dir: long ? "long" : "short", at: brk, t: b[brk].t, entry: px(b[brk].c) };
         let s = safety(b, long, brk), from = brk, late = false;
@@ -299,7 +301,8 @@ function scan(chart, opts = {}) {
   };
   const prev = b[Math.max(0, last - 6)].c;
   return {
-    sym: meta.symbol, name: meta.shortName || meta.longName || meta.symbol, kind: isFuture ? "futures" : "stocks",
+    sym: opts.sym || meta.symbol, name: meta.shortName || meta.longName || meta.symbol, kind: isFuture ? "futures" : "stocks",
+    pointValue: POINT_VALUE[opts.sym || meta.symbol] || null,
     price: px(hb[hb.length - 1].c), chg: r2(((b[last].c - prev) / prev) * 100, 2), atr: px(A[last]),
     barTime: b[last].t, lastIdx: last - off, digits: tick,
     bars: b.slice(off).map((x) => [x.t, px(x.o), px(x.h), px(x.l), px(x.c)]),

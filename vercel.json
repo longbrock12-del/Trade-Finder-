@@ -1,3 +1,6 @@
 {
-  "framework": null
+  "framework": null,
+  "functions": {
+    "api/scan.js": { "maxDuration": 60 }
+  }
 }

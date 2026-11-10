@@ -13,7 +13,7 @@ let failed = 0;
 const ok = (cond, what, extra) => { console.log((cond ? "  pass  " : "  FAIL  ") + what + (extra != null && !cond ? "  (" + extra + ")" : "")); if (!cond) failed++; };
 const fx = (f) => path.join(FX, f);
 
-const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST" };
+const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
 async function tradesApi(url) {
   const saved = global.fetch;
   global.fetch = async (u) => {
@@ -37,13 +37,13 @@ async function scannerTests() {
   const stk = fourHour(hourly(JSON.parse(fs.readFileSync(fx("yahoo_TEST.json")))).bars, false, 2e9);
   ok(stk.length > 200 && stk.every((b) => ["09:30", "13:30"].includes(etH(b.t))), "stock 4H candles start 9:30 and 1:30", stk.length + " " + etH(stk[0].t));
 
-  const api = await tradesApi("/api/trades?s=PL=F,CL=F,GC=F,YM=F,TEST,ZZZ,bad%20sym");
+  const api = await tradesApi("/api/trades?s=PL=F,CL=F,GC=F,YM=F,TEST,ZZZ,bad%20sym,MGC=F");
   const M = api.body.markets;
-  ok(api.status === 200 && M.length === 6, "API scans each valid symbol and drops junk ones", M.map((m) => m.sym).join(","));
+  ok(api.status === 200 && M.length === 7, "API scans each valid symbol and drops junk ones", M.map((m) => m.sym).join(","));
   ok(M.find((m) => m.sym === "ZZZ").error === "unknown symbol", "unknown symbol comes back as an error, not a crash");
   const good = M.filter((m) => !m.error), sigs = [], watch = [];
   good.forEach((m) => { m.signals.forEach((s) => sigs.push({ m, s })); m.watch.forEach((w) => watch.push({ m, w })); });
-  ok(good.length === 5 && good.every((m) => m.bars.length >= 240 && m.price > 0 && m.atr > 0), "every market has 4H candles, a price and an ATR");
+  ok(good.length === 6 && good.every((m) => m.bars.length >= 240 && m.price > 0 && m.atr > 0), "every market has 4H candles, a price and an ATR");
   ok(sigs.length >= 10, "saved data produces callouts", sigs.length);
   ok(sigs.some((x) => x.s.setup === "3-touch break") && sigs.some((x) => x.s.setup === "bounce"), "finds both break and bounce setups");
   ok(sigs.every(({ s }) => s.angle < 45 && s.days >= 7 && s.taps >= 2), "every callout line is under 45 degrees, 1+ week old, 2+ taps");
@@ -60,9 +60,34 @@ async function scannerTests() {
   ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.at === s.at && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
   const gc = good.find((m) => m.sym === "GC=F").signals.find((s) => s.setup === "3-touch break" && s.status === "open");
   ok(gc && gc.dir === "long" && gc.entry === 4037.3 && gc.stop === 3928.9 && gc.target === 4259, "gold 3-touch long break: entry, safety-line stop and 2R target", gc && [gc.entry, gc.stop, gc.target].join("/"));
+  const def = await tradesApi("/api/trades");
+  ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
+  ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
+  ok(M.find((m) => m.sym === "MGC=F").signals.length === M.find((m) => m.sym === "GC=F").signals.length, "Micro Gold callouts match gold's chart");
   const cl = JSON.parse(fs.readFileSync(fx("yahoo_CL.json")));
   ok(JSON.stringify(scan(cl, { now: 2e9 }).signals) === JSON.stringify(scan(cl, { now: 2e9 }).signals), "same data gives the same callouts");
   return api.body;
+}
+
+async function scanTests() {
+  console.log("Stock scan");
+  const handler = require(path.join(ROOT, "api/scan.js")), U = handler.UNIVERSE, saved = global.fetch, realNow = Date.now;
+  const run = () => new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; handler({ method: "GET", url: "/api/scan" }, res); });
+  const test = fs.readFileSync(fx("yahoo_TEST.json"), "utf8");
+  let calls = 0;
+  // Every stock gets the same saved chart except a few that fail, like a delisted ticker would.
+  global.fetch = async (u) => { calls++; const s = decodeURIComponent(String(u)).match(/chart\/([^?]+)/)[1];
+    return ["NIO", "PDD"].includes(s) ? { ok: false, status: 404 } : { ok: true, status: 200, json: async () => JSON.parse(test) }; };
+  Date.now = () => 1794264531000;
+  const t0 = realNow(); const r = await run(); const ms = realNow() - t0;
+  global.fetch = saved; Date.now = realNow;
+  const B = r.body;
+  ok(U.length >= 100 && new Set(U).size === U.length, "scan list has 100+ different stocks and ETFs", U.length);
+  ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
+  ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0), "scan returns only stocks with a setup, under their own symbols");
+  ok(B.markets.every((m) => m.signals.every((s) => s.at >= m.lastIdx - 10)), "stock callouts are from the last ~5 trading days");
+  ok(ms < 20000, "full scan runs in under 20 seconds of work", ms + "ms");
+  return B;
 }
 
 const OPT_NOW = Date.UTC(2026, 10, 10, 1); // when the saved AAPL chain was taken
@@ -98,16 +123,26 @@ async function optionsTests() {
   return a.body;
 }
 
-async function pageTests(browser, body, optBody) {
+// Opens every collapsed list (Finished, Skipped) on the Callouts tab.
+async function openFolds(page) {
+  for (const b of await page.locator("[data-fold][aria-expanded=false]").all()) await b.click();
+}
+
+async function pageTests(browser, body, optBody, scanBody) {
   console.log("Page");
   const page = await browser.newPage({ viewport: { width: 390, height: 900 } }), errors = [], asked = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
+  let scanJson = { at: Date.now(), scanned: 108, failed: ["NIO", "PDD"], markets: [] };
+  await page.route("**/api/scan", (r) => r.fulfill({ json: scanJson }));
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForSelector(".cl", { timeout: 8000 }).catch(() => {});
   ok((await page.locator("h2", { hasText: "Live callouts" }).count()) === 1, "page shows a Live callouts section");
   ok((await page.locator(".cl").count()) >= 3, "callout cards render", await page.locator(".cl").count());
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
+  ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
+  ok(asked.length && asked[0].includes("s=MGC=F,MCL=F"), "page asks for Micro Gold and Micro Crude", asked[0]);
+  ok(/Per micro contract: risk \$[\d,]+ · reward \$[\d,]+ \(\$10 per 1\.00 move\)/.test(await page.locator(".cl", { hasText: "MGC=F" }).first().textContent()), "Micro Gold callout shows risk and reward per contract");
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its 4H chart");
   await page.click("[data-tab=watch]");
@@ -115,8 +150,8 @@ async function pageTests(browser, body, optBody) {
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=safety line").count()) >= 1, "rules tab explains the checklist");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
-  await page.click("[data-fold=done]");
-  ok((await page.locator(".cl .sym", { hasText: "TEST" }).count()) >= 1 && (await page.locator(".cl .sym", { hasText: "GC=F" }).count()) === 0, "Stocks filter hides futures; finished list opens");
+  await openFolds(page);
+  ok((await page.locator(".cl .sym", { hasText: "TEST" }).count()) >= 1 && (await page.locator(".cl .sym", { hasText: "GC=F" }).count()) === 0, "Stocks filter hides futures; collapsed lists open");
   await page.fill("#addIn", "amd"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
   ok(asked.some((u) => u.includes("AMD")), "adding a symbol rescans with it");
   await page.setViewportSize({ width: 360, height: 800 });
@@ -124,6 +159,13 @@ async function pageTests(browser, body, optBody) {
   const man = await page.evaluate(async () => { const r = await fetch("/manifest.json"); const j = await r.json(); const ic = await Promise.all(j.icons.map((i) => fetch(i.src).then((x) => x.ok))); return { name: j.name, display: j.display, icons: ic.every(Boolean) }; });
   ok(man.name === "Trade Finder" && man.display === "standalone" && man.icons, "home-screen app: named Trade Finder, opens without the address bar, icons load", JSON.stringify(man));
   ok((await page.getAttribute("meta[name=apple-mobile-web-app-title]", "content")) === "Trade Finder", "iPhone home-screen label is Trade Finder");
+  // Stocks found by the scan show up next to your own symbols.
+  scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") };
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
+  await openFolds(page);
+  ok((await page.locator(".cl .sym", { hasText: "NVDA" }).count()) >= 1, "stocks from the scan appear under Stocks");
+  scanJson = { at: Date.now(), scanned: 108, failed: [], markets: [] };
+
   // A live stock callout gets an options button; the panel loads contracts and doesn't flip the chart.
   const b2 = JSON.parse(JSON.stringify(body)), stock = b2.markets.find((m) => m.sym === "TEST");
   const sig = stock.signals.find((x) => x.stop != null); sig.status = "open";
@@ -132,7 +174,7 @@ async function pageTests(browser, body, optBody) {
   let optAsk = "";
   await page.route("**/api/options**", (r) => { optAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: optBody }); });
   await page.setViewportSize({ width: 390, height: 900 });
-  await page.reload(); await page.waitForSelector(".cl");
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-k=stocks]");
   ok((await page.locator("[data-opt]").count()) === 1, "live stock callout has an options button");
   ok((await page.locator(".cl", { hasText: "GC=F" }).locator("[data-opt]").count()) === 0, "futures callouts have no options button");
@@ -152,12 +194,14 @@ async function pageTests(browser, body, optBody) {
 (async () => {
   let body;
   try { body = await scannerTests(); } catch (e) { ok(false, "scanner tests crashed", e.message); }
+  let scanBody;
+  try { scanBody = await scanTests(); } catch (e) { ok(false, "scan tests crashed", e.message); }
   let optBody;
   try { optBody = await optionsTests(); } catch (e) { ok(false, "options tests crashed", e.message); }
   const server = spawn(process.execPath, ["server.js"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT) }, stdio: "ignore" });
   await new Promise((r) => setTimeout(r, 1000));
   const browser = await chromium.launch();
-  try { if (body && optBody) await pageTests(browser, body, optBody); } catch (e) { ok(false, "page tests crashed", e.message); }
+  try { if (body && optBody && scanBody) await pageTests(browser, body, optBody, scanBody); } catch (e) { ok(false, "page tests crashed", e.message); }
   await browser.close(); server.kill();
   console.log(failed ? "\n" + failed + " check(s) FAILED" : "\nAll checks passed");
   process.exit(failed ? 1 : 0);

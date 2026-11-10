@@ -1,10 +1,9 @@
-// Trade Finder - GET /api/trades?s=GC=F,CL=F,SPY
+// Trade Finder - GET /api/trades?s=MGC=F,MCL=F,AMD   (no s: the two micro futures)
 // Pulls 6 months of hourly bars per symbol from Yahoo Finance, builds 4-hour candles and runs the
 // Tori Trades trendline scanner (api/_trendlines.js). Cached 5 minutes at Vercel's edge.
 const { scan } = require("./_trendlines.js");
 
-const FUTURES = ["PL=F", "CL=F", "GC=F", "YM=F", "ES=F", "NQ=F", "SI=F"]; // her four first: platinum, crude, gold, Dow
-const STOCKS = ["SPY", "QQQ", "AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "META"];
+const FUTURES = ["MGC=F", "MCL=F"]; // Micro Gold and Micro Crude only. Stocks come from api/scan.js.
 const MAX = 24;
 const SYM = /^[A-Z0-9^][A-Z0-9.=^-]{0,14}$/;
 
@@ -34,11 +33,10 @@ async function chart(sym) {
 async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
   const q = new URL(req.url, "http://x").searchParams.get("s");
-  const list = q ? [...new Set(q.toUpperCase().split(",").map((x) => x.trim()).filter((x) => SYM.test(x)))].slice(0, MAX) : FUTURES.concat(STOCKS);
+  const list = q ? [...new Set(q.toUpperCase().split(",").map((x) => x.trim()).filter((x) => SYM.test(x)))].slice(0, MAX) : FUTURES;
   const markets = await Promise.all(list.map(async (sym) => {
     try {
-      const out = scan(await chart(sym));
-      return out.sym ? out : { ...out, sym };
+      return { ...scan(await chart(sym), { sym }), sym };
     } catch (e) { return { sym, error: e.message || "failed" }; }
   }));
   const okCount = markets.filter((m) => !m.error).length;
@@ -46,4 +44,5 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports.DEFAULTS = { FUTURES, STOCKS };
+module.exports.DEFAULTS = { FUTURES };
+module.exports.chart = chart;
