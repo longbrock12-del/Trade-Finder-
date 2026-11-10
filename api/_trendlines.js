@@ -330,6 +330,7 @@ function scan(hChart, dChart, opts = {}) {
       if (d > WATCH_ATR) return;
       const g = grade(s, ln, last + 1 > b.length - 1 ? b.length - 1 : last + 1, up);
       watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln), key: ln.a.t + ":" + ln.b.t,
+        line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up },
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),
         plan: up ? tf + " close below " + px(v) + " = short break. Tag and hold = long bounce." : tf + " close above " + px(v) + " = long break. Tag and reject = short bounce." });
     });
@@ -349,7 +350,8 @@ function scan(hChart, dChart, opts = {}) {
   // Chart data for each callout: the last KEEP candles of its chart, lines in that window's candle numbers.
   const chartFor = (x) => {
     const s = S[x.tf], b = s.bars, end = s.last + (b[b.length - 1].live ? 1 : 0), off = Math.max(0, end + 1 - KEEP), base = s.x0 + off;
-    const loc = (ln) => ln && { i0: ln.a.x - base, p0: ln.a.p, slope: ln.slope, i1: ln.b.x - base, p1: ln.b.p };
+    // t0/t1: the times of point A and point B, so the line can be redrawn on TradingView.
+    const loc = (ln) => ln && { i0: ln.a.x - base, p0: ln.a.p, slope: ln.slope, i1: ln.b.x - base, p1: ln.b.p, t0: ln.a.t, t1: ln.b.t };
     const ch = s.chainsBefore(s.last + 1);
     const edges = (c, up) => c.slice(1).map((q, k) => ({ up, ...loc(lineOf(c[k], q)) })).filter((e) => e.i1 >= -KEEP);
     return {

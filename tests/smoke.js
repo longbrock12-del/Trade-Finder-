@@ -97,6 +97,7 @@ async function scannerTests() {
   ok(gc && gc.lineTF === "Daily" && gc.entry === 4057 && gc.status === "too-far", "gold: 4H close above a falling Daily line on Nov 4 (A+), skipped as too far from the safety line", gc && [gc.lineTF, gc.entry, gc.status].join("/"));
   const cl = full["CL=F"].signals.find((s) => s.tf === "1H" && s.dir === "short" && s.lineTF === "Weekly");
   ok(cl && cl.entry === 85.94 && cl.stop0 === 90.08 && cl.stop === 89.76 && cl.status === "open", "crude: 1H close below a rising Weekly line, stop trailed from 90.08 to 89.76", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
+  ok(sigs.every(({ s }) => s.chart.line.t0 < s.chart.line.t1 && (!s.chart.safety || s.chart.safety.t0 < s.chart.safety.t1)), "every line carries its point A and point B times (for TradingView)");
   const def = await tradesApi("/api/trades");
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
@@ -186,11 +187,32 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));
   ok(!/=F/.test(await page.textContent("#mkList")), "your-markets list shows MGC, MCL without =F");
   ok(/Per micro contract: starting risk \$[\d,]+.*\(\$10 per 1\.00 move\)/.test(await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent()), "Micro Gold callout shows risk per contract");
+  // TradingView: a link on every card to the same market and chart, and the lines as points and a Pine Script.
+  const cards = page.locator(".cl"), nCards = await cards.count();
+  let linksOk = true;
+  for (let i = 0; i < nCards; i++) {
+    const href = await cards.nth(i).locator("a.btn").getAttribute("href"), tf = await cards.nth(i).locator(".tag", { hasText: /^(4H|1H)$/ }).textContent();
+    if (!/^https:\/\/www\.tradingview\.com\/chart\/\?symbol=(COMEX|NYMEX|CBOT_MINI)%3A[A-Z]+1!&interval=(240|60)$/.test(href) || !href.endsWith(tf === "1H" ? "=60" : "=240")) linksOk = false;
+  }
+  ok(nCards >= 4 && linksOk, "every futures card links to TradingView with the right contract (e.g. COMEX:MGC1!) and timeframe");
+  const mgc = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
+  ok((await mgc.locator("a.btn").getAttribute("href")).includes("symbol=COMEX%3AMGC1!"), "Micro Gold opens as COMEX:MGC1!");
+  await mgc.locator("[data-tvl]").click();
+  const pine = await page.locator(".tvp textarea").first().inputValue(), mgcSig = body.markets.find((m) => m.sym === "MGC=F").signals[0];
+  ok(pine.startsWith("//@version=5") && pine.includes("line.new(" + mgcSig.chart.line.t0 * 1000 + ",") && pine.includes("extend=extend.right") && (await page.locator(".tvp .note", { hasText: "Action line" }).count()) === 1,
+    "lines panel lists point A/B and a Pine Script with the exact action line", pine.slice(0, 200));
+  ok((await page.locator(".cl svg").count()) === 0, "opening the lines panel doesn't open the chart");
+  await mgc.locator("[data-tvl]").click();
+  ok((await page.locator(".tvp").count()) === 0, "lines panel closes again");
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   ok((await page.locator("text=ATR away").count()) >= 1, "watch list shows lines near price (AAPL, under Stocks)");
+  const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first();
+  ok(/symbol=AAPL&interval=(240|60)$/.test(await wl.locator("a.btn").getAttribute("href")), "watch list cards link to TradingView too (AAPL)");
+  await wl.locator("[data-tvl]").click();
+  ok((await page.locator(".tvp textarea").inputValue()).includes("line.new("), "watch list lines can be copied for TradingView");
   await page.click("[data-k=futures]");
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");

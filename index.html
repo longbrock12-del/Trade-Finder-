@@ -54,6 +54,8 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .gi{border:2px solid var(--gd);border-radius:14px;padding:12px 13px;margin-bottom:12px;background:var(--card)}
 .gi.none{border-color:var(--bd)}.gi h3{margin:0 0 4px;font-size:16px}.gi .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--bd);cursor:pointer}
 .gi .row:first-of-type{border-top:0}.gi .big{font-size:17px;font-weight:800}.gi .row small{color:var(--mu);font-size:12px}
+.tv{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}.tv a.btn{text-decoration:none;color:var(--ac)}
+.tvp{width:100%;margin-top:4px;cursor:default}.tvp textarea{width:100%;font:11px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--bd);border-radius:8px;background:var(--soft);color:var(--tx);padding:6px;margin:6px 0}
 .op{margin-top:10px;border-top:1px solid var(--bd);padding-top:10px;cursor:default}
 .oc{background:var(--soft);border-radius:10px;padding:9px 10px;margin-top:8px;font-size:13px}
 .oc .on{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
@@ -94,7 +96,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tl:" + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-let opts = {}, folds = {}, openCharts = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
+let opts = {}, folds = {}, openCharts = {}, tvOpen = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 // Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
@@ -115,6 +117,33 @@ const STATUS = {
 };
 const TFNAME = { "4H": "4-hour", "1H": "1-hour" };
 const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+// TradingView: link to the same market and chart, and her lines as a Pine Script to paste into the Pine Editor.
+const TV_EX = { MGC: "COMEX", GC: "COMEX", SI: "COMEX", SIL: "COMEX", HG: "COMEX", MCL: "NYMEX", CL: "NYMEX", NG: "NYMEX", PL: "NYMEX",
+  ES: "CME_MINI", MES: "CME_MINI", NQ: "CME_MINI", MNQ: "CME_MINI", RTY: "CME_MINI", M2K: "CME_MINI", YM: "CBOT_MINI", MYM: "CBOT_MINI",
+  ZB: "CBOT", ZN: "CBOT", ZC: "CBOT", ZS: "CBOT", ZW: "CBOT" };
+function tvSymbol(sym) {
+  const m = /^(.+)=F$/.exec(sym);
+  if (!m) return sym; // stocks: TradingView finds the exchange
+  return (TV_EX[m[1]] ? TV_EX[m[1]] + ":" : "") + m[1] + "1!"; // 1! = front-month contract, like Yahoo's =F
+}
+const tvUrl = (sym, tf) => "https://www.tradingview.com/chart/?symbol=" + encodeURIComponent(tvSymbol(sym)) + "&interval=" + (tf === "1H" ? "60" : "240");
+// lines: [{ t0, p0, t1, p1, up, dashed, name }] (t in seconds). Rays to the right, green rising, red falling.
+function pineScript(m, lines) {
+  const d = (m.digits || 2) + 1, row = (l) => "    line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
+    ", xloc=xloc.bar_time, extend=extend.right, color=" + (l.up ? "color.new(#1fa463, 0)" : "color.new(#d64545, 0)") + ", width=" + (l.dashed ? 1 : 2) + (l.dashed ? ", style=line.style_dashed" : "") + ") // " + l.name;
+  return ["//@version=5", 'indicator("Trade Finder lines: ' + show(m.sym) + '", overlay=true)', "var bool drawn = false", "if not drawn", "    drawn := true"].concat(lines.map(row)).join("\n");
+}
+function tvBlock(m, lines, tf, key) {
+  const dt = (t) => new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
+  const shown = tvOpen[key];
+  return '<div class="tv"><a class="btn" href="' + esc(tvUrl(m.sym, tf)) + '" target="_blank" rel="noopener">Open ' + esc(show(m.sym)) + " on TradingView ↗</a> " +
+    '<button class="btn" data-tvl="' + esc(key) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide lines" : "Lines for TradingView") + "</button>" +
+    (shown ? '<div class="tvp"><div class="note" style="margin-top:0">Draw with the ray tool, point A then point B (New York time):</div>' +
+      lines.map((l) => '<div class="note"><b style="color:' + (l.up ? "#1fa463" : "#d64545") + '">' + esc(l.name) + "</b>: A " + dt(l.t0) + " @ " + num(l.p0, m.digits) + " → B " + dt(l.t1) + " @ " + num(l.p1, m.digits) + "</div>").join("") +
+      '<div class="note">Or on a computer: copy this, open TradingView\'s Pine Editor, paste it, and click "Add to chart".</div>' +
+      '<textarea readonly rows="5" aria-label="Pine Script with the lines">' + esc(pineScript(m, lines)) + '</textarea><button class="btn" data-copy="1">Copy script</button></div>' : "") + "</div>";
+}
+
 // "Get in now": a live callout that hasn't run more than ENTER_R past its entry and isn't through its stop.
 const ENTER_R = 0.5;
 // What to do: futures are bought or sold directly; stocks are traded with options (long = call, short = put).
@@ -281,7 +310,9 @@ function card(m, s) {
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + " · tap for chart</div>" +
-    (openCharts[k] ? chart(m, s) : "") + optionsBlock(m, s, k) + "</article>";
+    (openCharts[k] ? chart(m, s) : "") +
+    tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k) +
+    optionsBlock(m, s, k) + "</article>";
 }
 
 // The box at the top of Callouts: what to get into right now, for the chosen market type.
@@ -320,7 +351,8 @@ function renderWatch() {
   return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts. Set a price alert on these. Distance is in ATRs of that chart.</div>' +
     rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + '/4</span><span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
       '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + w.dist + " ATR away</div></div></div>" +
-      '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) + "</article>").join("");
+      '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) +
+      (w.line ? tvBlock(m, [{ ...w.line, name: (w.line.up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key) : "") + "</article>").join("");
 }
 
 function renderRules() {
@@ -358,8 +390,18 @@ function render() {
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-goto],.op,#retry,.cl,#alerts");
+  if (e.target.closest("a")) return; // TradingView link: let it open, don't toggle the chart
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-goto],[data-tvl],[data-copy],.op,.tvp,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
+  if (t.dataset.tvl) { tvOpen[t.dataset.tvl] = !tvOpen[t.dataset.tvl]; render(); return; }
+  if (t.dataset.copy) {
+    const ta = t.parentNode.querySelector("textarea");
+    const done = () => { t.textContent = "Copied ✓"; };
+    if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); });
+    else { ta.select(); try { document.execCommand("copy"); done(); } catch (er) { /* select it at least */ } }
+    return;
+  }
+  if (t.classList.contains("tvp")) return;
   if (t.dataset.opt) {
     const k = t.dataset.opt, o = opts[k];
     if (o && (o.data || o.loading)) { o.shown = !o.shown; render(); return; } // a failed load retries
