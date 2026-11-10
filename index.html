@@ -117,6 +117,8 @@ const TFNAME = { "4H": "4-hour", "1H": "1-hour" };
 const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
 // "Get in now": a live callout that hasn't run more than ENTER_R past its entry and isn't through its stop.
 const ENTER_R = 0.5;
+// What to do: futures are bought or sold directly; stocks are traded with options (long = call, short = put).
+const action = (m, s) => (m.kind === "stocks" ? (s.dir === "long" ? "BUY CALL" : "BUY PUT") : s.dir === "long" ? "BUY" : "SELL");
 const canEnter = (s) => s.status === "open" && !s.liveThrough && s.nowR != null && s.nowR <= ENTER_R;
 const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
 
@@ -161,7 +163,7 @@ function notifyNew() {
   document.title = "(" + fresh.length + ") Trade Finder";
   if (store.get("alerts", false) && "Notification" in window && Notification.permission === "granted") {
     fresh.slice(0, 3).forEach(({ m, s }) => {
-      try { new Notification(show(m.sym) + ": " + s.dir.toUpperCase() + " " + s.setup, { body: s.tf + " chart · entry " + num(s.entry, m.digits) + " · stop " + num(s.stop, m.digits) + " (trail it on the safety line)", tag: keyOf(m, s) }); } catch (e) { /* some phones only allow notifications from an installed app */ }
+      try { new Notification(action(m, s) + " " + show(m.sym) + " (" + s.setup + ")", { body: s.tf + " chart · entry " + num(s.entry, m.digits) + " · stop " + num(s.stop, m.digits) + " (trail it on the safety line)", tag: keyOf(m, s) }); } catch (e) { /* some phones only allow notifications from an installed app */ }
     });
   }
 }
@@ -270,7 +272,7 @@ function card(m, s) {
     "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
     (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" : "—") + "</div></div>" +
     (pv && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: starting risk <b>' + perC(s.risk) + "</b>" + (res != null ? " · " + (open ? "now " : "result ") + '<b class="' + (res >= 0 ? "ok" : "bad") + '">' + (res >= 0 ? "+" : "−") + perC(res * s.risk) + "</b>" : "") + " ($" + pv + " per 1.00 move)</div>" : "") +
-    (canEnter(s) ? '<div class="st ok" style="font-size:15px">▶ GET IN NOW: ' + (s.dir === "long" ? "BUY" : "SELL") + " " + esc(show(m.sym)) + " near " + num(m.price, d) + "</div>"
+    (canEnter(s) ? '<div class="st ok" style="font-size:15px">▶ GET IN NOW: ' + action(m, s) + " " + esc(show(m.sym)) + (m.kind === "stocks" ? " (stock near " : " near ") + num(m.price, d) + (m.kind === "stocks" ? ")" : "") + "</div>"
       : open ? '<div class="st warn">Live, but already ' + signR(s.nowR) + " past entry. Late to get in: wait for the next callout.</div>"
       : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) : "") + "</div>") +
     (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
@@ -288,10 +290,10 @@ function getInBox(all) {
   if (!go.length) return '<div class="gi none"><h3>No ' + name + " entries right now</h3>" +
     '<div class="note" style="margin:0">Nothing has triggered that passes 3 of the 4 checklist rules and is still near its entry price. Check the Watch list for lines price is close to.</div></div>';
   return '<div class="gi"><h3 class="ok">▶ Get in now: ' + go.length + " " + name + " trade" + (go.length > 1 ? "s" : "") + "</h3>" +
-    go.map(({ m, s }) => '<div class="row" data-goto="' + esc(keyOf(m, s)) + '"><div><div class="big ' + (s.dir === "long" ? "ok" : "bad") + '">' + (s.dir === "long" ? "BUY " : "SELL ") + esc(show(m.sym)) + "</div>" +
+    go.map(({ m, s }) => '<div class="row" data-goto="' + esc(keyOf(m, s)) + '"><div><div class="big ' + (s.dir === "long" ? "ok" : "bad") + '">' + action(m, s) + " " + esc(show(m.sym)) + "</div>" +
       "<small>" + esc(s.tf) + " · " + esc(s.setup) + " · " + s.grade + " " + s.passed + "/4 · " + ago(s.t) + "</small></div>" +
       '<div style="text-align:right"><div><small>Entry</small> <b>' + num(s.entry, m.digits) + "</b></div><div><small>Stop</small> <b>" + num(s.stop, m.digits) + "</b></div></div></div>").join("") +
-    '<div class="note" style="margin:6px 0 0">Put your stop just past the safety line and trail it. Tap a trade for its chart.</div></div>';
+    '<div class="note" style="margin:6px 0 0">' + (kind === "stocks" ? "Entry and stop are the stock's prices. Tap a trade for its chart and the best contract. Exit the option when the stock closes through the safety line." : "Put your stop just past the safety line and trail it. Tap a trade for its chart.") + "</div></div>";
 }
 
 function renderCalls() {

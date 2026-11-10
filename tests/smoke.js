@@ -173,6 +173,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   await openFolds(page);
   ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
   ok((await page.locator(".gi h3").textContent()).includes("futures"), "Callouts starts with a futures get-in box", await page.locator(".gi h3").textContent());
+  const fut = (await page.locator(".gi .big").allTextContents()).map((x) => x.trim());
+  ok(fut.length >= 1 && fut.every((x) => /^(BUY|SELL) [A-Z]+$/.test(x)), "futures get-ins say BUY or SELL (no calls or puts)", fut.join(","));
   ok((await page.locator(".cl").count()) >= 4, "callout cards render", await page.locator(".cl").count());
   ok((await page.locator(".cl .tag", { hasText: /^(A\+ · 4|B · 3)\/4$/ }).count()) === (await page.locator(".cl").count()), "every card shows how many checklist rules it passes (3/4 or 4/4)");
   ok((await page.locator(".cl .tag", { hasText: /^(4H|1H)$/ }).count()) === (await page.locator(".cl").count()), "every card says which chart it's on (4H or 1H)");
@@ -224,8 +226,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.setViewportSize({ width: 390, height: 900 });
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-k=stocks]");
-  ok((await page.locator(".gi .row").count()) === 1 && /^(BUY|SELL) TEST$/.test((await page.locator(".gi .big").textContent()).trim()), "stocks get-in box shows the live trade: BUY/SELL TEST", await page.locator(".gi").textContent());
-  ok((await page.locator(".cl .st", { hasText: "GET IN NOW" }).count()) === 1, "the card itself says GET IN NOW");
+  ok((await page.locator(".gi .row").count()) === 1 && /^BUY (CALL|PUT) TEST$/.test((await page.locator(".gi .big").textContent()).trim()), "stocks get-in box says BUY CALL or BUY PUT", await page.locator(".gi").textContent());
+  ok((await page.locator(".cl .st", { hasText: /GET IN NOW: BUY (CALL|PUT) TEST \(stock near/ }).count()) === 1, "the card itself says GET IN NOW: BUY CALL/PUT");
   await page.locator(".gi .row").click(); await page.waitForTimeout(200);
   ok((await page.locator(".cl svg").count()) === 1, "tapping the get-in row opens that trade's chart");
   await page.locator(".cl .sym").first().click(); // close the chart again
