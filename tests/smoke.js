@@ -185,6 +185,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("text=ATR away").count()) >= 1, "watch list shows lines near price");
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");
+  ok((await page.locator("text=How the computer does it").count()) === 0 && (await page.locator("#out >> text=Option contracts").count()) === 0, "rules tab has no computer or options sections");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
   ok((await page.locator(".cl .sym", { hasText: "TEST" }).count()) >= 1 && (await page.locator(".cl .sym", { hasText: /^M?GC$/ }).count()) === 0, "Stocks filter hides futures; collapsed lists open");
