@@ -72,8 +72,9 @@ async function scannerTests() {
     full[m.sym].signals.forEach((s) => sigs.push({ m: full[m.sym], s })); m.watch.forEach((w) => watch.push({ m, w }));
   });
   ok(good.every((m) => m.signals.length <= 1), "only one callout per market", good.map((m) => m.sym + ":" + m.signals.length).join(" "));
-  const fit = (sym) => full[sym].signals.filter((x) => x.passed >= 3 && x.checks.taps);
-  ok(good.every((m) => m.signals.every((x) => x.passed >= 3 && x.checks.taps && x.taps >= 3)), "only callouts passing at least 3 of the 4 checklist rules, always with 3+ taps, are listed");
+  const fit = (sym) => full[sym].signals.filter((x) => x.passed >= 3 && x.checks.taps && x.days >= 7);
+  ok(good.every((m) => m.signals.every((x) => x.passed >= 3 && x.checks.taps && x.taps >= 3 && x.days >= 7)), "only callouts passing 3 of 4 checklist rules, always with 3+ taps and 1+ week of history, are listed");
+  ok(sigs.some(({ s }) => s.passed >= 3 && s.checks.taps && s.days < 7), "lines under a week old are found but filtered out");
   ok(sigs.some(({ s }) => s.passed >= 3 && !s.checks.taps), "3-of-4 lines with only 2 taps are found but filtered out");
   ok(sigs.some(({ s }) => s.passed < 3) && sigs.every(({ s }) => s.passed === Object.values(s.checks).filter(Boolean).length && (s.grade === "A+") === (s.passed === 4)), "weaker lines are found but filtered out; A+ = 4/4, B = 3/4");
   ok(good.filter((m) => m.signals.length).every((m) => m.signals[0].t === Math.max(...fit(m.sym).map((x) => x.t))), "the callout shown is the newest one that passes");
@@ -89,7 +90,9 @@ async function scannerTests() {
   ok(priced.filter(({ s }) => s.setup !== "bounce").every(({ s }) => s.chart.safety && s.chart.safety.slope * (s.dir === "long" ? 1 : -1) > 0), "break stops sit on the opposite chain's line (the safety line)");
   ok(priced.every(({ s }) => (s.dir === "long" ? s.stop >= s.stop0 : s.stop <= s.stop0)), "the trailing stop only ever tightens");
   const closed = priced.filter(({ s }) => s.status === "closed");
-  ok(closed.length >= 3 && closed.every(({ s }) => (s.dir === "long" ? s.exitPx < s.stop : s.exitPx > s.stop) && s.exitR != null), "closed trades ended on a candle closing through the safety line");
+  ok(closed.length >= 3 && closed.every(({ s }) => s.exitR != null && (s.exitHow === "stop order" ? (s.dir === "long" ? s.exitPx <= s.stop + 1e-9 : s.exitPx >= s.stop - 1e-9) : s.exitHow === "close through the line" && (s.dir === "long" ? s.exitPx < s.line : s.exitPx > s.line))), "trades close on the stop order or on a candle closing through the safety line");
+  ok(priced.every(({ s }) => (s.dir === "long" ? s.stop < s.line : s.stop > s.line)), "the stop order sits past the safety line, never on it (her rule)");
+  ok(closed.filter(({ s }) => s.exitHow === "stop order").length >= 1, "some trades are stopped out by the stop order (it's a real stop, not just a line)");
   ok(sigs.every(({ s }) => ["open", "closed", "too-far", "no-safety"].includes(s.status) && s.target === undefined), "every callout has a known status and no fixed target");
   const aw = scan(load("yahoo_AAPL.json"), load("yahoo_daily_AAPL.json"), { sym: "AAPL", now: NOW }).watch;
   ok(aw.length >= 1 && watch.concat(aw.map((w) => ({ w }))).every(({ w }) => w.dist <= 1.5 && w.lineNow > 0 && ["4H", "1H"].includes(w.tf)), "watch list holds the newest lines near price (AAPL has one)");
@@ -97,7 +100,7 @@ async function scannerTests() {
   const gc = full["GC=F"].signals.find((s) => s.tf === "4H" && s.setup === "3-touch break" && s.dir === "long" && s.grade === "A+");
   ok(gc && gc.lineTF === "Daily" && gc.entry === 4057 && gc.status === "too-far", "gold: 4H close above a falling Daily line on Nov 4 (A+), skipped as too far from the safety line", gc && [gc.lineTF, gc.entry, gc.status].join("/"));
   const cl = full["CL=F"].signals.find((s) => s.tf === "1H" && s.dir === "short" && s.lineTF === "Weekly");
-  ok(cl && cl.entry === 85.94 && cl.stop0 === 90.08 && cl.stop === 89.76 && cl.status === "open", "crude: 1H close below a rising Weekly line, stop trailed from 90.08 to 89.76", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
+  ok(cl && cl.entry === 85.94 && cl.stop0 === 90.78 && cl.stop === 90.46 && cl.status === "too-far", "crude: 1H close below a rising Weekly line; stop order past the safety line (90.78) puts it too far: skipped", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
   const allLines = sigs.map(({ s }) => ({ s, ls: s.chart.lines }));
   ok(allLines.every(({ s, ls }) => s.tf !== "4H" || (s.lineTF !== "1-hour" && ls.every((l) => l.tf !== "1-hour"))), "lines found on a 4-hour chart are never called 1-hour");
   const dl = full["GC=F"].signals[0].chart.lines;
@@ -133,7 +136,15 @@ async function scannerTests() {
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced"].includes(x.how))), "trades end on the safety line or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 36 && clr.totalR === 38.05, "crude's 6 months: 36 trades, +38.05R", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 32 && clr.totalR === 45.54, "crude's 6 months: 32 trades, +45.54R", clr.trades + " / " + clr.totalR);
+  ok(recs.every((r) => Object.values(r.bySetup).reduce((a, b) => a + b.trades, 0) === r.trades) && recs.some((r) => r.bySetup.retest), "track record splits trades by setup (break, break & retest, bounce)");
+  // Break & retest: found after a break, same line, entered later on a candle that touched the line from the other side.
+  const rt = sigs.filter(({ s }) => s.setup === "break & retest");
+  ok(rt.length >= 1 && rt.every(({ s }) => s.chart.line && s.chart.line.slope * (s.dir === "long" ? -1 : 1) > 0), "break & retest setups are found, on the line that was broken");
+  // Her optional take-profit: past both entry and price, in the trade's direction, at a level with 2+ touches.
+  const tps = [];
+  good.forEach((m) => full[m.sym].signals.filter((x) => x.status === "open" && x.tp).forEach((x) => tps.push({ m: full[m.sym], s: x })));
+  ok(tps.length >= 1 && tps.every(({ m, s }) => s.tp.touches >= 2 && s.tp.r > 0 && (s.dir === "long" ? s.tp.price > s.entry && s.tp.price > m.price : s.tp.price < s.entry && s.tp.price < m.price)), "optional take-profit sits past entry and price, at a level price turned at 2+ times", JSON.stringify(tps.map((x) => x.s.tp)));
   const def = await tradesApi("/api/trades");
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
@@ -224,7 +235,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(!trk.includes("Overall") && !trk.includes("stocks") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures tab shows only the futures ROI: total % at 1% risk per trade", trk.slice(0, 160));
   await page.click("[data-fold=track]");
   const fr = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record), sum = (k) => fr.reduce((a, r) => a + r[k], 0);
-  const wlTxt = await page.locator(".trk .wl").textContent();
+  const wlTxt = await page.locator(".trk .wl").first().textContent();
+  ok((await page.locator(".trk .wl", { hasText: "By setup" }).count()) === 1, "Details also shows results by setup");
   ok(wlTxt.includes("Average win +" + (sum("winSum") / sum("nWin")).toFixed(1) + "R") && wlTxt.includes("average loss −" + (sum("lossSum") / sum("nLoss")).toFixed(1) + "R") &&
     wlTxt.includes((sum("winSum") / sum("nWin") / (sum("lossSum") / sum("nLoss"))).toFixed(1) + "× bigger than losses") && wlTxt.includes("For every $1 lost, $" + (sum("winSum") / sum("lossSum")).toFixed(2)) && wlTxt.includes("Winners held"),
     "Details shows average win and loss, how much bigger wins are, $ made per $1 lost, and time held", wlTxt);
@@ -236,6 +248,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-fold=live]");
   await openFolds(page);
   ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
+  ok((await page.locator(".cl .note", { hasText: "Size:" }).count()) === 0, "no position size until you enter an account size");
+  await page.fill("#acct", "10,000"); await page.fill("#riskP", "1"); await page.click("#sizeF button");
+  const mgcLive = body.markets.find((m) => m.sym === "MGC=F").signals[0], perC = mgcLive.risk * 10, nC = Math.floor(100 / perC);
+  const sizeTxt = await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().locator(".note", { hasText: "Size:" }).textContent();
+  ok(nC >= 1 ? sizeTxt.includes("Size: " + nC + " micro contract") : sizeTxt.includes("more than your 1%"), "position size: $10,000 at 1% sets how many micro contracts", sizeTxt + " (risk/contract $" + perC.toFixed(0) + ")");
+  ok((await page.evaluate(() => localStorage.getItem("tl:acct"))) === "10000", "account size is saved on the phone");
+  ok((await page.locator(".cl .gr", { hasText: "Stop order now (trailing)" }).count()) >= 1 && (await page.locator(".cl .note", { hasText: "just past the safety line" }).count()) >= 1, "live cards show the stop order to set, just past the safety line");
   const fut = await page.locator(".cl .st", { hasText: "GET IN NOW" }).allTextContents();
   ok(fut.length >= 1 && fut.every((x) => /GET IN NOW: (BUY|SELL) [A-Z]+ near/.test(x)), "futures cards say GET IN NOW: BUY or SELL (no calls or puts)", fut.join(","));
   ok((await page.locator(".cl").count()) >= 3, "callout cards render", await page.locator(".cl").count());
@@ -280,6 +299,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-k=futures]");
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");
+  const rulesTxt = await page.locator(".rules").textContent();
+  ok(["Break & retest", "Bounce", "just past", "1–2%", "Commit to one timeframe", "Journal every trade", "Practice first", "Redraw daily"].every((x) => rulesTxt.includes(x)), "rules tab covers her whole system: setups, stop past the line, sizing, one timeframe, journaling, practice, upkeep");
+  ok((await page.locator(".rules .tag", { hasText: "automatic" }).count()) >= 7 && (await page.locator(".rules .tag", { hasText: /^you$/ }).count()) >= 3, "each step says whether it's automatic or yours");
   ok((await page.locator("text=How the computer does it").count()) === 0 && (await page.locator("#out >> text=Option contracts").count()) === 0, "rules tab has no computer or options sections");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);

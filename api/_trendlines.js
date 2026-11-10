@@ -29,10 +29,15 @@ const MAX_ANGLE = 45;     // her rule: under 45 degrees with 3 months on the cha
 const ASPECT = 1.8;       // my number: chart width / height of a normal screen, used to turn slope into degrees
 const TOUCH_ATR = 0.3;    // my number: a wick within 0.3 ATR of the line counts as a tap
 const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
-const BOUNCE_ROOM = 0.5;  // my number: room below a bounce line for wicks, used for the risk number
+const RETEST_MAX = 30;    // my number: how many candles after a break to wait for the retest
+const TP_ZONE = 0.5;      // my number: swing highs/lows within 0.5 ATR count as the same level
+const TP_BEFORE = 0.1;    // my number: take-profit set 0.1 ATR before the level ("a few points below", so it fills)
+const STOP_ROOM = 0.5;    // my number: how far past the safety line the stop order sits (her rule: never on the line, always on the other side)
 const MIN_PASSED = 3;      // your rule: a callout's line must pass at least 3 of the 4 checklist rules...
 // ...and 3+ taps is always one of them (the replay showed 2-tap lines lost money; she prefers 3+ taps too).
-const qualifies = (x) => x.passed >= MIN_PASSED && !!(x.checks && x.checks.taps);
+// ...and the line must have at least a week of price data from first tap to the break (TradeZella playbook minimum).
+const MIN_DAYS = 7;
+const qualifies = (x) => x.passed >= MIN_PASSED && !!(x.checks && x.checks.taps) && x.days >= MIN_DAYS;
 const WATCH_ATR = 1.5;    // my number: lines within 1.5 ATR of price go on the watch list
 const RECENT_DAYS = 5;    // callouts from the last 5 trading days
 const KEEP = 150;         // candles sent for the chart
@@ -268,18 +273,22 @@ function grade(S, ln, i, up) {
   return { grade: passed === 4 ? "A+" : "B", passed, checks, taps: tp.length, tapX: tp, days: Math.round(days), angle: Math.round(angle) };
 }
 
-// Walk a trade forward. The stop trails along the newest line of the safety chain (never loosening) and the
-// trade ends when a finished candle closes through it.
-function follow(S, long, from, last, stop0) {
-  let stop = stop0;
+// Walk a trade forward. Her exits: the stop order sits just past the safety line ("never on the safety line,
+// always on the other side") and trails along it; and the trade ends when a finished candle closes through
+// the safety line. Both trail along the newest line of the safety chain and never loosen.
+// line0: safety line value at entry; room: distance of the stop order past the line.
+function follow(S, long, from, last, line0, room) {
+  let line = line0, stop = long ? line0 - room : line0 + room;
   for (let i = from + 1; i <= last; i++) {
     const sl = long ? S.act[i].up : S.act[i].dn;
-    if (sl) { const v = val(sl, S.x0 + i); stop = long ? Math.max(stop, v) : Math.min(stop, v); }
-    if (long ? S.bars[i].c < stop : S.bars[i].c > stop) return { status: "closed", at: i, px: S.bars[i].c, stop };
+    if (sl) { const v = val(sl, S.x0 + i); line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
+    const c = S.bars[i];
+    if (long ? c.l <= stop : c.h >= stop) return { status: "closed", at: i, px: long ? Math.min(c.o, stop) : Math.max(c.o, stop), stop, line, how: "stop order" }; // a gap past the stop fills at the open
+    if (long ? c.c < line : c.c > line) return { status: "closed", at: i, px: c.c, stop, line, how: "close through the line" };
   }
   const sl = long ? S.act[last + 1].up : S.act[last + 1].dn;
-  if (sl) { const v = val(sl, S.x0 + last + 1); stop = long ? Math.max(stop, v) : Math.min(stop, v); }
-  return { status: "open", stop, safety: sl };
+  if (sl) { const v = val(sl, S.x0 + last + 1); line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
+  return { status: "open", stop, line, safety: sl };
 }
 
 // All callouts on one entry chart from candle `from` to `last`.
@@ -293,6 +302,17 @@ function events(S, from, last) {
       const v = val(ln, x), pv = val(ln, x - 1);
       if (long ? !(b[i].c > v && b[i - 1].c <= pv) : !(b[i].c < v && b[i - 1].c >= pv)) return;
       out.push({ kind: "break", long, at: i, action: ln, safety: long ? up : dn });
+      // Break and retest (her newer setup): after the break, price pulls back and touches the line from the other
+      // side, and that candle closes still respecting it. Enter on that close. Watch up to RETEST_MAX candles; a
+      // close back through the line cancels it.
+      for (let j = i + 1; j <= Math.min(last, i + RETEST_MAX); j++) {
+        const vj = val(ln, S.x0 + j), c = b[j];
+        if (long ? c.c < vj : c.c > vj) break;
+        if (long ? c.l <= vj + TOUCH_ATR * S.A[j] : c.h >= vj - TOUCH_ATR * S.A[j]) {
+          out.push({ kind: "retest", long, at: j, brk: i, action: ln, safety: long ? S.act[j].up : S.act[j].dn });
+          break;
+        }
+      }
     });
     // Bounces: wick tags the newest line, candle closes back on the right side, line already has 2+ taps.
     [[up, true], [dn, false]].forEach(([ln, long]) => {
@@ -315,9 +335,9 @@ const WARMUP = 30; // candles before the replay starts (ATR and swing points nee
 // One callout from one event: grade, entry, safety line, starting stop, and how it has gone since.
 function callout(s, e, last, live, px) {
   const b = s.bars, tf = s.tf;
-  const g = grade(s, e.action, e.at, e.kind === "bounce" ? e.long : !e.long); // rising line under lows?
+  const g = grade(s, e.action, e.brk != null ? e.brk : e.at, e.kind === "bounce" ? e.long : !e.long); // graded at the break; rising line under lows?
   const entry = b[e.at].c;
-  const c = { tf, setup: e.kind === "bounce" ? "bounce" : g.taps >= 3 ? "3-touch break" : "2-touch break", dir: e.long ? "long" : "short",
+  const c = { tf, setup: e.kind === "bounce" ? "bounce" : e.kind === "retest" ? "break & retest" : g.taps >= 3 ? "3-touch break" : "2-touch break", dir: e.long ? "long" : "short",
     at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
     lineTF: tfOfLine(e.action, tf), lineFrom: e.action.a.t, action: e.action, tapX: g.tapX };
   let sl = e.safety, from = e.at;
@@ -330,24 +350,46 @@ function callout(s, e, last, live, px) {
     if (!sl) return { ...c, status: "no-safety", note: "No safety line yet. Wait for a clear swing " + (e.long ? "low" : "high") + " to form, then draw one." };
     c.late = true; c.entry = px(b[from].c);
   }
-  const ent = b[from].c, line0 = val(sl, s.x0 + from), room = e.kind === "bounce" ? BOUNCE_ROOM * s.A[from] : 0;
+  const ent = b[from].c, line0 = val(sl, s.x0 + from), room = STOP_ROOM * s.A[from];
   const stop0 = e.long ? line0 - room : line0 + room, risk = e.long ? ent - stop0 : stop0 - ent;
-  if (!(risk > 0)) return { ...c, status: "no-safety", note: "The safety line is on the wrong side of the entry." };
-  const out = follow(s, e.long, from, last, stop0);
+  if (!(risk > 0) || (e.long ? ent <= line0 : ent >= line0)) return { ...c, status: "no-safety", note: "The safety line is on the wrong side of the entry." };
+  const out = follow(s, e.long, from, last, line0, room);
   const far = risk > FAR_ATR * s.A[from];
   const sign = e.long ? 1 : -1;
-  return { ...c, from, stop0: px(stop0), risk: px(risk), stop: px(out.stop), safety: out.safety || sl,
+  const tp = out.status === "open" ? takeProfit(s, e.long, live, ent, last) : null;
+  return { ...c, from, stop0: px(stop0), risk: px(risk), stop: px(out.stop), line: px(out.line), exitHow: out.how || null, safety: out.safety || sl,
+    tp: tp && { price: px(tp.price), touches: tp.touches, r: r2(((e.long ? 1 : -1) * (tp.price - ent)) / risk, 1) },
     entryT: b[from].e, exitT: out.at == null ? null : b[out.at].e, entryRaw: ent, riskRaw: risk,
     status: far ? "too-far" : out.status, closedAt: out.at, exitPx: px(out.px), exitR: out.px == null ? null : r2((sign * (out.px - ent)) / risk, 2),
     nowR: r2((sign * (live - ent)) / risk, 2), liveThrough: out.status === "open" && (e.long ? live < out.stop : live > out.stop),
     note: far ? "Break closed too far from the safety line (risk over " + FAR_ATR + " ATR). Her rule: skip it." : c.late ? "Safety line formed after the break. Entry is that later close." : null };
 }
 
+// Her optional take-profit (for quick wins instead of trailing): the nearest support/resistance in the trade's
+// direction with as many touches as possible, close to current price, set slightly before the level.
+// Levels = clusters of swing highs (for longs) or lows (for shorts) on this chart over the last 3 months.
+function takeProfit(s, long, price, entry, last) {
+  const b = s.bars, sw = swings(b), A = s.A[last], from = b[last].t - 91 * DAY, pts = [];
+  price = long ? Math.max(price, entry) : Math.min(price, entry); // the target must be past both price and entry
+  for (let i = 0; i <= last - PIVOT; i++) {
+    if (b[i].t < from) continue;
+    if (long && sw.hi[i] && b[i].h > price) pts.push(b[i].h);
+    if (!long && sw.lo[i] && b[i].l < price) pts.push(b[i].l);
+  }
+  pts.sort((p, q) => (long ? p - q : q - p)); // nearest first
+  const groups = [];
+  pts.forEach((p) => { const g = groups[groups.length - 1]; if (g && Math.abs(p - g[0]) <= TP_ZONE * A) g.push(p); else groups.push([p]); });
+  const g = groups.find((x) => x.length >= 2); // nearest level price has turned at 2+ times
+  if (!g) return null;
+  const edge = long ? Math.min(...g) : Math.max(...g);
+  return { price: long ? edge - TP_BEFORE * A : edge + TP_BEFORE * A, touches: g.length };
+}
+
 // Track record: every callout you'd have taken over the window (3+ of 4 checklist rules, not skipped),
 // one position per market. A newer callout replaces the one you're in at its entry price, like the page shows;
 // otherwise a trade ends on its safety line. R = profit in multiples of the starting risk.
 function record(hist) {
-  const rank = (x) => (x.tf === "4H" ? 0 : 4) + (x.grade === "A+" ? 0 : 2) + (x.setup === "bounce" ? 1 : 0);
+  const rank = (x) => (x.tf === "4H" ? 0 : 6) + (x.grade === "A+" ? 0 : 3) + (x.setup === "bounce" ? 2 : x.setup === "break & retest" ? 1 : 0);
   const take = hist.filter((x) => qualifies(x) && (x.status === "open" || x.status === "closed"))
     .sort((p, q) => p.entryT - q.entryT || rank(p) - rank(q));
   const done = [];
@@ -365,7 +407,10 @@ function record(hist) {
   const rs = done.map((x) => x.r), tot = rs.reduce((a, r) => a + r, 0);
   // Size of wins and losses, and how long each was held (raw sums, so markets can be added together).
   const W = done.filter((x) => x.r > 0), Ls = done.filter((x) => x.r <= 0), hrs = (x) => Math.max(0, (x.exitT - x.entryT) / 3600);
-  const sizes = { nWin: W.length, nLoss: Ls.length, winSum: r2(W.reduce((a, x) => a + x.r, 0), 2), lossSum: r2(-Ls.reduce((a, x) => a + x.r, 0), 2),
+  const kindOf = (x) => (x.setup === "bounce" ? "bounce" : x.setup === "break & retest" ? "retest" : "break");
+  const bySetup = {};
+  done.forEach((x) => { const k = kindOf(x), b2 = (bySetup[k] = bySetup[k] || { trades: 0, wins: 0, totalR: 0 }); b2.trades++; if (x.r > 0) b2.wins++; b2.totalR = r2(b2.totalR + x.r, 2); });
+  const sizes = { bySetup, nWin: W.length, nLoss: Ls.length, winSum: r2(W.reduce((a, x) => a + x.r, 0), 2), lossSum: r2(-Ls.reduce((a, x) => a + x.r, 0), 2),
     winHrs: Math.round(W.reduce((a, x) => a + hrs(x), 0)), lossHrs: Math.round(Ls.reduce((a, x) => a + hrs(x), 0)) };
   let peak = 0, run = 0, dd = 0;
   rs.forEach((r) => { run += r; peak = Math.max(peak, run); dd = Math.min(dd, run - peak); });
@@ -422,7 +467,7 @@ function scan(hChart, dChart, opts = {}) {
 
   // Only callouts whose line passes at least 3 of the 4 checklist rules, 3+ taps always. Of those, one per market: the newest.
   // Same time: 4-hour before 1-hour, A+ before B, break before bounce. (opts.all: every callout, for tests.)
-  const rank = (x) => (x.tf === "4H" ? 0 : 4) + (x.grade === "A+" ? 0 : 2) + (x.setup === "bounce" ? 1 : 0);
+  const rank = (x) => (x.tf === "4H" ? 0 : 6) + (x.grade === "A+" ? 0 : 3) + (x.setup === "bounce" ? 2 : x.setup === "break & retest" ? 1 : 0);
   all.sort((p, q) => q.t - p.t || rank(p) - rank(q));
   const fit = all.filter(qualifies);
   fit.forEach((x) => { if (fit.some((y) => y !== x && y.t === x.t && y.dir !== x.dir)) x.mixed = true; });

@@ -88,6 +88,9 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
   <div class="note" style="margin-top:2px">Futures: <b>Micro Gold (MGC)</b> and <b>Micro Crude (MCL)</b>, always the front-month contract. Stocks: about 110 of the biggest, most-traded stocks and ETFs are scanned automatically every 15 minutes, and only ones with a setup show up. Add any other symbol here, like <b>AMD</b> or <b>SOUN</b>, or a futures contract like <b>GC</b>.</div>
   <form class="bar" id="add"><input id="addIn" placeholder="Add symbol, e.g. AMD or MGC" maxlength="15" autocomplete="off" aria-label="Add symbol"><button class="btn">Add</button></form>
   <div class="mk" id="mkList"></div>
+  <div class="st" style="margin-top:14px">Position size</div>
+  <div class="note" style="margin-top:2px">Her rule: risk 1–2% of your account on each trade. Enter yours and every callout shows how many contracts or shares to trade. Saved on this phone only.</div>
+  <form class="bar" id="sizeF"><input id="acct" inputmode="decimal" placeholder="Account size, e.g. 10000" aria-label="Account size in dollars" style="text-transform:none"><input id="riskP" inputmode="decimal" placeholder="Risk %" aria-label="Risk percent per trade" style="max-width:90px;text-transform:none"><button class="btn">Save</button></form>
 </section>
 
 <div class="foot">Callouts are made by a computer drawing trendlines with her checklist. They're not trading advice. Check every line on your own chart before you trade. Prices come from Yahoo Finance and can be delayed 10–20 minutes. Futures candles start 6 PM New York time; stock candles use regular hours.</div>
@@ -116,7 +119,7 @@ window._fresh = new Set(); // NEW tags last until the page is reloaded
 const keyOf = (m, s) => m.sym + "|" + s.tf + "|" + s.setup + "|" + s.dir + "|" + s.t;
 
 const STATUS = {
-  open: ["Live: in the trade", "ok"], closed: ["Closed: a candle closed through the safety line", "mu"],
+  open: ["Live: in the trade", "ok"], closed: ["Closed", "mu"],
   "too-far": ["Skip: too far from safety line", "warn"], "no-safety": ["Waiting for a safety line", "warn"],
 };
 const TFNAME = { "4H": "4-hour", "1H": "1-hour" };
@@ -337,6 +340,16 @@ async function loadOptions(m, s, k) {
   render();
 }
 
+// Position size from her 1-2% rule: how many contracts/shares so the starting risk fits your risk budget.
+function sizeLine(m, s) {
+  const acct = store.get("acct", 0), pct = store.get("riskP", 1);
+  if (!acct || s.risk == null || s.status !== "open") return "";
+  const budget = (acct * pct) / 100, per = m.pointValue ? s.risk * m.pointValue : s.risk, unit = m.pointValue ? "micro contract" : "share";
+  const n = Math.floor(budget / per);
+  if (n < 1) return '<div class="note warn">Size: 1 ' + unit + " risks $" + num(per, 0) + ", more than your " + pct + "% ($" + num(budget, 0) + "). Skip it, or it's a high-risk setup for your account.</div>";
+  return '<div class="note">Size: <b>' + n + " " + unit + (n > 1 ? "s" : "") + "</b>, risking about $" + num(n * per, 0) + " (" + pct + "% of $" + num(acct, 0) + " = $" + num(budget, 0) + ")" + (m.kind === "stocks" ? ". With options, use the dollar risk, not the share count." : "") + "</div>";
+}
+
 function card(m, s) {
   const k = keyOf(m, s), st = STATUS[s.status] || [s.status, "mu"], d = m.digits, isNew = window._fresh && window._fresh.has(k);
   const open = s.status === "open", res = open ? s.nowR : s.status === "closed" ? s.exitR : null;
@@ -347,18 +360,20 @@ function card(m, s) {
     '<span class="tag">' + esc(s.tf) + '</span><span class="tag">' + esc(s.setup) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") +
     '<div class="nm">' + esc(m.name) + " · " + num(m.price, d) + "</div></div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + "</div></div>" +
-    '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop now (trailing)" : "Stop") + "</small>" + num(s.stop, d) + "</div>" +
+    '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop order now (trailing)" : "Stop order") + "</small>" + num(s.stop, d) + "</div>" +
     "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
     (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" : "—") + "</div></div>" +
     (pv && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: starting risk <b>' + perC(s.risk) + "</b>" + (res != null ? " · " + (open ? "now " : "result ") + '<b class="' + (res >= 0 ? "ok" : "bad") + '">' + (res >= 0 ? "+" : "−") + perC(res * s.risk) + "</b>" : "") + " ($" + pv + " per 1.00 move)</div>" : "") +
     (canEnter(s) ? '<div class="st ok" style="font-size:15px">▶ GET IN NOW: ' + action(m, s) + " " + esc(show(m.sym)) + (m.kind === "stocks" ? " (stock near " : " near ") + num(m.price, d) + (m.kind === "stocks" ? ")" : "") + "</div>"
       : open ? '<div class="st warn">Live, but already ' + signR(s.nowR) + " past entry. Late to get in: wait for the next callout.</div>"
-      : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) : "") + "</div>") +
+      : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) + (s.exitHow ? " (" + esc(s.exitHow) + ")" : "") : "") + "</div>") +
+    sizeLine(m, s) +
     (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
-    (open ? '<div class="note">Move your stop to ' + num(s.stop, d) + " and keep trailing it along the safety line. Exit when a " + TFNAME[s.tf] + " candle closes through it.</div>" : "") +
+    (open ? '<div class="note">Set your stop order at <b>' + num(s.stop, d) + "</b>, just past the safety line, and trail it as the line moves. Get out early if a " + TFNAME[s.tf] + " candle closes through the safety line (now at " + num(s.line, d) + ").</div>" : "") +
+    (open && s.tp ? '<div class="note">Optional take-profit, her quick-win exit: <b>' + num(s.tp.price, d) + "</b> (" + signR(s.tp.r) + "), just before a level price turned at " + s.tp.touches + " times. Trailing usually lets winners run further; the track record uses trailing.</div>" : "") +
     (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
-    '<div class="note">' + (s.setup === "bounce" ? "Tagged" : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
+    '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + " · tap for chart</div>" +
     (openCharts[k] ? (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) : "") +
     tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k) +
@@ -399,6 +414,11 @@ function trackBox() {
   const parts = kind === "futures" ? data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record) : [data.stockRecord];
   const add = (k) => parts.reduce((a, r) => a + (r[k] || 0), 0), nW = add("nWin"), nL = add("nLoss");
   const days = (h) => { const d = h / 24; return d < 1 ? "less than a day" : "about " + (d < 1.5 ? "1 day" : Math.round(d) + " days"); };
+  const bs = {};
+  parts.forEach((r) => Object.entries(r.bySetup || {}).forEach(([k, v]) => { const b = (bs[k] = bs[k] || { trades: 0, wins: 0, totalR: 0 }); b.trades += v.trades; b.wins += v.wins; b.totalR += v.totalR; }));
+  const NAMES = { break: "Breaks", retest: "Break & retest", bounce: "Bounces" };
+  const bySetup = Object.keys(bs).length ? '<div class="wl"><div class="st">By setup (she says to track these separately)</div>' + ["break", "retest", "bounce"].filter((k) => bs[k]).map((k) =>
+    "<div>" + NAMES[k] + ": " + bs[k].trades + " trades · " + Math.round((100 * bs[k].wins) / bs[k].trades) + '% wins · <b class="' + (bs[k].totalR >= 0 ? "ok" : "bad") + '">' + Rs(bs[k].totalR) + "</b></div>").join("") + "</div>" : "";
   const sizes = nW && nL ? '<div class="wl"><div class="st">How the wins and losses look</div>' +
     "<div>Average win <b class=\"ok\">+" + (add("winSum") / nW).toFixed(1) + "R</b> · average loss <b class=\"bad\">−" + (add("lossSum") / nL).toFixed(1) + "R</b></div>" +
     "<div>Wins are <b>" + (add("winSum") / nW / (add("lossSum") / nL)).toFixed(1) + "×</b> bigger than losses</div>" +
@@ -407,7 +427,7 @@ function trackBox() {
     '<div class="note" style="margin-top:4px">R = your starting risk. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
   return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div></div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
-    (open ? '<div style="margin-top:8px">' + sizes + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout passing 3 of 4 checklist rules, always including 3+ taps, is taken, except ones skipped as too far from the safety line or with no safety line. One position per market: a newer callout replaces the one you\'re in, otherwise you exit when a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
+    (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout passing 3 of 4 checklist rules, always including 3+ taps, is taken, except ones skipped as too far from the safety line or with no safety line. One position per market: a newer callout replaces the one you\'re in, otherwise you exit when a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 
 function renderCalls() {
@@ -450,15 +470,21 @@ function renderWatch() {
 }
 
 function renderRules() {
+  const A = ' <span class="tag ok">automatic</span>', Y = ' <span class="tag">you</span>';
   return '<div class="c rules"><div class="st">Her system, step by step</div><ol>' +
-    "<li><b>Top-down analysis.</b> Start on the <b>monthly</b> chart. Draw the first rising line from the <b>lowest point</b> on the chart, angled up (never flat). Each next line starts where the last one ended (\"previous point B is new point A\"), catches as many touches as possible, and price can't have poked through it. Do the same for falling lines from the <b>highest point</b>. Then step down: <b>weekly, daily, 4-hour, 1-hour</b>. Nudge the lines to fit, and add steeper lines near price. Green for rising lines, red for falling ones.</li>" +
-    "<li><b>Action line:</b> when a candle <i>closes</i> through the newest line, trade in the direction of the break. Breaking a rising line means short; breaking a falling line means long.</li>" +
-    "<li><b>Safety line:</b> the newest line of the other color. Put your stop just past it before you enter, sized so you only risk 1–2% of your account.</li>" +
-    "<li><b>Trail it:</b> move your stop along the safety line as price respects it. Exit when price closes through the safety line. There's no fixed target.</li>" +
-    "<li><b>Upkeep:</b> after price breaks a line, redraw. Move point B to the new high or low so nothing pokes through. She does this daily.</li>" +
-    "<li><b>Bounces</b> (from her playbook): price tags the newest line, which already has 2–3 taps, and closes back on the right side. That line is your safety line.</li>" +
-    "<li><b>Grade A+</b> (from her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. Trade Finder only lists callouts whose line passes at least 3 of the 4, and 3+ taps must always be one of them (B = missed one of the others). Log A+ and B trades separately.</li></ol>" +
-    '<p class="note">Sources: her video "This boring trading strategy made me $526,454", her FX Replay checklist "Tori Trades Trend Line Strategy (swing trading)", and the TradeZella playbook "Tori\'s Trendline Strategy".</p></div>';
+    "<li><b>Top-down analysis</b>" + A + ". Start on the <b>monthly</b> chart. The first rising line starts at the <b>lowest point</b>, angled up, never flat. Each next line starts where the last one ended (\"previous point B is new point A\"), catches as many touches as possible, and price can't have poked through it, wicks included. Falling lines start the same way from the <b>highest point</b>. Then step down through weekly, daily, 4-hour and 1-hour, nudging lines and adding steeper ones near price. Green = rising, red = falling.</li>" +
+    "<li><b>Wait for price to come to you</b>" + Y + ". She sets an alert on her lines and walks away. Use the Watch list levels for your alerts. Trade Finder's alerts tell you when a callout fires.</li>" +
+    "<li><b>Pick the setup</b>" + A + " (she calls them playbooks):<br><b>Trend line break</b>, her core setup: a candle <i>closes</i> through the newest line, and you trade the direction of the break. Breaking a rising line = short, breaking a falling line = long.<br><b>Break &amp; retest</b>: price breaks the line, pulls back and touches it from the other side, and that candle closes still respecting it. Then enter.<br><b>Bounce</b>: price tags the line and holds. That line is both the action and safety line.</li>" +
+    "<li><b>Safety line and stop</b>" + A + ": the safety line is the newest line of the other color. The stop order goes <b>just past</b> it, never on it. If the safety line is far away, it's a high-risk setup: skip it.</li>" +
+    "<li><b>Position size</b>" + A + " once you enter your account size below: risk <b>1–2%</b> of your account per trade. Use micros if a mini is too big.</li>" +
+    "<li><b>Manage the trade</b>" + A + ": trail the stop along the safety line each time price makes a new swing. Some brokers do this for you, others need it done by hand.</li>" +
+    "<li><b>Exit</b>" + A + ": a candle <b>closes</b> through the safety line (a quick poke isn't enough), or the stop order is hit. Optional: take profit at a nearby support/resistance level price has turned at several times, set just before it. That's shown on live cards. Backtest which exit suits you.</li>" +
+    "<li><b>Grade it</b>" + A + " (her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. A+ = all 4. Your filter: at least 3 of 4, always with 3+ taps, and at least 1 week of history (her playbook minimum).</li>" +
+    "<li><b>Redraw daily</b>" + A + ": after price breaks a line, move point B to the new high or low so nothing pokes through. Trade Finder redraws every scan.</li>" +
+    "<li><b>Commit to one timeframe</b>" + Y + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder shows 4-hour and 1-hour callouts, so pick one and stick to it.</li>" +
+    "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. The Track record splits results by setup.</li>" +
+    "<li><b>Practice first</b>" + Y + ": paper trade with a realistic account size until it's consistent.</li></ol>" +
+    '<p class="note">Sources: her videos "This boring trading strategy made me $526,454", "How To Trade Trendlines In Under 17 Minutes", "Give Me 33 Minutes and You\'ll Never Place a Dumb Trade Again" and "Breaking Down My Simple Trading Strategy", her FX Replay checklist, and the TradeZella playbook "Tori\'s Trendline Strategy".</p></div>';
 }
 
 function render() {
@@ -514,6 +540,14 @@ document.addEventListener("click", (e) => {
   else if (t.classList.contains("cl")) { const k = t.dataset.k; openCharts[k] = !openCharts[k]; render(); }
 });
 document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("cl")) { e.preventDefault(); e.target.click(); } });
+$("sizeF").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const a = parseFloat(String($("acct").value).replace(/[$,]/g, "")), p = parseFloat($("riskP").value);
+  if (a > 0) store.set("acct", a);
+  if (p > 0 && p <= 10) store.set("riskP", p);
+  render();
+});
+(() => { const a = store.get("acct", 0), p = store.get("riskP", 0); if (a) $("acct").value = a; if (p) $("riskP").value = p; })();
 $("add").addEventListener("submit", (e) => {
   e.preventDefault();
   let s = $("addIn").value.trim().toUpperCase();
