@@ -129,6 +129,7 @@ async function scannerTests() {
   // Track record: the same rules replayed over the 6 months.
   const recs = good.map((m) => m.record);
   ok(recs.every((r) => r && r.trades >= 5 && r.wins <= r.trades && Math.abs(r.avgR * r.trades - r.totalR) < 0.02 * r.trades + 0.05 && r.worstR <= r.bestR && r.maxDrawdownR <= 0), "every market has a 6-month track record that adds up");
+  ok(recs.every((r) => r.nWin + r.nLoss === r.trades && Math.abs(r.winSum - r.lossSum - r.totalR) < 0.05 && r.winHrs >= 0 && r.lossHrs >= 0), "wins and losses add up to the trades and the total R");
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced"].includes(x.how))), "trades end on the safety line or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
@@ -160,7 +161,7 @@ async function scanTests() {
   ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0 && m.signals.length <= 1), "scan returns only stocks with a setup, one callout each, under their own symbols");
   ok(ms < 30000, "full scan runs in under 30 seconds of work", ms + "ms");
   const ar = full_aapl_record();
-  ok(B.record && B.record.stocks === U.length - 2 && B.record.trades === ar.trades * (U.length - 2) && Math.abs(B.record.totalR - ar.totalR * (U.length - 2)) < 0.01 && B.record.best.length === 5 && B.record.worst.length === 5,
+  ok(B.record && B.record.stocks === U.length - 2 && B.record.trades === ar.trades * (U.length - 2) && Math.abs(B.record.totalR - ar.totalR * (U.length - 2)) < 0.01 && B.record.best.length === 5 && B.record.worst.length === 5 && Math.abs(B.record.winSum - ar.winSum * (U.length - 2)) < 0.05 && B.record.nWin === ar.nWin * (U.length - 2),
     "stock track record adds up every scanned stock (with best and worst 5)", JSON.stringify({ stocks: B.record.stocks, trades: B.record.trades, totalR: B.record.totalR }));
   return B;
 }
@@ -222,6 +223,11 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(await page.evaluate(() => document.getElementById("out").firstElementChild.classList.contains("trk")), "the track record box is at the top");
   ok(!trk.includes("Overall") && !trk.includes("stocks") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures tab shows only the futures ROI: total % at 1% risk per trade", trk.slice(0, 160));
   await page.click("[data-fold=track]");
+  const fr = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record), sum = (k) => fr.reduce((a, r) => a + r[k], 0);
+  const wlTxt = await page.locator(".trk .wl").textContent();
+  ok(wlTxt.includes("Average win +" + (sum("winSum") / sum("nWin")).toFixed(1) + "R") && wlTxt.includes("average loss −" + (sum("lossSum") / sum("nLoss")).toFixed(1) + "R") &&
+    wlTxt.includes((sum("winSum") / sum("nWin") / (sum("lossSum") / sum("nLoss"))).toFixed(1) + "× bigger than losses") && wlTxt.includes("For every $1 lost, $" + (sum("winSum") / sum("lossSum")).toFixed(2)) && wlTxt.includes("Winners held"),
+    "Details shows average win and loss, how much bigger wins are, $ made per $1 lost, and time held", wlTxt);
   ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
   await page.click("[data-fold=track]");
   ok((await page.locator("[data-fold=live][aria-expanded=true]").count()) === 1 && (await page.locator(".gi.row").count()) === 0, "Live callouts starts open, with no green get-in boxes");

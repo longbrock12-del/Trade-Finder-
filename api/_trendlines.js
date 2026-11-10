@@ -363,12 +363,16 @@ function record(hist) {
   let open = null;
   if (pos) { if (pos.exitT != null) done.push({ ...pos, r: pos.exitR, how: "safety line" }); else open = pos; }
   const rs = done.map((x) => x.r), tot = rs.reduce((a, r) => a + r, 0);
+  // Size of wins and losses, and how long each was held (raw sums, so markets can be added together).
+  const W = done.filter((x) => x.r > 0), Ls = done.filter((x) => x.r <= 0), hrs = (x) => Math.max(0, (x.exitT - x.entryT) / 3600);
+  const sizes = { nWin: W.length, nLoss: Ls.length, winSum: r2(W.reduce((a, x) => a + x.r, 0), 2), lossSum: r2(-Ls.reduce((a, x) => a + x.r, 0), 2),
+    winHrs: Math.round(W.reduce((a, x) => a + hrs(x), 0)), lossHrs: Math.round(Ls.reduce((a, x) => a + hrs(x), 0)) };
   let peak = 0, run = 0, dd = 0;
   rs.forEach((r) => { run += r; peak = Math.max(peak, run); dd = Math.min(dd, run - peak); });
   return {
     from: take.length ? take[0].entryT : null, trades: done.length, wins: rs.filter((r) => r > 0).length,
     totalR: r2(tot, 2), avgR: done.length ? r2(tot / done.length, 2) : null, bestR: rs.length ? Math.max(...rs) : null, worstR: rs.length ? Math.min(...rs) : null,
-    maxDrawdownR: r2(dd, 2), openR: open ? open.nowR : null,
+    maxDrawdownR: r2(dd, 2), openR: open ? open.nowR : null, ...sizes,
     recent: done.slice(-10).reverse().map((x) => ({ t: x.entryT, out: x.exitT, tf: x.tf, dir: x.dir, setup: x.setup, grade: x.grade, r: x.r, how: x.how })),
   };
 }

@@ -60,6 +60,7 @@ function combine(recs) {
   return {
     stocks: used.length, from: used.length ? Math.min(...used.map((r) => r.from)) : null, trades, wins: used.reduce((a, r) => a + r.wins, 0),
     totalR: r2(totalR), avgR: trades ? r2(totalR / trades) : null, best: by.slice(0, 5), worst: by.slice(-5).reverse(),
+    ...Object.fromEntries(["nWin", "nLoss", "winSum", "lossSum", "winHrs", "lossHrs"].map((k) => [k, r2(used.reduce((a, r) => a + (r[k] || 0), 0))])),
   };
 }
 

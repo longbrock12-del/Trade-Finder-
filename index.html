@@ -59,6 +59,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .lns{margin-top:8px;cursor:default}.zsw{display:flex;gap:6px}.zsw .btn{flex:1}.lnr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:5px 0;border-top:1px solid var(--bd);font-size:13px}
 .lnr i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}.lnr small{color:var(--mu);font-size:11px;font-weight:400}
 .lnr.now{background:var(--soft);border-radius:6px;padding:5px 6px;font-weight:700}
+.wl{background:var(--soft);border-radius:10px;padding:9px 10px;margin-bottom:10px;font-size:14px;line-height:1.6}
 .op{margin-top:10px;border-top:1px solid var(--bd);padding-top:10px;cursor:default}
 .oc{background:var(--soft);border-radius:10px;padding:9px 10px;margin-top:8px;font-size:13px}
 .oc .on{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
@@ -394,9 +395,19 @@ function trackBox() {
       '<div class="note" style="margin:0 0 4px"><b class="ok">Best:</b> ' + list(r.best) + '</div><div class="note" style="margin:0 0 6px"><b class="bad">Worst:</b> ' + list(r.worst) + "</div>";
   }
   const open = !!folds.track;
+  // Wins vs losses, in plain words. Sums across the futures markets (or all scanned stocks).
+  const parts = kind === "futures" ? data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record) : [data.stockRecord];
+  const add = (k) => parts.reduce((a, r) => a + (r[k] || 0), 0), nW = add("nWin"), nL = add("nLoss");
+  const days = (h) => { const d = h / 24; return d < 1 ? "less than a day" : "about " + (d < 1.5 ? "1 day" : Math.round(d) + " days"); };
+  const sizes = nW && nL ? '<div class="wl"><div class="st">How the wins and losses look</div>' +
+    "<div>Average win <b class=\"ok\">+" + (add("winSum") / nW).toFixed(1) + "R</b> · average loss <b class=\"bad\">−" + (add("lossSum") / nL).toFixed(1) + "R</b></div>" +
+    "<div>Wins are <b>" + (add("winSum") / nW / (add("lossSum") / nL)).toFixed(1) + "×</b> bigger than losses</div>" +
+    "<div>For every $1 lost, <b>$" + (add("winSum") / add("lossSum")).toFixed(2) + "</b> was made</div>" +
+    "<div>Winners held " + days(add("winHrs") / nW) + ", losers " + days(add("lossHrs") / nL) + "</div>" +
+    '<div class="note" style="margin-top:4px">R = your starting risk. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
   return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div></div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
-    (open ? '<div style="margin-top:8px">' + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout passing 3 of 4 checklist rules, always including 3+ taps, is taken, except ones skipped as too far from the safety line or with no safety line. One position per market: a newer callout replaces the one you\'re in, otherwise you exit when a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
+    (open ? '<div style="margin-top:8px">' + sizes + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout passing 3 of 4 checklist rules, always including 3+ taps, is taken, except ones skipped as too far from the safety line or with no safety line. One position per market: a newer callout replaces the one you\'re in, otherwise you exit when a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 
 function renderCalls() {
