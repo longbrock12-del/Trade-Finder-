@@ -334,15 +334,23 @@ function renderCalls() {
     fold("skip", "Skipped: too far from the safety line", grp.skip, "The break closed too far from the safety line, so the risk was too big to take.");
 }
 
+// How far price is from a watch-list line: in price (stocks in $, futures in points plus $ per micro contract)
+// and in ATRs (typical candle sizes on that chart).
+function away(m, w) {
+  const d = Math.abs(m.price - w.lineNow);
+  const px = m.kind === "stocks" ? "$" + num(d, 2) : num(d, m.digits) + " pts" + (m.pointValue ? " ($" + num(d * m.pointValue, 0) + "/contract)" : "");
+  return px + " away · " + w.dist + " ATR";
+}
+
 function renderWatch() {
   if (!data) return "";
   const rows = [];
   data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
   rows.sort((a, b) => (a.w.grade === b.w.grade ? a.w.dist - b.w.dist : a.w.grade === "A+" ? -1 : 1));
   if (!rows.length) return '<div class="c empty">No trendlines within 1.5 ATR of price right now.</div>';
-  return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts. Set a price alert on these. Distance is in ATRs of that chart.</div>' +
+  return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts. Set a price alert on these. Distance is shown in price and in ATRs (typical candle sizes on that chart).</div>' +
     rows.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + '/4</span><span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
-      '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + w.dist + " ATR away</div></div></div>" +
+      '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + away(m, w) + "</div></div></div>" +
       '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) +
       (w.line ? tvBlock(m, [{ ...w.line, name: (w.line.up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key) : "") + "</article>").join("");
 }

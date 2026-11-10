@@ -201,7 +201,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
-  ok((await page.locator("text=ATR away").count()) >= 1, "watch list shows lines near price (AAPL, under Stocks)");
+  const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().locator(".mu", { hasText: "away" }).first().textContent();
+  const aw0 = body.markets.find((m) => m.sym === "AAPL"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
+  ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AAPL)", awayTxt + " vs " + wantAway);
   const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first();
   await wl.locator("[data-tvl]").click();
   ok((await page.locator(".tvp textarea").inputValue()).includes("line.new("), "watch list lines can be copied for TradingView");
