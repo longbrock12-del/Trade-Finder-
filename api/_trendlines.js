@@ -158,9 +158,16 @@ function swings(bars) {
   return { lo, hi };
 }
 
-function tfOfLine(ln) {
+// Which chart a line belongs to: by its length (point A to point B), but never smaller than the chart it was
+// found on. Lines between two daily-candle swing points are at least Daily; lines found on the 4-hour chart are
+// at least 4-hour (a 3-day line on a stock's 4-hour chart is still a 4-hour line, not a 1-hour one).
+const TF_ORDER = ["1-hour", "4-hour", "Daily", "Weekly", "Monthly"];
+function tfOfLine(ln, tf) {
   const d = (ln.b.t - ln.a.t) / DAY;
-  return d >= 365 ? "Monthly" : d >= 91 ? "Weekly" : d >= 21 ? "Daily" : d >= 4 ? "4-hour" : "1-hour";
+  let k = d >= 365 ? 4 : d >= 91 ? 3 : d >= 21 ? 2 : d >= 4 ? 1 : 0;
+  if (ln.a.daily && ln.b.daily) k = Math.max(k, 2);
+  if (tf === "4H") k = Math.max(k, 1);
+  return TF_ORDER[k];
 }
 
 // Everything for one entry chart (4H or 1H): the merged daily + intraday points and a way to get the two
@@ -310,7 +317,7 @@ function callout(s, e, last, live, px) {
   const entry = b[e.at].c;
   const c = { tf, setup: e.kind === "bounce" ? "bounce" : g.taps >= 3 ? "3-touch break" : "2-touch break", dir: e.long ? "long" : "short",
     at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
-    lineTF: tfOfLine(e.action), lineFrom: e.action.a.t, action: e.action, tapX: g.tapX };
+    lineTF: tfOfLine(e.action, tf), lineFrom: e.action.a.t, action: e.action, tapX: g.tapX };
   let sl = e.safety, from = e.at;
   if (!sl) {
     // Her rule: no safety line yet - wait for one to form, then enter if price is still past the action line.
@@ -400,7 +407,7 @@ function scan(hChart, dChart, opts = {}) {
       const v = val(ln, s.x0 + last + 1), d = Math.abs(live - v) / s.A[last];
       if (d > WATCH_ATR) return;
       const g = grade(s, ln, last + 1 > b.length - 1 ? b.length - 1 : last + 1, up);
-      watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln), key: ln.a.t + ":" + ln.b.t,
+      watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln, tf), key: ln.a.t + ":" + ln.b.t,
         line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up },
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),
         plan: up ? tf + " close below " + px(v) + " = short break. Tag and hold = long bounce." : tf + " close above " + px(v) + " = long break. Tag and reject = short bounce." });
@@ -435,7 +442,7 @@ function scan(hChart, dChart, opts = {}) {
     const zoff = Math.max(0, daily.length - ZOOM);
     const info = (ln, up) => {
       const v = val(ln, xNow);
-      return { up, tf: tfOfLine(ln), t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, now: px(v), pct: r2((100 * (v - live)) / live, 1),
+      return { up, tf: tfOfLine(ln, x.tf), t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, now: px(v), pct: r2((100 * (v - live)) / live, 1),
         action: same(ln, x.action), safety: same(ln, x.safety), X0: ln.a.x / s.ppd - zoff, P0: ln.a.p, slopeX: ln.slope * s.ppd };
     };
     const lines = [[ch.up, true], [ch.dn, false]].flatMap(([c, up]) => c.slice(1).map((q, k) => [c[k], q])

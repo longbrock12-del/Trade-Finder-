@@ -97,6 +97,10 @@ async function scannerTests() {
   ok(gc && gc.lineTF === "Daily" && gc.entry === 4057 && gc.status === "too-far", "gold: 4H close above a falling Daily line on Nov 4 (A+), skipped as too far from the safety line", gc && [gc.lineTF, gc.entry, gc.status].join("/"));
   const cl = full["CL=F"].signals.find((s) => s.tf === "1H" && s.dir === "short" && s.lineTF === "Weekly");
   ok(cl && cl.entry === 85.94 && cl.stop0 === 90.08 && cl.stop === 89.76 && cl.status === "open", "crude: 1H close below a rising Weekly line, stop trailed from 90.08 to 89.76", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
+  const allLines = sigs.map(({ s }) => ({ s, ls: s.chart.lines }));
+  ok(allLines.every(({ s, ls }) => s.tf !== "4H" || (s.lineTF !== "1-hour" && ls.every((l) => l.tf !== "1-hour"))), "lines found on a 4-hour chart are never called 1-hour");
+  const dl = full["GC=F"].signals[0].chart.lines;
+  ok(dl.every((l) => (l.t1 - l.t0) / 86400 >= 21 || l.tf !== "Monthly"), "labels still follow line length above the chart's own size");
   ok(sigs.every(({ s }) => s.chart.lines.some((l) => l.action) && (s.setup === "bounce" || !s.chart.safety || s.chart.lines.some((l) => l.safety))), "every callout's line list includes its action and safety lines");
   ok(sigs.every(({ s }) => s.chart.lines.every((l) => ["Monthly", "Weekly", "Daily", "4-hour", "1-hour"].includes(l.tf) && Math.abs(l.P0 + l.slopeX * 0 - l.P0) === 0 && l.now > 0)) && sigs.some(({ s }) => s.chart.lines.some((l) => l.tf === "Monthly")), "line lists go from Monthly lines down to the entry chart");
   ok(sigs.every(({ s }) => s.chart.zoom.length >= 400), "zoomed-out chart gets about 2 years of daily candles");
