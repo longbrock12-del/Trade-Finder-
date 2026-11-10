@@ -117,16 +117,7 @@ const STATUS = {
 };
 const TFNAME = { "4H": "4-hour", "1H": "1-hour" };
 const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
-// TradingView: link to the same market and chart, and her lines as a Pine Script to paste into the Pine Editor.
-const TV_EX = { MGC: "COMEX", GC: "COMEX", SI: "COMEX", SIL: "COMEX", HG: "COMEX", MCL: "NYMEX", CL: "NYMEX", NG: "NYMEX", PL: "NYMEX",
-  ES: "CME_MINI", MES: "CME_MINI", NQ: "CME_MINI", MNQ: "CME_MINI", RTY: "CME_MINI", M2K: "CME_MINI", YM: "CBOT_MINI", MYM: "CBOT_MINI",
-  ZB: "CBOT", ZN: "CBOT", ZC: "CBOT", ZS: "CBOT", ZW: "CBOT" };
-function tvSymbol(sym) {
-  const m = /^(.+)=F$/.exec(sym);
-  if (!m) return sym; // stocks: TradingView finds the exchange
-  return (TV_EX[m[1]] ? TV_EX[m[1]] + ":" : "") + m[1] + "1!"; // 1! = front-month contract, like Yahoo's =F
-}
-const tvUrl = (sym, tf) => "https://www.tradingview.com/chart/?symbol=" + encodeURIComponent(tvSymbol(sym)) + "&interval=" + (tf === "1H" ? "60" : "240");
+// Her lines for TradingView: points to draw with the ray tool, and a Pine Script to paste into the Pine Editor.
 // lines: [{ t0, p0, t1, p1, up, dashed, name }] (t in seconds). Rays to the right, green rising, red falling.
 function pineScript(m, lines) {
   const d = (m.digits || 2) + 1, row = (l) => "    line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
@@ -136,16 +127,13 @@ function pineScript(m, lines) {
 function tvBlock(m, lines, tf, key) {
   const dt = (t) => new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
   const shown = tvOpen[key];
-  // TradingView only lets a plain /chart/ link open its app (links naming a symbol are kept on the website),
-  // so the app button copies the symbol on the way: paste it into the app's search.
-  return '<div class="tv"><a class="btn" href="https://www.tradingview.com/chart/" data-sym="' + esc(tvSymbol(m.sym)) + '">Open TradingView app</a>' +
-    '<a class="btn" href="' + esc(tvUrl(m.sym, tf)) + '" target="_blank" rel="noopener">Website ↗</a> ' +
+  return '<div class="tv">' +
     '<button class="btn" data-tvl="' + esc(key) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide lines" : "Lines for TradingView") + "</button>" +
     (shown ? '<div class="tvp"><div class="note" style="margin-top:0">Draw with the ray tool, point A then point B (New York time):</div>' +
       lines.map((l) => '<div class="note"><b style="color:' + (l.up ? "#1fa463" : "#d64545") + '">' + esc(l.name) + "</b>: A " + dt(l.t0) + " @ " + num(l.p0, m.digits) + " → B " + dt(l.t1) + " @ " + num(l.p1, m.digits) + "</div>").join("") +
       '<div class="note">Or on a computer: copy this, open TradingView\'s Pine Editor, paste it, and click "Add to chart".</div>' +
       '<textarea readonly rows="5" aria-label="Pine Script with the lines">' + esc(pineScript(m, lines)) + '</textarea><button class="btn" data-copy="1">Copy script</button></div>' : "") +
-    '<div class="note" style="width:100%;margin-top:0">"Open TradingView app" copies <b>' + esc(tvSymbol(m.sym)) + "</b>: in the app, tap search and paste it. Then pick the " + (tf === "1H" ? "1-hour" : "4-hour") + " chart.</div></div>";
+    "</div>";
 }
 
 // "Get in now": a live callout that hasn't run more than ENTER_R past its entry and isn't through its stop.
@@ -394,11 +382,7 @@ function render() {
 }
 
 document.addEventListener("click", (e) => {
-  const link = e.target.closest("a");
-  if (link) { // TradingView links: let them open (don't toggle the chart); the app button copies the symbol first
-    if (link.dataset.sym && navigator.clipboard) navigator.clipboard.writeText(link.dataset.sym).catch(() => {});
-    return;
-  }
+  if (e.target.closest("a")) return; // links open normally and don't toggle the chart
   const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-goto],[data-tvl],[data-copy],.op,.tvp,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.tvl) { tvOpen[t.dataset.tvl] = !tvOpen[t.dataset.tvl]; render(); return; }
