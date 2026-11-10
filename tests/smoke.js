@@ -72,8 +72,9 @@ async function scannerTests() {
     full[m.sym].signals.forEach((s) => sigs.push({ m: full[m.sym], s })); m.watch.forEach((w) => watch.push({ m, w }));
   });
   ok(good.every((m) => m.signals.length <= 1), "only one callout per market", good.map((m) => m.sym + ":" + m.signals.length).join(" "));
-  const fit = (sym) => full[sym].signals.filter((x) => x.passed >= 3);
-  ok(good.every((m) => m.signals.every((x) => x.passed >= 3)), "only callouts passing at least 3 of the 4 checklist rules are listed");
+  const fit = (sym) => full[sym].signals.filter((x) => x.passed >= 3 && x.checks.taps);
+  ok(good.every((m) => m.signals.every((x) => x.passed >= 3 && x.checks.taps && x.taps >= 3)), "only callouts passing at least 3 of the 4 checklist rules, always with 3+ taps, are listed");
+  ok(sigs.some(({ s }) => s.passed >= 3 && !s.checks.taps), "3-of-4 lines with only 2 taps are found but filtered out");
   ok(sigs.some(({ s }) => s.passed < 3) && sigs.every(({ s }) => s.passed === Object.values(s.checks).filter(Boolean).length && (s.grade === "A+") === (s.passed === 4)), "weaker lines are found but filtered out; A+ = 4/4, B = 3/4");
   ok(good.filter((m) => m.signals.length).every((m) => m.signals[0].t === Math.max(...fit(m.sym).map((x) => x.t))), "the callout shown is the newest one that passes");
   ok(good.filter((m) => m.signals.length).every((m) => (m.signals[0].replaced || 0) === fit(m.sym).length - 1), "it says how many older passing callouts it replaced");
@@ -127,11 +128,11 @@ async function scannerTests() {
 
   // Track record: the same rules replayed over the 6 months.
   const recs = good.map((m) => m.record);
-  ok(recs.every((r) => r && r.trades >= 10 && r.wins <= r.trades && Math.abs(r.avgR * r.trades - r.totalR) < 0.02 * r.trades + 0.05 && r.worstR <= r.bestR && r.maxDrawdownR <= 0), "every market has a 6-month track record that adds up");
+  ok(recs.every((r) => r && r.trades >= 5 && r.wins <= r.trades && Math.abs(r.avgR * r.trades - r.totalR) < 0.02 * r.trades + 0.05 && r.worstR <= r.bestR && r.maxDrawdownR <= 0), "every market has a 6-month track record that adds up");
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced"].includes(x.how))), "trades end on the safety line or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 80 && clr.totalR === 38.8, "crude's 6 months: 80 trades, +38.8R", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 36 && clr.totalR === 38.05, "crude's 6 months: 36 trades, +38.05R", clr.trades + " / " + clr.totalR);
   const def = await tradesApi("/api/trades");
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
@@ -205,6 +206,9 @@ async function openFolds(page) {
 
 async function pageTests(browser, body, optBody, scanBody) {
   console.log("Page");
+  // The saved futures have no live callout at that moment, so make Micro Gold's newest one live, fired an hour ago.
+  body = JSON.parse(JSON.stringify(body));
+  Object.assign(body.markets.find((m) => m.sym === "MGC=F").signals[0], { status: "open", nowR: 0.1, liveThrough: false, t: NOW - 3600 });
   const page = await browser.newPage({ viewport: { width: 390, height: 900 } }), errors = [], asked = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
@@ -228,7 +232,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
   const fut = await page.locator(".cl .st", { hasText: "GET IN NOW" }).allTextContents();
   ok(fut.length >= 1 && fut.every((x) => /GET IN NOW: (BUY|SELL) [A-Z]+ near/.test(x)), "futures cards say GET IN NOW: BUY or SELL (no calls or puts)", fut.join(","));
-  ok((await page.locator(".cl").count()) >= 4, "callout cards render", await page.locator(".cl").count());
+  ok((await page.locator(".cl").count()) >= 3, "callout cards render", await page.locator(".cl").count());
   ok((await page.locator(".cl .tag", { hasText: /^(A\+ · 4|B · 3)\/4$/ }).count()) === (await page.locator(".cl").count()), "every card shows how many checklist rules it passes (3/4 or 4/4)");
   ok((await page.locator(".cl .tag", { hasText: /^(4H|1H)$/ }).count()) === (await page.locator(".cl").count()), "every card says which chart it's on (4H or 1H)");
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");

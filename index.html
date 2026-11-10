@@ -368,7 +368,7 @@ function card(m, s) {
 function getInBox(all) {
   const name = kind === "futures" ? "futures" : "stocks", go = all.filter(({ s }) => canEnter(s));
   if (!go.length) return '<div class="gi none"><h3>No ' + name + " entries right now</h3>" +
-    '<div class="note" style="margin:0">Nothing has triggered that passes 3 of the 4 checklist rules and is still near its entry price. Check the Watch list for lines price is close to.</div></div>';
+    '<div class="note" style="margin:0">Nothing has triggered that passes 3 of the 4 checklist rules (with 3+ taps) and is still near its entry price. Check the Watch list for lines price is close to.</div></div>';
   return ""; // trades you can get into are the cards under Live callouts
 }
 
@@ -396,12 +396,12 @@ function trackBox() {
   const open = !!folds.track;
   return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div></div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
-    (open ? '<div style="margin-top:8px">' + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout passing 3 of 4 checklist rules is taken, except ones skipped as too far from the safety line or with no safety line. One position per market: a newer callout replaces the one you\'re in, otherwise you exit when a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
+    (open ? '<div style="margin-top:8px">' + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout passing 3 of 4 checklist rules, always including 3+ taps, is taken, except ones skipped as too far from the safety line or with no safety line. One position per market: a newer callout replaces the one you\'re in, otherwise you exit when a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 
 function renderCalls() {
   const all = callouts();
-  if (!all.length) return trackBox() + getInBox(all) + '<div class="c empty">No callouts in the last 5 trading days that pass 3 of the 4 checklist rules.</div>';
+  if (!all.length) return trackBox() + getInBox(all) + '<div class="c empty">No callouts in the last 5 trading days that pass 3 of the 4 checklist rules with 3+ taps.</div>';
   const grp = { live: [], wait: [], done: [], skip: [] };
   // Live trades you can no longer get into (over a day old, or already past 0.5R) aren't listed. They still count in the track record.
   all.forEach((x) => { const st = x.s.status; if (st === "open" && !canEnter(x.s)) return; (st === "open" ? grp.live : st === "no-safety" ? grp.wait : st === "too-far" ? grp.skip : grp.done).push(x); });
@@ -411,7 +411,7 @@ function renderCalls() {
   // Live callouts: a bar you open and close; remembered per browser (open to start).
   if (folds.live == null) folds.live = store.get("liveOpen", true);
   return trackBox() + getInBox(all) +
-    fold("live", "Live callouts", grp.live, "Trades you can still get into: fired in the last day and still near the entry price. Only lines passing 3 of 4 checklist rules.") +
+    fold("live", "Live callouts", grp.live, "Trades you can still get into: fired in the last day and still near the entry price. Only lines passing 3 of 4 checklist rules, always with 3+ taps.") +
     sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
     fold("done", "Finished: closed on the safety line", grp.done, "Her exit: a candle closed through the safety line, with the stop trailed along it. Results are in R (multiples of the starting risk).") +
     fold("skip", "Skipped: too far from the safety line", grp.skip, "The break closed too far from the safety line, so the risk was too big to take.");
@@ -446,7 +446,7 @@ function renderRules() {
     "<li><b>Trail it:</b> move your stop along the safety line as price respects it. Exit when price closes through the safety line. There's no fixed target.</li>" +
     "<li><b>Upkeep:</b> after price breaks a line, redraw. Move point B to the new high or low so nothing pokes through. She does this daily.</li>" +
     "<li><b>Bounces</b> (from her playbook): price tags the newest line, which already has 2–3 taps, and closes back on the right side. That line is your safety line.</li>" +
-    "<li><b>Grade A+</b> (from her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. Trade Finder only lists callouts whose line passes at least 3 of the 4 (B = 3 of 4). Log A+ and B trades separately.</li></ol>" +
+    "<li><b>Grade A+</b> (from her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. Trade Finder only lists callouts whose line passes at least 3 of the 4, and 3+ taps must always be one of them (B = missed one of the others). Log A+ and B trades separately.</li></ol>" +
     '<p class="note">Sources: her video "This boring trading strategy made me $526,454", her FX Replay checklist "Tori Trades Trend Line Strategy (swing trading)", and the TradeZella playbook "Tori\'s Trendline Strategy".</p></div>';
 }
 

@@ -30,7 +30,9 @@ const ASPECT = 1.8;       // my number: chart width / height of a normal screen,
 const TOUCH_ATR = 0.3;    // my number: a wick within 0.3 ATR of the line counts as a tap
 const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
 const BOUNCE_ROOM = 0.5;  // my number: room below a bounce line for wicks, used for the risk number
-const MIN_PASSED = 3;      // your rule: a callout's line must pass at least 3 of the 4 checklist rules
+const MIN_PASSED = 3;      // your rule: a callout's line must pass at least 3 of the 4 checklist rules...
+// ...and 3+ taps is always one of them (the replay showed 2-tap lines lost money; she prefers 3+ taps too).
+const qualifies = (x) => x.passed >= MIN_PASSED && !!(x.checks && x.checks.taps);
 const WATCH_ATR = 1.5;    // my number: lines within 1.5 ATR of price go on the watch list
 const RECENT_DAYS = 5;    // callouts from the last 5 trading days
 const KEEP = 150;         // candles sent for the chart
@@ -346,7 +348,7 @@ function callout(s, e, last, live, px) {
 // otherwise a trade ends on its safety line. R = profit in multiples of the starting risk.
 function record(hist) {
   const rank = (x) => (x.tf === "4H" ? 0 : 4) + (x.grade === "A+" ? 0 : 2) + (x.setup === "bounce" ? 1 : 0);
-  const take = hist.filter((x) => x.passed >= MIN_PASSED && (x.status === "open" || x.status === "closed"))
+  const take = hist.filter((x) => qualifies(x) && (x.status === "open" || x.status === "closed"))
     .sort((p, q) => p.entryT - q.entryT || rank(p) - rank(q));
   const done = [];
   let pos = null;
@@ -414,11 +416,11 @@ function scan(hChart, dChart, opts = {}) {
     });
   });
 
-  // Only callouts whose line passes at least 3 of the 4 checklist rules. Of those, one per market: the newest.
+  // Only callouts whose line passes at least 3 of the 4 checklist rules, 3+ taps always. Of those, one per market: the newest.
   // Same time: 4-hour before 1-hour, A+ before B, break before bounce. (opts.all: every callout, for tests.)
   const rank = (x) => (x.tf === "4H" ? 0 : 4) + (x.grade === "A+" ? 0 : 2) + (x.setup === "bounce" ? 1 : 0);
   all.sort((p, q) => q.t - p.t || rank(p) - rank(q));
-  const fit = all.filter((x) => x.passed >= MIN_PASSED);
+  const fit = all.filter(qualifies);
   fit.forEach((x) => { if (fit.some((y) => y !== x && y.t === x.t && y.dir !== x.dir)) x.mixed = true; });
   const sigs = opts.all ? all : fit.slice(0, 1);
   if (!opts.all && fit.length > 1) sigs[0].replaced = fit.length - 1;
