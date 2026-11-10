@@ -134,6 +134,7 @@ async function optionsTests() {
   ok(all.every((c) => c.dte >= 21 && c.dte <= 75), "21-75 days to expiry");
   ok(all.every((c) => Math.abs(c.delta) >= 0.45 && Math.abs(c.delta) <= 0.75), "delta 0.45-0.75");
   ok(all.every((c) => c.oi >= 100 && c.spreadPct <= 10 && c.bid > 0 && c.ask > c.bid), "open interest 100+, spread under 10%");
+  ok(all.every((c) => typeof c.theta === "number" && c.theta < 0 && typeof c.volume === "number"), "contracts include theta (time decay per day) and volume");
   ok(all.every((c) => c.atTargetPct > 0 && c.atStopPct < 0 && c.cost === Math.round(c.mid * 100)), "gains at target, loses at stop, cost is 100 shares");
   ok([L, S].every((r) => { const n = {}; r.contracts.forEach((c) => { n[c.expiry] = (n[c.expiry] || 0) + 1; }); return Object.values(n).every((x) => x <= 2); }), "no more than 2 picks from one expiry");
   ok(S.target === 334 && S.targetIsDefault, "no target on the callout: uses 2R");
@@ -240,6 +241,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-opt]"); await page.waitForSelector(".oc", { timeout: 5000 }).catch(() => {});
   ok((await page.locator(".oc").count()) === 3 && (await page.locator(".oc .tag", { hasText: "Best pick" }).count()) === 1, "three contracts show, one marked Best pick");
   ok(/sym=TEST/.test(optAsk) && optAsk.includes("dir=" + sig.dir) && optAsk.includes("stop=" + sig.stop0) && !/target=/.test(optAsk), "options request carries the direction and starting stop (no target: 2R)", optAsk);
+  const box = await page.locator(".oc").first().textContent();
+  ok(["Bid / Ask $", "Volume ", "Open interest ", "Delta ", "Theta ", "/day)", "Implied volatility ", "%"].every((x) => box.includes(x)), "each contract shows bid/ask, volume, open interest, delta, theta and implied volatility", box);
   ok((await page.locator(".oc .on").first().textContent()).includes("Dec 18, 26 $350 Call"), "contract name reads like a broker's", await page.locator(".oc .on").first().textContent());
   ok((await page.locator(".cl svg").count()) === 0, "opening options doesn't open the chart");
   await page.click(".op .oc"); 

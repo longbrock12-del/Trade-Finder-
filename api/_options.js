@@ -52,7 +52,7 @@ function pick(chain, q, now = Date.now()) {
     rows.push({
       contract: raw.option, type: type === "C" ? "call" : "put", strike: p.strike, expiry: new Date(p.exp).toISOString().slice(0, 10), dte,
       bid: r2(bid), ask: r2(ask), mid: r2(mid), cost: Math.round(mid * 100), delta: r2(delta), iv: Math.round(Number(raw.iv) * 1000) / 10,
-      oi: Number(raw.open_interest), volume: Number(raw.volume) || 0, spreadPct: Math.round(spread * 1000) / 10,
+      oi: Number(raw.open_interest), volume: Number(raw.volume) || 0, theta: r2(Number(raw.theta) || 0), spreadPct: Math.round(spread * 1000) / 10,
       breakeven: r2(type === "C" ? p.strike + mid : p.strike - mid),
       atTarget: r2(atT), atTargetPct: Math.round((gain / mid) * 100), atStop: r2(atS), atStopPct: -Math.round((loss / mid) * 100), payoff: r2(payoff), score,
     });

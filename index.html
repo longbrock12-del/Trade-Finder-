@@ -230,11 +230,14 @@ function optionsBlock(m, s, k) {
     d.contracts.forEach((c, i) => {
       const exp = new Date(c.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "UTC" });
       h += '<div class="oc"><div class="on"><span>' + esc(d.sym) + " " + esc(exp) + " $" + num(c.strike, c.strike % 1 ? 1 : 0) + " " + (c.type === "call" ? "Call" : "Put") + "</span>" + (i === 0 ? '<span class="tag ap">Best pick</span>' : "") + "</div>" +
-        '<div class="og"><span>Price <b>' + money(c.mid) + "</b> (" + money(c.bid) + "–" + money(c.ask) + ")</span><span>Per contract <b>$" + num(c.cost, 0) + "</b></span>" +
-        "<span>Expires in <b>" + c.dte + " days</b></span><span>Delta <b>" + num(Math.abs(c.delta), 2) + "</b> · IV <b>" + c.iv + "%</b></span>" +
+        '<div class="og">' +
+        "<span>Bid / Ask <b>" + money(c.bid) + " / " + money(c.ask) + "</b></span><span>Per contract <b>$" + num(c.cost, 0) + "</b></span>" +
+        "<span>Volume <b>" + num(c.volume, 0) + "</b></span><span>Open interest <b>" + num(c.oi, 0) + "</b></span>" +
+        "<span>Delta <b>" + num(c.delta, 2) + "</b></span><span>Theta <b>" + num(c.theta, 2) + "</b> <small>(" + (c.theta < 0 ? "−" : "") + "$" + num(Math.abs(c.theta) * 100, 0) + "/day)</small></span>" +
+        "<span>Implied volatility <b>" + c.iv + "%</b></span><span>Expires in <b>" + c.dte + " days</b></span>" +
         "<span>" + (d.targetIsDefault ? "At 2R " : "At target ") + money(d.target) + ': <b class="ok">~' + money(c.atTarget) + " (+" + c.atTargetPct + "%)</b></span>" +
         "<span>At stop " + money(d.stop) + ': <b class="bad">~' + money(c.atStop) + " (" + c.atStopPct + "%)</b></span>" +
-        "<span>Breakeven at expiry <b>" + money(c.breakeven) + "</b></span><span>Open interest <b>" + num(c.oi, 0) + "</b></span></div></div>";
+        "<span>Breakeven at expiry <b>" + money(c.breakeven) + "</b></span></div></div>";
     });
     h += '<div class="note">Prices from Cboe, 15 minutes delayed. "At 2R" and "at stop" are estimates if the move happens soon; time decay lowers them the longer it takes. ' +
       "2R is just a yardstick (twice the stock's risk). Her exit is the safety line: get out of the option when the stock closes through it. Options aren't part of Tori's strategy. See Rules.</div>";
