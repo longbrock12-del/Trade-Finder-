@@ -42,7 +42,14 @@ async function scannerTests() {
   ok(api.status === 200 && M.length === 7, "API scans each valid symbol and drops junk ones", M.map((m) => m.sym).join(","));
   ok(M.find((m) => m.sym === "ZZZ").error === "unknown symbol", "unknown symbol comes back as an error, not a crash");
   const good = M.filter((m) => !m.error), sigs = [], watch = [];
-  good.forEach((m) => { m.signals.forEach((s) => sigs.push({ m, s })); m.watch.forEach((w) => watch.push({ m, w })); });
+  // Rule checks run on every callout the scanner finds (all: true), not just the newest one per market.
+  good.forEach((m) => {
+    const full = scan(JSON.parse(fs.readFileSync(fx("yahoo_" + YF[m.sym] + ".json"))), { sym: m.sym, all: true, now: 1794264531 });
+    full.signals.forEach((s) => sigs.push({ m: full, s })); m.watch.forEach((w) => watch.push({ m, w }));
+  });
+  ok(good.every((m) => m.signals.length <= 1), "only one callout per market", good.map((m) => m.sym + ":" + m.signals.length).join(" "));
+  ok(good.filter((m) => m.signals.length).every((m) => { const n = sigs.filter((x) => x.m.sym === m.sym).map((x) => x.s.t); return m.signals[0].t === Math.max(...n); }), "the callout shown is the newest one");
+  ok(good.filter((m) => m.signals.length).every((m) => m.signals[0].replaced === sigs.filter((x) => x.m.sym === m.sym).length - 1 || (!m.signals[0].replaced && sigs.filter((x) => x.m.sym === m.sym).length === 1)), "it says how many older callouts it replaced");
   ok(good.length === 6 && good.every((m) => m.bars.length >= 240 && m.price > 0 && m.atr > 0), "every market has 4H candles, a price and an ATR");
   ok(sigs.length >= 10, "saved data produces callouts", sigs.length);
   ok(sigs.some((x) => x.s.setup === "3-touch break") && sigs.some((x) => x.s.setup === "bounce"), "finds both break and bounce setups");
@@ -56,12 +63,11 @@ async function scannerTests() {
   ok(sigs.every(({ s }) => ["open", "target", "stopped", "too-far", "no-safety"].includes(s.status)), "every callout has a known status");
   ok(watch.every(({ w }) => w.dist <= 1.5 && w.lineNow > 0), "watch list only holds lines near price");
   const keys = sigs.map(({ m, s }) => m.sym + s.setup.slice(0, 1) + s.dir + s.at);
-  ok(new Set(keys).size === keys.length, "one callout per candle per direction (copies merged)");
-  ok(sigs.filter(({ s }) => s.flipped).length >= 1 && sigs.filter(({ s }) => s.flipped).every(({ m, s }) => s.status === "open" && m.signals.some((y) => y.at > s.at && y.dir !== s.dir)), "live callouts are flagged when a newer opposite callout fires");
+  ok(new Set(keys).size === keys.length, "one callout per candle per direction (copies of a line merged)");
   const late = scan(JSON.parse(fs.readFileSync(fx("yahoo_CL.json"))), { now: 2e9 }).signals;
   ok(!late.some((x) => x.setup === "bounce" && x.dir === "long") && late.some((x) => x.dir === "short" && x.t === 1794250800), "crude: once the 2 PM candle closes below the line, the long bounce is replaced by a short break");
   ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.at === s.at && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
-  const gc = good.find((m) => m.sym === "GC=F").signals.find((s) => s.setup === "3-touch break" && s.status === "open");
+  const gc = sigs.filter((x) => x.m.sym === "GC=F").map((x) => x.s).find((s) => s.setup === "3-touch break" && s.status === "open");
   ok(gc && gc.dir === "long" && gc.entry === 4037.3 && gc.stop === 3928.9 && gc.target === 4259, "gold 3-touch long break: entry, safety-line stop and 2R target", gc && [gc.entry, gc.stop, gc.target].join("/"));
   const def = await tradesApi("/api/trades");
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
@@ -87,7 +93,7 @@ async function scanTests() {
   const B = r.body;
   ok(U.length >= 100 && new Set(U).size === U.length, "scan list has 100+ different stocks and ETFs", U.length);
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
-  ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0), "scan returns only stocks with a setup, under their own symbols");
+  ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0 && m.signals.length <= 1), "scan returns only stocks with a setup, one callout each, under their own symbols");
   ok(B.markets.every((m) => m.signals.every((s) => s.at >= m.lastIdx - 10)), "stock callouts are from the last ~5 trading days");
   ok(ms < 20000, "full scan runs in under 20 seconds of work", ms + "ms");
   return B;
@@ -195,9 +201,6 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl svg").count()) === 0, "tapping inside the options panel doesn't open the chart");
   await page.click("[data-opt]");
   ok((await page.locator(".oc").count()) === 0, "options button hides the panel again");
-  const flip = body.markets.find((m) => m.signals.some((x) => x.flipped));
-  await page.click("[data-k=all]");
-  ok(!flip || (await page.locator(".cl", { hasText: "callout fired on this market after this one" }).count()) >= 1, "flipped callouts show a warning");
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }

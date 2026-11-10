@@ -285,11 +285,14 @@ function scan(chart, opts = {}) {
     const k = (x.setup === "bounce" ? "b" : "k") + x.dir + x.at;
     if (best[k]) best[k].also = (best[k].also || 0) + 1; else best[k] = x;
   });
-  const sigs = Object.values(best).sort((p, q) => q.at - p.at || (p.grade === "A+" ? -1 : 1));
-  // Opposite callouts on the same candle (broke one line, rejected at another): flag both.
-  sigs.forEach((x) => { if (sigs.some((y) => y !== x && y.at === x.at && y.dir !== x.dir)) x.mixed = true; });
-  // A live callout with a newer one the other way on the same market: flag it, so you know price turned.
-  sigs.forEach((x) => { if (x.status === "open" && sigs.some((y) => y.at > x.at && y.dir !== x.dir && y.status !== "no-safety")) x.flipped = true; });
+  // Newest first; on the same candle, A+ before B and a break before a bounce.
+  const rank = (x) => (x.grade === "A+" ? 0 : 2) + (x.setup === "bounce" ? 1 : 0);
+  const all = Object.values(best).sort((p, q) => q.at - p.at || rank(p) - rank(q));
+  // Opposite callouts on the same candle (broke one line, rejected at another): flag it.
+  all.forEach((x) => { if (all.some((y) => y !== x && y.at === x.at && y.dir !== x.dir)) x.mixed = true; });
+  // One callout per market: the newest replaces anything older (opts.all keeps them all, for testing).
+  const sigs = opts.all ? all : all.slice(0, 1);
+  if (!opts.all && all.length > 1) sigs[0].replaced = all.length - 1;
   const wbest = {};
   watch.forEach((w) => { const k = w.kind + w.lineNow; if (!wbest[k] || wbest[k].taps < w.taps) wbest[k] = w; });
   watch.length = 0; watch.push(...Object.values(wbest));
