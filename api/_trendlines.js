@@ -256,7 +256,9 @@ function scan(chart, opts = {}) {
         return;
       }
 
-      // Unbroken line: bounce now, or on the watch list if price is close.
+      // Unbroken line: bounce now, or on the watch list if price is close. (If a later 4H candle closes through
+      // the line, it counts as broken: the bounce drops off and a break callout the other way replaces it -
+      // her rule that a close through the line ends a bounce trade.)
       const v = at(ln, last), d = Math.abs(b[last].c - v) / A[last];
       // Bounce needs 2+ earlier taps (TradeZella: "two or three clear touchpoints before entry").
       const touched = [last, last - 1].find((i) => ln.taps.filter((t) => t < i - 2).length >= 2 && Math.abs(b[i][res ? "h" : "l"] - at(ln, i)) <= TOUCH_ATR * A[i] && (res ? b[i].c < at(ln, i) : b[i].c > at(ln, i)));
@@ -286,6 +288,8 @@ function scan(chart, opts = {}) {
   const sigs = Object.values(best).sort((p, q) => q.at - p.at || (p.grade === "A+" ? -1 : 1));
   // Opposite callouts on the same candle (broke one line, rejected at another): flag both.
   sigs.forEach((x) => { if (sigs.some((y) => y !== x && y.at === x.at && y.dir !== x.dir)) x.mixed = true; });
+  // A live callout with a newer one the other way on the same market: flag it, so you know price turned.
+  sigs.forEach((x) => { if (x.status === "open" && sigs.some((y) => y.at > x.at && y.dir !== x.dir && y.status !== "no-safety")) x.flipped = true; });
   const wbest = {};
   watch.forEach((w) => { const k = w.kind + w.lineNow; if (!wbest[k] || wbest[k].taps < w.taps) wbest[k] = w; });
   watch.length = 0; watch.push(...Object.values(wbest));

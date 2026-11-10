@@ -57,6 +57,9 @@ async function scannerTests() {
   ok(watch.every(({ w }) => w.dist <= 1.5 && w.lineNow > 0), "watch list only holds lines near price");
   const keys = sigs.map(({ m, s }) => m.sym + s.setup.slice(0, 1) + s.dir + s.at);
   ok(new Set(keys).size === keys.length, "one callout per candle per direction (copies merged)");
+  ok(sigs.filter(({ s }) => s.flipped).length >= 1 && sigs.filter(({ s }) => s.flipped).every(({ m, s }) => s.status === "open" && m.signals.some((y) => y.at > s.at && y.dir !== s.dir)), "live callouts are flagged when a newer opposite callout fires");
+  const late = scan(JSON.parse(fs.readFileSync(fx("yahoo_CL.json"))), { now: 2e9 }).signals;
+  ok(!late.some((x) => x.setup === "bounce" && x.dir === "long") && late.some((x) => x.dir === "short" && x.t === 1794250800), "crude: once the 2 PM candle closes below the line, the long bounce is replaced by a short break");
   ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.at === s.at && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
   const gc = good.find((m) => m.sym === "GC=F").signals.find((s) => s.setup === "3-touch break" && s.status === "open");
   ok(gc && gc.dir === "long" && gc.entry === 4037.3 && gc.stop === 3928.9 && gc.target === 4259, "gold 3-touch long break: entry, safety-line stop and 2R target", gc && [gc.entry, gc.stop, gc.target].join("/"));
@@ -192,6 +195,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl svg").count()) === 0, "tapping inside the options panel doesn't open the chart");
   await page.click("[data-opt]");
   ok((await page.locator(".oc").count()) === 0, "options button hides the panel again");
+  const flip = body.markets.find((m) => m.signals.some((x) => x.flipped));
+  await page.click("[data-k=all]");
+  ok(!flip || (await page.locator(".cl", { hasText: "callout fired on this market after this one" }).count()) >= 1, "flipped callouts show a warning");
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }

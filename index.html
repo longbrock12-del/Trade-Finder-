@@ -250,6 +250,7 @@ function card(m, s) {
     '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>Stop</small>" + num(s.stop, d) + "</div><div><small>Target</small>" + num(s.target, d) + "</div><div><small>Reward : risk</small>" + (s.rr != null ? s.rr.toFixed(1) + " : 1" : "—") + "</div></div>" +
     (m.pointValue && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: risk <b>$' + num(s.risk * m.pointValue, 0) + "</b>" + (s.target != null ? " · reward <b>$" + num(Math.abs(s.target - s.entry) * m.pointValue, 0) + "</b>" : "") + " ($" + m.pointValue + " per 1.00 move)</div>" : "") +
     '<div class="st ' + st[1] + '">' + st[0] + now + "</div>" +
+    (s.flipped ? '<div class="note warn">A newer ' + (s.dir === "long" ? "SHORT" : "LONG") + " callout fired on this market after this one, so price has turned against it. Many traders close the old trade here instead of waiting for the stop.</div>" : "") +
     (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged the line" : "4H candle closed through the line") + " · " + when(s.t) + (s.also ? " · also broke " + s.also + " weaker line" + (s.also > 1 ? "s" : "") : "") + " · tap for chart</div>" +
