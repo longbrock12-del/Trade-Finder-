@@ -97,6 +97,7 @@ async function scannerTests() {
   ok(gc && gc.lineTF === "Daily" && gc.entry === 4057 && gc.status === "too-far", "gold: 4H close above a falling Daily line on Nov 4 (A+), skipped as too far from the safety line", gc && [gc.lineTF, gc.entry, gc.status].join("/"));
   const cl = full["CL=F"].signals.find((s) => s.tf === "1H" && s.dir === "short" && s.lineTF === "Weekly");
   ok(cl && cl.entry === 85.94 && cl.stop0 === 90.08 && cl.stop === 89.76 && cl.status === "open", "crude: 1H close below a rising Weekly line, stop trailed from 90.08 to 89.76", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
+  ok(sigs.every(({ s }) => s.chart.chains.every((e) => e.i1 - e.i0 >= 6)), "charts only draw real trendlines: no short pieces that would look curved");
   ok(sigs.every(({ s }) => s.chart.line.t0 < s.chart.line.t1 && (!s.chart.safety || s.chart.safety.t0 < s.chart.safety.t1)), "every line carries its point A and point B times (for TradingView)");
   // The fast, candle-by-candle lines are the same as rebuilding the chains from scratch.
   const T = require(path.join(ROOT, "api/_trendlines.js"));

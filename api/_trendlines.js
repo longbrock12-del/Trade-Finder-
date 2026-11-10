@@ -423,7 +423,11 @@ function scan(hChart, dChart, opts = {}) {
     // t0/t1: the times of point A and point B, so the line can be redrawn on TradingView.
     const loc = (ln) => ln && { i0: ln.a.x - base, p0: ln.a.p, slope: ln.slope, i1: ln.b.x - base, p1: ln.b.p, t0: ln.a.t, t1: ln.b.t };
     const ch = s.chainsBefore(s.last + 1);
-    const edges = (c, up) => c.slice(1).map((q, k) => ({ up, ...loc(lineOf(c[k], q)) })).filter((e) => e.i1 >= -KEEP);
+    // Only real trendlines: swing point to swing point, 6+ candles, not flat (the same rule as action lines).
+    // The short pieces in between would draw as a bend, and they're never traded.
+    const edges = (c, up) => c.slice(1).map((q, k) => [c[k], q])
+      .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
+      .map(([a, q]) => ({ up, ...loc(lineOf(a, q)) })).filter((e) => e.i1 >= -KEEP);
     return {
       bars: b.slice(off).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
       line: loc(x.action), safety: loc(x.safety), tapIdx: x.tapX.map((t) => t - base).filter((t) => t >= 0),
