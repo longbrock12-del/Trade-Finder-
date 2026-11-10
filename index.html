@@ -56,6 +56,9 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .tv{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}.tv a.btn{text-decoration:none;color:var(--ac)}
 .tvp{width:100%;margin-top:4px;cursor:default}.tvp textarea{width:100%;font:11px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--bd);border-radius:8px;background:var(--soft);color:var(--tx);padding:6px;margin:6px 0}
 .trk .big{font-size:24px;font-weight:800;margin:2px 0}.trr{display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:6px 0 2px;border-top:1px solid var(--bd);font-size:14px}
+.lns{margin-top:8px;cursor:default}.lnr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:5px 0;border-top:1px solid var(--bd);font-size:13px}
+.lnr i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}.lnr small{color:var(--mu);font-size:11px;font-weight:400}
+.lnr.now{background:var(--soft);border-radius:6px;padding:5px 6px;font-weight:700}
 .op{margin-top:10px;border-top:1px solid var(--bd);padding-top:10px;cursor:default}
 .oc{background:var(--soft);border-radius:10px;padding:9px 10px;margin-top:8px;font-size:13px}
 .oc .on{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
@@ -96,7 +99,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tl:" + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-let opts = {}, folds = {}, openCharts = {}, tvOpen = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
+let opts = {}, folds = {}, openCharts = {}, tvOpen = {}, zoomed = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 // Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
@@ -233,6 +236,50 @@ function chart(m, s) {
     '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line (circles = taps)</span>' + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div></div>";
 }
 
+const TFSHORT = { Monthly: "M", Weekly: "W", Daily: "D", "4-hour": "4H", "1-hour": "1H" };
+// Zoomed out: about 2 years of daily candles with every line in both chains drawn as a ray, labeled by timeframe.
+function zoomChart(m, s) {
+  const C = s.chart, B = C.zoom || [], n = B.length;
+  if (!n) return "";
+  let hi = -Infinity, lo = Infinity;
+  B.forEach((b) => { hi = Math.max(hi, b[2]); lo = Math.min(lo, b[3]); });
+  const pad = (hi - lo) * 0.08; hi += pad; lo -= pad;
+  const W = 640, H = 300, L = 4, R = 64, T = 8, Bm = 18, cw = (W - L - R) / (n + 4);
+  const X = (i) => L + (i + 0.5) * cw, Y = (p) => T + ((hi - p) / (hi - lo)) * (H - T - Bm), end = n + 3;
+  const GREEN = "#1fa463", RED = "#d64545";
+  let g = '<defs><clipPath id="zc"><rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - Bm) + '"/></clipPath></defs><g clip-path="url(#zc)">';
+  B.forEach((b, i) => {
+    const col = b[4] >= b[1] ? "var(--gd)" : "var(--bad)";
+    g += '<line x1="' + X(i) + '" x2="' + X(i) + '" y1="' + Y(b[2]) + '" y2="' + Y(b[3]) + '" stroke="' + col + '" stroke-width="1" opacity=".6"/>';
+  });
+  const lab = [];
+  (C.lines || []).forEach((l) => {
+    const a = Math.max(l.X0, -2), v = (x) => l.P0 + l.slopeX * (x - l.X0), col = l.up ? GREEN : RED;
+    g += '<line x1="' + X(a) + '" x2="' + X(end) + '" y1="' + Y(v(a)) + '" y2="' + Y(v(end)) + '" stroke="' + col + '" stroke-width="' + (l.action ? 2.8 : 1.6) + '"' + (l.safety ? ' stroke-dasharray="6 4"' : "") + ' stroke-linecap="round"/>';
+    const y = Y(v(end));
+    if (y > T && y < H - Bm) lab.push({ y, t: TFSHORT[l.tf] || l.tf, col });
+  });
+  g += "</g>";
+  lab.sort((p, q) => p.y - q.y).forEach((l, i, a) => { if (i && l.y - a[i - 1].y < 11) l.y = a[i - 1].y + 11; g += '<text x="' + (W - R + 4) + '" y="' + (l.y + 4) + '" font-size="11" font-weight="700" fill="' + l.col + '">' + l.t + "</text>"; });
+  const d = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + d(B[0][0]) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + d(B[n - 1][0]) + "</text>";
+  return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Daily chart of ' + esc(show(m.sym)) + ' with every trendline">' + g + "</svg>" +
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>M W D 4H 1H = the chart each line comes from</span><span>Thick = action line, dashed = safety line</span><span>Daily candles, about 2 years</span></div></div>';
+}
+
+// Every line on this market, top to bottom, with where it sits now. Plus the zoom button.
+function linesBlock(m, s, k) {
+  const ls = (s.chart.lines || []).slice().sort((p, q) => q.now - p.now), d = m.digits, z = !!zoomed[k];
+  const since = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+  const row = (l) => '<div class="lnr"><span><i style="background:' + (l.up ? "#1fa463" : "#d64545") + '"></i>' + (l.up ? "Rising " : "Falling ") + "<b>" + esc(l.tf) + "</b> line" +
+    (l.action ? ' <span class="tag ap">action</span>' : "") + (l.safety ? ' <span class="tag">safety</span>' : "") + (l.atCallout ? ' <span class="tag">at callout</span>' : "") + '<small> since ' + since(l.t0) + "</small></span><b>" + num(l.now, d) + ' <small class="' + (l.pct >= 0 ? "ok" : "bad") + '">' + (l.pct >= 0 ? "+" : "") + l.pct.toFixed(1) + "%</small></b></div>";
+  const above = ls.filter((l) => l.now >= m.price), below = ls.filter((l) => l.now < m.price);
+  return '<div class="lns"><button class="btn" data-zoom="' + esc(k) + '" aria-pressed="' + z + '">' + (z ? "Back to " + TFNAME[s.tf] + " chart" : "Zoom out: 2 years, every line") + "</button>" +
+    '<div class="note" style="margin:8px 0 2px">Every line on ' + esc(show(m.sym)) + ", Monthly down to " + TFNAME[s.tf] + ", and where it is now:</div>" +
+    above.map(row).join("") + '<div class="lnr now"><span>Price now</span><b>' + num(m.price, d) + "</b></div>" + below.map(row).join("") +
+    (ls.length ? "" : '<div class="note">No lines yet.</div>') + "</div>";
+}
+
 function checks(s) {
   const c = s.checks || {};
   const it = (ok, t) => '<span class="' + (ok ? "ok" : "warn") + '">' + (ok ? "✓" : "✗") + " " + t + "</span>";
@@ -303,7 +350,7 @@ function card(m, s) {
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + " · tap for chart</div>" +
-    (openCharts[k] ? chart(m, s) : "") +
+    (openCharts[k] ? (zoomed[k] ? zoomChart(m, s) : chart(m, s)) + linesBlock(m, s, k) : "") +
     tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k) +
     optionsBlock(m, s, k) + "</article>";
 }
@@ -418,8 +465,10 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],.op,.tvp,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],.op,.tvp,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
+  if (t.dataset.zoom) { zoomed[t.dataset.zoom] = !zoomed[t.dataset.zoom]; render(); return; }
+  if (t.classList.contains("lns")) return;
   if (t.dataset.tvl) { tvOpen[t.dataset.tvl] = !tvOpen[t.dataset.tvl]; render(); return; }
   if (t.dataset.copy) {
     const ta = t.parentNode.querySelector("textarea");

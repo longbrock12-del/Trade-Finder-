@@ -97,6 +97,9 @@ async function scannerTests() {
   ok(gc && gc.lineTF === "Daily" && gc.entry === 4057 && gc.status === "too-far", "gold: 4H close above a falling Daily line on Nov 4 (A+), skipped as too far from the safety line", gc && [gc.lineTF, gc.entry, gc.status].join("/"));
   const cl = full["CL=F"].signals.find((s) => s.tf === "1H" && s.dir === "short" && s.lineTF === "Weekly");
   ok(cl && cl.entry === 85.94 && cl.stop0 === 90.08 && cl.stop === 89.76 && cl.status === "open", "crude: 1H close below a rising Weekly line, stop trailed from 90.08 to 89.76", cl && [cl.entry, cl.stop0, cl.stop, cl.status].join("/"));
+  ok(sigs.every(({ s }) => s.chart.lines.some((l) => l.action) && (s.setup === "bounce" || !s.chart.safety || s.chart.lines.some((l) => l.safety))), "every callout's line list includes its action and safety lines");
+  ok(sigs.every(({ s }) => s.chart.lines.every((l) => ["Monthly", "Weekly", "Daily", "4-hour", "1-hour"].includes(l.tf) && Math.abs(l.P0 + l.slopeX * 0 - l.P0) === 0 && l.now > 0)) && sigs.some(({ s }) => s.chart.lines.some((l) => l.tf === "Monthly")), "line lists go from Monthly lines down to the entry chart");
+  ok(sigs.every(({ s }) => s.chart.zoom.length >= 400), "zoomed-out chart gets about 2 years of daily candles");
   ok(sigs.every(({ s }) => s.chart.chains.every((e) => e.i1 - e.i0 >= 6)), "charts only draw real trendlines: no short pieces that would look curved");
   ok(sigs.every(({ s }) => s.chart.line.t0 < s.chart.line.t1 && (!s.chart.safety || s.chart.safety.t0 < s.chart.safety.t1)), "every line carries its point A and point B times (for TradingView)");
   // The fast, candle-by-candle lines are the same as rebuilding the chains from scratch.
@@ -238,6 +241,11 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".tvp").count()) === 0, "lines panel closes again");
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
+  ok((await page.locator(".cl .lns .lnr").count()) >= 3 && (await page.locator(".cl .lns .lnr.now").count()) === 1 && (await page.locator(".cl .lns .tag", { hasText: "action" }).count()) === 1, "under the chart: every line on the market, with price now and the action line marked");
+  await page.click(".cl [data-zoom]");
+  ok((await page.locator(".cl svg[aria-label^='Daily chart']").count()) === 1 && (await page.locator(".cl [data-zoom]").textContent()).startsWith("Back to"), "Zoom out switches to the daily chart with every line");
+  await page.click(".cl [data-zoom]");
+  ok((await page.locator(".cl svg[aria-label^='Daily chart']").count()) === 0 && (await page.locator(".cl svg").count()) === 1, "and back again; zooming doesn't close the chart");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().locator(".mu", { hasText: "away" }).first().textContent();

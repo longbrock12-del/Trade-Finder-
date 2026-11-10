@@ -34,6 +34,7 @@ const MIN_PASSED = 3;      // your rule: a callout's line must pass at least 3 o
 const WATCH_ATR = 1.5;    // my number: lines within 1.5 ATR of price go on the watch list
 const RECENT_DAYS = 5;    // callouts from the last 5 trading days
 const KEEP = 150;         // candles sent for the chart
+const ZOOM = 500;         // daily candles (about 2 years) for the zoomed-out chart
 // Candles per trading day, for each chart: futures trade ~23 hours, stocks 6.5.
 const PER_DAY = { futures: { "4H": 6, "1H": 23 }, stocks: { "4H": 2, "1H": 7 } };
 // Dollars per 1.00 move for one contract, so callouts can show risk per contract.
@@ -428,11 +429,28 @@ function scan(hChart, dChart, opts = {}) {
     const edges = (c, up) => c.slice(1).map((q, k) => [c[k], q])
       .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
       .map(([a, q]) => ({ up, ...loc(lineOf(a, q)) })).filter((e) => e.i1 >= -KEEP);
+    // Every real line in both chains, Monthly down to 1-hour, with where its ray sits now.
+    // X = position in daily candles (the merged x divided by candles per day), for the zoomed-out daily chart.
+    const xNow = s.x0 + s.last + 1, same = (ln, o) => !!o && ln.a.t === o.a.t && ln.b.t === o.b.t;
+    const zoff = Math.max(0, daily.length - ZOOM);
+    const info = (ln, up) => {
+      const v = val(ln, xNow);
+      return { up, tf: tfOfLine(ln), t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, now: px(v), pct: r2((100 * (v - live)) / live, 1),
+        action: same(ln, x.action), safety: same(ln, x.safety), X0: ln.a.x / s.ppd - zoff, P0: ln.a.p, slopeX: ln.slope * s.ppd };
+    };
+    const lines = [[ch.up, true], [ch.dn, false]].flatMap(([c, up]) => c.slice(1).map((q, k) => [c[k], q])
+      .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
+      .map(([a, q]) => info(lineOf(a, q), up)));
+    // The callout's own action and safety lines, even if the chains have moved on since it fired.
+    [[x.action, "action"], [x.safety, "safety"]].forEach(([ln, k]) => {
+      if (ln && !lines.some((l) => l[k])) lines.push({ ...info(ln, ln.slope > 0), atCallout: true });
+    });
     return {
       bars: b.slice(off).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
       line: loc(x.action), safety: loc(x.safety), tapIdx: x.tapX.map((t) => t - base).filter((t) => t >= 0),
       at: x.at - off, from: x.from == null ? null : x.from - off, closedAt: x.closedAt == null ? null : x.closedAt - off,
       chains: edges(ch.up, true).concat(edges(ch.dn, false)),
+      lines, zoom: daily.slice(zoff).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
     };
   };
   const clean = (x) => {
