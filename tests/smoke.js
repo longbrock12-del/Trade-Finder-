@@ -295,6 +295,21 @@ async function pageTests(browser, body, optBody, scanBody) {
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".mu", { hasText: "away" }).first().textContent();
   const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
+  // Lines about to become A+ get a tag and sort right after A+ lines.
+  const soon = await page.evaluate(() => [soonAplus({ grade: "B", days: 18, checks: { taps: true, angle: true, history: false } }), soonAplus({ grade: "B", days: 10, checks: { taps: true, angle: true, history: false } }),
+    soonAplus({ grade: "B", days: 19, checks: { taps: true, angle: false, history: false } }), soonAplus({ grade: "A+", days: 30, checks: { taps: true, angle: true, history: true } })]);
+  ok(JSON.stringify(soon) === "[3,null,null,null]", "\"A+ in N days\" only for lines missing just the 3 weeks, within a week of it", JSON.stringify(soon));
+  const wb = JSON.parse(JSON.stringify(body)), am = wb.markets.find((m) => m.sym === "AMZN");
+  am.watch = [{ ...am.watch[0], grade: "B", passed: 3, days: 17, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.2, key: "x1", lineTF: "Daily" },
+    { ...am.watch[0], grade: "B", passed: 3, days: 9, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.1, key: "x2", lineTF: "4-hour" }, am.watch[0]];
+  await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: wb }));
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
+  const order = await page.locator("#out article.c").evaluateAll((els) => els.map((e) => (e.textContent.includes("A+ in 4 days") ? "soon" : /A\+ · 4\/4/.test(e.textContent) ? "A+" : "B")));
+  ok(order.slice(0, 3).join() === "A+,soon,B" && (await page.locator("#out .tag", { hasText: "A+ in 4 days" }).count()) === 1, "watch list: A+ first, then \"A+ in 4 days\", then other B lines", order.join());
+  await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
+  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first();
   await wl.locator("[data-tvl]").click();
   ok((await page.locator(".tvp textarea").inputValue()).includes("line.new("), "watch list lines can be copied for TradingView");
