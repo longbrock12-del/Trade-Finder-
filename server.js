@@ -7,6 +7,8 @@ const trades = require("./api/trades.js");
 const options = require("./api/options.js");
 const scanStocks = require("./api/scan.js");
 const news = require("./api/news.js");
+const push = require("./api/push.js");
+const notify = require("./api/notify.js");
 
 const PORT = Number(process.env.PORT) || 3000;
 // Home-screen app files.
@@ -15,6 +17,7 @@ const ASSETS = {
   "/icon-192.png": "image/png",
   "/icon-512.png": "image/png",
   "/apple-touch-icon.png": "image/png",
+  "/sw.js": "text/javascript; charset=utf-8",
 };
 
 const server = http.createServer((req, res) => {
@@ -32,6 +35,8 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/options") return options(req, res);
   if (pathname === "/api/scan") return scanStocks(req, res);
   if (pathname === "/api/news") return news(req, res);
+  if (pathname === "/api/push") return push(req, res);
+  if (pathname === "/api/notify") return notify(req, res);
   res.writeHead(404, { "Content-Type": "text/plain" });
   res.end("Not found");
 });

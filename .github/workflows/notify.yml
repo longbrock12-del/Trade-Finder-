@@ -1,0 +1,15 @@
+# Runs Trade Finder's alert check every 15 minutes, so phone alerts arrive even when nobody has the site open.
+# It only calls the site's /api/notify; the site does the work and runs at most once every 9 minutes.
+name: Trade Finder alerts
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - run: curl -fsS --max-time 150 "https://trade-finder-blond.vercel.app/api/notify"

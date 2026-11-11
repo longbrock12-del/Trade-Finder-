@@ -468,6 +468,11 @@ function trackBox() {
       '<div class="note" style="margin:0 0 4px"><b class="ok">Best:</b> ' + list(r.best) + '</div><div class="note" style="margin:0 0 6px"><b class="bad">Worst:</b> ' + list(r.worst) + "</div>";
   }
   const open = !!folds.track;
+  // Live record: callouts saved as they were sent (phone alerts), for this chart and market type.
+  const lv = ((pushInfo && pushInfo.live) || []).filter((x) => (x.view || "4H") === chartTF() && x.kind === kind);
+  const lvDone = lv.filter((x) => x.status === "closed" && x.exitR != null), lvR = lvDone.reduce((a, x) => a + x.exitR, 0);
+  const liveLine = lv.length ? '<div class="note" style="margin-top:4px"><b>Live record</b> since ' + since(Math.min(...lv.map((x) => x.t))) + ": " + lvDone.length + " closed · " +
+    (lvDone.length ? Math.round((100 * lvDone.filter((x) => x.exitR > 0).length) / lvDone.length) + '% wins · <b class="' + (lvR >= 0 ? "ok" : "bad") + '">' + (lvR >= 0 ? "+" : "−") + Math.abs(lvR).toFixed(1) + "R</b> · " : "") + (lv.length - lvDone.length) + " open</div>" : "";
   // Wins vs losses, in plain words. Sums across the futures markets (or all scanned stocks).
   const parts = kind === "futures" ? data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record) : [data.stockRecord];
   const add = (k) => parts.reduce((a, r) => a + (r[k] || 0), 0), nW = add("nWin"), nL = add("nLoss");
@@ -484,7 +489,7 @@ function trackBox() {
     "<div>Winners held " + days(add("winHrs") / nW) + ", losers " + days(add("lossHrs") / nL) + "</div>" +
     '<div class="note" style="margin-top:4px">R = your starting risk. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
   return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + " · " + TF_LABEL[chartTF()] + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
-    sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div></div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
+    sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div>' + liveLine + '</div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
     (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 
@@ -526,6 +531,7 @@ function watchCard(m, w) {
     (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
+    (pushInfo && pushInfo.configured ? '<div class="tv sm"><button class="btn" data-lal="' + esc(m.sym + "|" + w.tf + "|" + w.key) + '">' + (store.get("lineAlerts", {})[m.sym + "|" + w.tf + "|" + w.key] ? "🔔 Alert set ✓" : "🔔 Alert me at this line") + "</button></div>" : "") +
     (w.line ? tvBlock(m, [{ ...w.line, name: (up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key, true) : "") + "</article>";
 }
 
@@ -630,7 +636,7 @@ function render() {
   }
   document.querySelectorAll("#tfSw button").forEach((b) => b.classList.toggle("on", b.dataset.tf === chartTF()));
   const al = store.get("alerts", false);
-  $("alerts").textContent = al ? "🔔 Alerts on" : "🔔 Alerts off";
+  $("alerts").textContent = al ? (store.get("push", false) ? "🔔 Phone alerts on" : "🔔 Alerts on") : "🔔 Alerts off";
   $("alerts").classList.toggle("on", al); $("alerts").setAttribute("aria-pressed", String(al));
   $("mkList").innerHTML = symbols().map((s) => "<span>" + esc(show(s)) + '<button data-rm="' + esc(s) + '" aria-label="Remove ' + esc(show(s)) + '">×</button></span>').join("") +
     (removed.length ? '<span style="padding-right:10px"><button data-reset="1" style="color:var(--ac);font-size:12px;padding:0">Restore defaults</button></span>' : "");
@@ -638,11 +644,16 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-tf],[data-took],[data-jdel],.op,.tvp,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-tf],[data-took],[data-jdel],[data-lal],.op,.tvp,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
+  if (t.dataset.lal) {
+    const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
+    data.markets.forEach((m) => { if (m.sym === sym) (m.watch || []).forEach((w) => { if (w.tf === tf2 && w.key === key) lineAlert(m, w); }); });
+    return;
+  }
   if (t.dataset.took) { took(t.dataset.took); render(); return; }
   if (t.dataset.jdel != null) { if (confirm("Remove this trade from your journal?")) { const j = jGet(); j.splice(Number(t.dataset.jdel), 1); jSet(j); render(); } return; }
-  if (t.dataset.tf) { if (t.dataset.tf !== chartTF()) { store.set("tf", t.dataset.tf); futPart = stockPart = data = null; loading = false; load(); } render(); return; }
+  if (t.dataset.tf) { if (t.dataset.tf !== chartTF()) { store.set("tf", t.dataset.tf); if (store.get("push", false)) pushSub().then((sub) => sub && post({ action: "subscribe", sub: sub.toJSON(), prefs: { tf: t.dataset.tf } })).catch(() => {}); futPart = stockPart = data = null; loading = false; load(); } render(); return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;
@@ -717,18 +728,62 @@ $("add").addEventListener("submit", (e) => {
   store.set("extra", extra); store.set("removed", removed); $("addIn").value = ""; render(); load();
 });
 
+// Alerts: phone alerts (Web Push) when the site's database is set up - they arrive even when the site is closed.
+// Otherwise (or if the phone can't), alerts only work while the page is open.
+let pushInfo = null; // GET /api/push: { configured, publicKey, live }
+async function pushSub() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+const post = (body) => fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+const b64ToBytes = (b) => { const s2 = atob((b + "===".slice((b.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(s2, (c) => c.charCodeAt(0)); };
 async function toggleAlerts() {
   const on = !store.get("alerts", false);
+  const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent), installed = window.navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+  if (on && pushInfo && pushInfo.configured && iOS && !installed) {
+    alert("To get alerts on your iPhone, add Trade Finder to your Home Screen first (Share → Add to Home Screen), open it from there, then tap 🔔 again.");
+    return;
+  }
   if (on && "Notification" in window && Notification.permission !== "granted") {
     let p = "denied";
     try { p = await Notification.requestPermission(); } catch (e) { /* old Safari */ }
-    if (p !== "granted") { alert("Your browser blocked notifications. New callouts will still show a NEW tag and a count in the tab title while this page is open."); }
+    if (p !== "granted") { alert("Notifications are blocked for this site. Turn them on in your phone's settings, then try again."); return; }
+  }
+  if (pushInfo && pushInfo.configured && "PushManager" in window) {
+    try {
+      if (on) {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(pushInfo.publicKey) }));
+        await post({ action: "subscribe", sub: sub.toJSON(), prefs: { tf: chartTF() } });
+        store.set("push", true);
+        post({ action: "test", endpoint: sub.endpoint }).catch(() => {});
+      } else {
+        const sub = await pushSub();
+        if (sub) { await post({ action: "unsubscribe", endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+        store.set("push", false); store.set("lineAlerts", {});
+      }
+    } catch (e) { alert("Phone alerts couldn't be turned on (" + (e.message || "error") + "). Alerts will still work while this page is open."); store.set("push", false); }
   }
   store.set("alerts", on); render();
+}
+// Watch-list "Alert me": tell me when price reaches this line.
+async function lineAlert(m, w) {
+  const id = m.sym + "|" + w.tf + "|" + w.key, mine = store.get("lineAlerts", {}), sub = store.get("push", false) ? await pushSub() : null;
+  if (!sub) { alert("Turn on 🔔 Alerts at the top first (phone alerts)."); return; }
+  if (mine[id]) { await post({ action: "unalert", endpoint: sub.endpoint, id }).catch(() => {}); delete mine[id]; }
+  else {
+    const r = await post({ action: "alert", endpoint: sub.endpoint, alert: { id, sym: m.sym, tf: w.tf, key: w.key, level: w.lineNow, dir: w.kind.startsWith("rising") ? "below" : "above", label: (w.kind.startsWith("rising") ? "Rising " : "Falling ") + w.lineTF + " line" } }).catch(() => ({}));
+    if (!r.ok) { alert(r.error || "The alert couldn't be saved. Try again."); return; }
+    mine[id] = Date.now();
+  }
+  store.set("lineAlerts", mine); render();
 }
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { document.title = "Trade Finder"; if (!data || Date.now() - data.at > REFRESH) load(); } });
 setInterval(() => { if (!document.hidden) load(); }, REFRESH);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+fetch("/api/push").then((r) => r.json()).then((j) => { pushInfo = j; render(); }).catch(() => {});
 render(); load();
 </script>
 </body></html>

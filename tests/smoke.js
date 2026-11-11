@@ -477,6 +477,113 @@ async function pageTests(browser, body, optBody, scanBody) {
 }
 
 // Faster loading and the polish: futures first, placeholders, sticky tabs, one-line header, pull to refresh.
+// Phone alerts: a fake Upstash database and a fake phone push service, all in memory.
+async function alertTests() {
+  console.log("Phone alerts");
+  const crypto = require("crypto"), db = new Map(), pushed = [];
+  const H = (k) => db.get(k) || (db.set(k, new Map()), db.get(k));
+  const run = ([c, k, ...a]) => {
+    c = c.toUpperCase();
+    if (c === "GET") return db.has(k) ? db.get(k) : null;
+    if (c === "SET") { if (a.includes("NX") && db.has(k)) return null; db.set(k, a[0]); return "OK"; }
+    if (c === "HGETALL") return [...H(k)].flat();
+    if (c === "HSET") { H(k).set(a[0], a[1]); return 1; }
+    if (c === "HDEL") return H(k).delete(a[0]) ? 1 : 0;
+    if (c === "SADD") { const st = db.get(k) || new Set(); db.set(k, st); if (st.has(a[0])) return 0; st.add(a[0]); return 1; }
+    throw new Error("cmd " + c);
+  };
+  let site = {};
+  const fetcher = async (u, o = {}) => {
+    u = String(u);
+    if (u.startsWith("https://kv.test/pipeline")) { const out = JSON.parse(o.body).map((c) => ({ result: run(c) })); return { ok: true, status: 200, json: async () => out }; }
+    if (u.startsWith("https://push.test/")) { pushed.push({ u, h: o.headers, body: o.body }); return { ok: true, status: 201 }; }
+    if (u.startsWith("https://tf.test/api/")) { const k = /\/api\/scan/.test(u) ? "scan" : /&s=/.test(u) ? "extra" : "trades"; return { ok: true, status: 200, json: async () => site[k] || { markets: [] } }; }
+    return { ok: false, status: 404 };
+  };
+  const T = NOW - 3600;
+  const mk = (price, sig) => ({ sym: "MGC=F", kind: "futures", price, signals: sig ? [sig] : [], watch: [{ tf: "4H", key: "w1", lineNow: 1990, kind: "rising line under lows" }] });
+  const sig = { tf: "4H", setup: "break", dir: "long", t: T, status: "open", nowR: 0.2, entry: 1995, stop: 1985, stop0: 1985, risk: 10, grade: "A" };
+  const invoke = async (file, method, body) => {
+    const saved = global.fetch, realNow = Date.now;
+    global.fetch = fetcher; Date.now = () => NOW * 1000;
+    process.env.KV_REST_API_URL = "https://kv.test"; process.env.KV_REST_API_TOKEN = "t";
+    try {
+      return await new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; require(path.join(ROOT, file))({ method, url: "/", headers: { host: "tf.test" }, body }, res); });
+    } finally { global.fetch = saved; Date.now = realNow; delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; }
+  };
+  ok((await call("api/push.js", "/api/push", async () => ({ ok: false }))).body.configured === false, "without the database, the page is told phone alerts aren't set up");
+  const info = await invoke("api/push.js", "GET");
+  ok(info.body.configured && /^[A-Za-z0-9_-]{87}$/.test(info.body.publicKey), "with the database, the site makes its alert key once", info.body.publicKey);
+  ok((await invoke("api/push.js", "GET")).body.publicKey === info.body.publicKey, "the alert key stays the same");
+  // A phone: its own keys, so we can open the message like the phone would.
+  const ua = crypto.createECDH("prime256v1"), uaPub = ua.generateKeys(), auth = crypto.randomBytes(16), b64 = (b) => b.toString("base64url");
+  const sub = { endpoint: "https://push.test/phone1", keys: { p256dh: b64(uaPub), auth: b64(auth) } };
+  const open = (buf) => {
+    const salt = buf.subarray(0, 16), idlen = buf[20], asPub = buf.subarray(21, 21 + idlen), ct = buf.subarray(21 + idlen);
+    const ikm = Buffer.from(crypto.hkdfSync("sha256", ua.computeSecret(asPub), auth, Buffer.concat([Buffer.from("WebPush: info\0"), uaPub, asPub]), 32));
+    const cek = Buffer.from(crypto.hkdfSync("sha256", ikm, salt, Buffer.from("Content-Encoding: aes128gcm\0"), 16)), nonce = Buffer.from(crypto.hkdfSync("sha256", ikm, salt, Buffer.from("Content-Encoding: nonce\0"), 12));
+    const d = crypto.createDecipheriv("aes-128-gcm", cek, nonce); d.setAuthTag(ct.subarray(ct.length - 16));
+    const pt = Buffer.concat([d.update(ct.subarray(0, ct.length - 16)), d.final()]);
+    return JSON.parse(pt.subarray(0, pt.lastIndexOf(2)).toString());
+  };
+  ok((await invoke("api/push.js", "POST", { action: "subscribe", sub, prefs: { tf: "4H" } })).body.ok, "a phone can turn on alerts");
+  ok((await invoke("api/push.js", "POST", { action: "alert", endpoint: "https://push.test/nobody", alert: { id: "x", sym: "MGC=F", level: 1, dir: "above" } })).status === 404, "a line alert needs alerts turned on first");
+  ok((await invoke("api/push.js", "POST", { action: "alert", endpoint: sub.endpoint, alert: { id: "MGC=F|4H|w1", sym: "MGC=F", tf: "4H", key: "w1", level: 1990, dir: "below", label: "Rising 4H line" } })).body.ok, "a phone can ask for an alert at a watch-list line");
+  await invoke("api/push.js", "POST", { action: "test", endpoint: sub.endpoint });
+  const t0 = pushed.length && open(pushed[0].body);
+  ok(t0 && t0.title === "Trade Finder" && pushed[0].h["Content-Encoding"] === "aes128gcm" && /^vapid t=.+, k=/.test(pushed[0].h.Authorization), "turning alerts on sends a test alert, encrypted for that phone", JSON.stringify(t0));
+  pushed.length = 0;
+  site = { trades: { markets: [mk(1996, sig)] } };
+  const n1 = await invoke("api/notify.js", "GET");
+  const msg = pushed.map((x) => open(x.body));
+  ok(n1.body.ran && n1.body.notified === 1 && msg[0] && msg[0].title === "BUY MGC" && /entry 1995/.test(msg[0].body), "a new Get-in-now callout goes to the phone", JSON.stringify(n1.body) + " " + JSON.stringify(msg));
+  ok((await invoke("api/notify.js", "GET")).body.reason === "ran recently", "the check runs at most every 9 minutes");
+  db.delete("tf:lastrun"); pushed.length = 0;
+  await invoke("api/notify.js", "GET");
+  ok(pushed.length === 0, "the same callout is never sent twice");
+  const live = (await invoke("api/push.js", "GET")).body.live;
+  ok(live.length === 1 && live[0].status === "open" && live[0].sym === "MGC=F" && live[0].view === "4H", "sent callouts are saved in the live record", JSON.stringify(live));
+  db.delete("tf:lastrun"); pushed.length = 0;
+  site = { trades: { markets: [mk(1989, { ...sig, nowR: -0.6 })] } };
+  await invoke("api/notify.js", "GET");
+  const m2 = pushed.map((x) => open(x.body));
+  ok(m2.length === 1 && /reached your line/.test(m2[0].title) && /1990/.test(m2[0].body), "price reaching the watched line sends an alert", JSON.stringify(m2));
+  ok(!JSON.parse(H("tf:subs").get(sub.endpoint)).alerts.length, "a line alert is sent once, then removed");
+  ok((await invoke("api/push.js", "GET")).body.live[0].nowR === -0.6, "the live record follows the open trade");
+  db.delete("tf:lastrun");
+  site = { trades: { markets: [mk(1980, { ...sig, status: "closed", exitR: -1, exitHow: "stop" })] } };
+  await invoke("api/notify.js", "GET");
+  const l2 = (await invoke("api/push.js", "GET")).body.live[0];
+  ok(l2.status === "closed" && l2.exitR === -1, "when the trade closes, the live record keeps its result", JSON.stringify(l2));
+  ok((await invoke("api/push.js", "POST", { action: "unsubscribe", endpoint: sub.endpoint })).body.ok && !H("tf:subs").has(sub.endpoint), "a phone can turn alerts off");
+  return { configured: true, publicKey: info.body.publicKey, live: [{ ...l2, t: NOW - 86400 * 3 }, { ...l2, key: "b", status: "open", exitR: null, nowR: 0.3 }] };
+}
+
+async function alertPageTests(browser, body, scanBody, pushBody) {
+  console.log("Phone alerts on the page");
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 } }), errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  ok(/addEventListener\("push"/.test(await (await fetch("http://127.0.0.1:" + PORT + "/sw.js")).text()), "the alert helper (sw.js) is served");
+  await page.route("**/api/trades**", (r) => r.fulfill({ json: body }));
+  await page.route("**/api/scan**", (r) => r.fulfill({ json: scanBody }));
+  await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
+  await page.route("**/api/push**", (r) => r.fulfill({ json: pushBody }));
+  await page.clock.setFixedTime(NOW * 1000);
+  await page.goto("http://127.0.0.1:" + PORT + "/");
+  await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const tr = await page.locator(".trk").first().textContent();
+  ok(/Live record since .*1 closed · 0% wins · −1\.0R · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
+  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
+  const n = await page.locator("[data-lal]").count();
+  ok(n > 0 && /Alert me at this line/.test(await page.locator("[data-lal]").first().textContent()), "watch-list lines have an Alert me button", n);
+  page.once("dialog", (d) => { ok(/Turn on 🔔 Alerts/.test(d.message()), "Alert me asks you to turn on alerts first", d.message()); d.dismiss(); });
+  await page.locator("[data-lal]").first().click();
+  await page.waitForTimeout(200);
+  ok(!errors.length, "no page errors with phone alerts", errors.join(" | "));
+  await page.close();
+}
+
 async function polishTests(browser, body, scanBody) {
   console.log("Loading and layout");
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true }), errors = [];
@@ -533,11 +640,14 @@ async function polishTests(browser, body, scanBody) {
   try { scanBody = await scanTests(); } catch (e) { ok(false, "scan tests crashed", e.message); }
   let optBody;
   try { optBody = await optionsTests(); } catch (e) { ok(false, "options tests crashed", e.message); }
+  let pushBody;
+  try { pushBody = await alertTests(); } catch (e) { ok(false, "alert tests crashed", e.stack); }
   const server = spawn(process.execPath, ["server.js"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT) }, stdio: "ignore" });
   await new Promise((r) => setTimeout(r, 1000));
   const browser = await chromium.launch();
   try { if (body && optBody && scanBody) await pageTests(browser, body, optBody, scanBody); } catch (e) { ok(false, "page tests crashed", e.message); }
   try { if (body && scanBody) await polishTests(browser, body, scanBody); } catch (e) { ok(false, "loading/layout tests crashed", e.message); }
+  try { if (body && scanBody && pushBody) await alertPageTests(browser, body, scanBody, pushBody); } catch (e) { ok(false, "alert page tests crashed", e.message); }
   await browser.close(); server.kill();
   console.log(failed ? "\n" + failed + " check(s) FAILED" : "\nAll checks passed");
   process.exit(failed ? 1 : 0);
