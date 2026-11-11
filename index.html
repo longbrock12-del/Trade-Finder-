@@ -343,6 +343,18 @@ function checks(s) {
 }
 
 // Option contracts for live stock callouts (calls for longs, puts for shorts). Loaded when asked.
+// Option price "now": the Cboe quote is 15 minutes old, but the stock price on the page is close to live.
+// Move the option by how far the stock moved since (delta + gamma), never below what it's worth at expiry.
+// Skipped if the two stock prices are more than 5% apart (different sessions or bad data).
+function estNow(c, quotedPx, livePx) {
+  if (!(quotedPx > 0) || !(livePx > 0) || c.mid == null || c.delta == null) return null;
+  const dx = livePx - quotedPx;
+  if (Math.abs(dx) / quotedPx > 0.05) return null;
+  const intrinsic = Math.max(0, c.type === "call" ? livePx - c.strike : c.strike - livePx);
+  const est = Math.max(intrinsic, c.mid + c.delta * dx + 0.5 * (c.gamma || 0) * dx * dx);
+  return { est: Math.round(est * 100) / 100, dx, live: livePx, quoted: quotedPx };
+}
+
 function optionsBlock(m, s, k) {
   if (m.kind !== "stocks" || s.status !== "open" || s.stop == null) return "";
   const o = opts[k], shown = o && o.shown;
@@ -357,6 +369,13 @@ function optionsBlock(m, s, k) {
     d.contracts.forEach((c, i) => {
       const exp = new Date(c.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "UTC" });
       h += '<div class="oc"><div class="on"><span>' + esc(d.sym) + " " + esc(exp) + " $" + num(c.strike, c.strike % 1 ? 1 : 0) + " " + (c.type === "call" ? "Call" : "Put") + "</span>" + '<span class="tag ap">Best pick</span>' + "</div>" +
+        (() => {
+          const e = estNow(c, d.price, m.price);
+          if (!e) return "";
+          const ch = e.est - c.mid, same = Math.abs(ch) < 0.01;
+          return '<div class="note" style="margin:4px 0 6px;color:var(--tx)">Estimated price now: <b>~' + money(e.est) + "</b> (~$" + num(e.est * 100, 0) + " per contract)" +
+            (same ? " · stock hasn't moved since the quote" : ' <span class="' + (ch > 0 ? "ok" : "bad") + '">' + (ch > 0 ? "+" : "−") + money(Math.abs(ch)) + "</span> since the quote, stock " + money(e.quoted) + " → " + money(e.live)) + "</div>";
+        })() +
         '<div class="og">' +
         "<span>Bid / Ask <b>" + money(c.bid) + " / " + money(c.ask) + "</b></span><span>Per contract <b>$" + num(c.cost, 0) + "</b></span>" +
         "<span>Volume <b>" + num(c.volume, 0) + "</b></span><span>Open interest <b>" + num(c.oi, 0) + "</b></span>" +
@@ -366,7 +385,7 @@ function optionsBlock(m, s, k) {
         "<span>At stop " + money(d.stop) + ': <b class="bad">~' + money(c.atStop) + " (" + c.atStopPct + "%)</b></span>" +
         "<span>Breakeven at expiry <b>" + money(c.breakeven) + "</b></span></div></div>";
     });
-    h += '<div class="note">Prices from Cboe, 15 minutes delayed. "At 2R" and "at stop" are estimates if the move happens soon; time decay lowers them the longer it takes. ' +
+    h += '<div class="note">Bid/ask from Cboe, 15 minutes delayed. "Estimated price now" moves that price by how far the stock has moved since (using delta and gamma): usually within a few cents, less exact in fast moves or around earnings. Check the live price in your broker before buying. "At 2R" and "at stop" are estimates if the move happens soon; time decay lowers them the longer it takes. ' +
       "2R is just a yardstick (twice the stock's risk). Her exit is the safety line: get out of the option when the stock closes through it. Options aren't part of Tori's strategy. See Rules.</div>";
   }
   return h + "</div>";
