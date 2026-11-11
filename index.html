@@ -232,6 +232,9 @@ function notifyNew() {
 
 // 4-hour or 1-hour candles with her chains: green = rising lines under the lows, red = falling lines over the
 // highs. The action line is drawn thick, the safety line dashed.
+// A tap on the chart: solid dot = the wick reached the line; hollow dashed ring = a near miss (came close, stopped short).
+const tapMark = (x, y, col, near) => near ? '<circle cx="' + x + '" cy="' + y + '" r="4.5" fill="none" stroke="' + col + '" stroke-width="1.6" stroke-dasharray="2 2"/>'
+  : '<circle cx="' + x + '" cy="' + y + '" r="4" fill="' + col + '" stroke="var(--card)" stroke-width="1.5"/>';
 function chart(m, s) {
   const C = s.chart, B = C.bars, n = B.length, end = n - 1;
   // Start a few candles before the action line's first tap when it's in the data (up to ~300 candles), so every
@@ -258,7 +261,8 @@ function chart(m, s) {
   (C.chains || []).forEach((e) => { if (e.i1 >= from - 400) g += seg(e, Math.max(e.i0, from - 400), e.i1, e.up ? GREEN : RED, "", 1.2, 0.55); });
   const actUp = C.line && C.line.slope > 0;
   if (C.line) g += seg(C.line, Math.max(from - 400, C.line.i0), end, actUp ? GREEN : RED, "", 2.6);
-  (C.tapIdx || []).filter((i) => i >= from).forEach((i) => { g += '<circle cx="' + X(i) + '" cy="' + Y(lv(C.line, i)) + '" r="4" fill="none" stroke="' + (actUp ? GREEN : RED) + '" stroke-width="2"/>'; });
+  const nearAt = new Set((C.taps || []).filter((q) => q.near).map((q) => q.t));
+  (C.tapIdx || []).filter((i) => i >= from).forEach((i) => { g += tapMark(X(i), Y(lv(C.line, i)), actUp ? GREEN : RED, nearAt.has(B[i] && B[i][0])); });
   if (C.safety) g += seg(C.safety, Math.max(from - 400, C.safety.i0), end, C.safety.slope > 0 ? GREEN : RED, "6 4", 2.2);
   if (C.closedAt != null) g += '<circle cx="' + X(C.closedAt) + '" cy="' + Y(B[C.closedAt][4]) + '" r="5" fill="var(--card)" stroke="var(--tx)" stroke-width="2"/>';
   g += "</g>";
@@ -273,7 +277,7 @@ function chart(m, s) {
   const d0 = etFmt.format(new Date(view[0][0] * 1000)).split(",").slice(0, 2).join(","), d1 = etFmt.format(new Date(view[view.length - 1][0] * 1000)).split(",").slice(0, 2).join(",");
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + esc(d0) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + esc(d1) + "</text>";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + TFNAME[s.tf] + " chart of " + esc(show(m.sym)) + ' with the trendlines">' + g + "</svg>" +
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line (circles = taps)</span>' + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div></div>";
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line</span><span>● touch ◌ near miss</span>' + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div></div>";
 }
 
 const TFSHORT = { Monthly: "M", Weekly: "W", Daily: "D", "4-hour": "4H", "1-hour": "1H" };
@@ -306,7 +310,7 @@ function lineView(m, s, mode) {
     if (y > T && y < H - Bm) lab.push({ y, t: TFSHORT[l.tf] || l.tf, col });
   });
   const act = lines.find((l) => l.action);
-  (C.taps || []).forEach((q) => { if (act && q.X >= Xa && q.X <= Xb) g += '<circle cx="' + X(q.X) + '" cy="' + Y(q.p) + '" r="4.5" fill="none" stroke="' + (act.up ? GREEN : RED) + '" stroke-width="2"/>'; });
+  (C.taps || []).forEach((q) => { if (act && q.X >= Xa && q.X <= Xb) g += tapMark(X(q.X), Y(q.p), act.up ? GREEN : RED, q.near); });
   g += "</g>";
   lab.sort((p, q) => p.y - q.y).forEach((l, i, a) => { if (i && l.y - a[i - 1].y < 11) l.y = a[i - 1].y + 11; g += '<text x="' + (W - R + 4) + '" y="' + (l.y + 4) + '" font-size="11" font-weight="700" fill="' + l.col + '">' + l.t + "</text>"; });
   const d = (t) => new Date(t * 1000).toLocaleDateString("en-US", mode === "mid" ? { month: "short", day: "numeric" } : { month: "short", year: "numeric" });
@@ -326,7 +330,8 @@ function linesBlock(m, s, k) {
   const above = ls.filter((l) => l.now >= m.price), below = ls.filter((l) => l.now < m.price);
   const opt = (mode, label) => '<button class="btn' + ((zoomed[k] || "") === mode ? " on" : "") + '" data-zoom="' + esc(k) + '" data-mode="' + mode + '" aria-pressed="' + ((zoomed[k] || "") === mode) + '">' + label + "</button>";
   const tp = s.chart.taps || [], td = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "America/New_York" });
-  const tapNote = tp.length ? '<div class="note" style="margin:6px 0 0">○ <b>' + tp.length + " tap" + (tp.length > 1 ? "s" : "") + "</b> on the thick line: " + tp.map((q) => td(q.t) + " @ " + num(q.p, d)).join(" · ") +
+  const nNear = tp.filter((q) => q.near).length;
+  const tapNote = tp.length ? '<div class="note" style="margin:6px 0 0">○ <b>' + tp.length + " tap" + (tp.length > 1 ? "s" : "") + "</b> on the thick line" + (nNear ? " (" + (tp.length - nNear) + " touch" + (tp.length - nNear === 1 ? "" : "es") + ", " + nNear + " near miss" + (nNear > 1 ? "es" : "") + ")" : "") + ": " + tp.map((q) => td(q.t) + " @ " + num(q.p, d) + (q.near ? " (near)" : "")).join(" · ") +
     (tp.length > (s.chart.tapIdx || []).length && !zoomed[k] ? ". Older ones show on 3 months / 2 years." : "") + "</div>" : "";
   return tapNote + '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" +
     '<div class="note" style="margin:8px 0 2px">Every line on ' + esc(show(m.sym)) + ", Monthly down to " + TFNAME[s.tf] + ", and where it is now:</div>" +

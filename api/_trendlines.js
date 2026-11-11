@@ -27,6 +27,7 @@ const HOUR = 3600, DAY = 86400;
 let MIN_GAP = 6;          // her rule: 6+ candles between taps; also the shortest line that counts as an action line
 const MAX_ANGLE = 45;     // her rule: under 45 degrees with 3 months on the chart
 const ASPECT = 1.8;       // my number: chart width / height of a normal screen, used to turn slope into degrees
+const NEAR_ATR = 0.1;     // display only: a tap whose wick stops more than 0.1 ATR short of the line is drawn as a near miss
 let TOUCH_ATR = 0.3;      // my number: a wick within 0.3 ATR of the line counts as a tap
 const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
 const RETEST_MAX = 30;    // my number: how many candles after a break to wait for the retest
@@ -514,7 +515,13 @@ function scanCore(hChart, dChart, opts = {}) {
       line: loc(x.action), safety: loc(x.safety), tapIdx: x.tapX.map((t) => t - base).filter((t) => t >= 0),
       // Every tap on the action line, including ones older than this chart: when (t), where on the line (p),
       // and X in daily-candle units for the 3-month and 2-year views.
-      taps: x.action ? x.tapX.map((q) => ({ t: q < s.x0 ? s.D[Math.round(q / s.ppd)].t : s.bars[q - s.x0].t, p: px(val(x.action, q)), X: q / s.ppd - zoff })) : [],
+      // near: the wick came within the tap distance but stopped more than 0.1 ATR short of the line (a near
+      // miss, shown hollow); otherwise it reached or crossed the line (a real touch, shown solid).
+      taps: x.action ? x.tapX.map((q) => {
+        const d = q < s.x0, k = d ? Math.round(q / s.ppd) : q - s.x0, c = d ? s.D[k] : s.bars[k], a = d ? s.dA[k] : s.A[k], v = val(x.action, q), up = x.action.slope > 0;
+        const gap = up ? c.l - v : v - c.h; // > 0: the wick stopped short of the line
+        return { t: c.t, p: px(v), X: q / s.ppd - zoff, near: gap > NEAR_ATR * a };
+      }) : [],
       at: x.at - off, from: x.from == null ? null : x.from - off, closedAt: x.closedAt == null ? null : x.closedAt - off,
       chains: edges(ch.up, true).concat(edges(ch.dn, false)),
       lines, zoom: daily.slice(zoff).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),

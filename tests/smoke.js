@@ -166,7 +166,7 @@ async function scannerTests() {
   lookBody = lk;
   // Taps: every one the line's count includes is in the chart data (older ones too), and each is a real touch:
   // the candle's low (rising line) or high (falling line) within 0.3 ATR of the line.
-  let tapN = 0, tapBad = 0, tapMis = 0;
+  let tapN = 0, tapBad = 0, tapMis = 0, tapNear = 0, tapNearBad = 0;
   [["MGC=F", "GC", NOW, true], ["MCL=F", "CL", NOW, true], ["PL=F", "PL", NOW, true], ["AAPL", "AAPL", NOW, false], ["AMZN", "AMZN", AMZN_NOW, false]].forEach(([sym, f, now, fut]) => {
     const mk = T.scan(load("yahoo_" + f + ".json"), load("yahoo_daily_" + f + ".json"), { sym, now, all: true, watchCharts: true, tfs: ["4H"] });
     const dl = T.hourly(load("yahoo_daily_" + f + ".json")).bars, b4 = T.fourHour(T.hourly(load("yahoo_" + f + ".json")).bars, fut, now), dA = T.atr(dl), A4 = T.atr(b4);
@@ -177,10 +177,14 @@ async function scannerTests() {
         let i = b4.findIndex((b) => b.t === q.t), bar = b4[i], a = A4[i];
         if (i < 0) { i = dl.findIndex((b) => b.t === q.t); bar = dl[i]; a = dA[i]; }
         if (!bar || Math.abs((c.line.slope > 0 ? bar.l : bar.h) - q.p) / a > 0.3001) tapBad++;
+        const short = c.line.slope > 0 ? bar.l - q.p : q.p - bar.h; // > 0: the wick stopped short of the line
+        if (q.near !== short > 0.1 * a + 0.006) { if (Math.abs(short - 0.1 * a) > 0.02) tapNearBad++; }
+        if (q.near) tapNear++;
       });
     });
   });
   ok(tapN > 30 && !tapBad && !tapMis, "every tap counted is in the chart (older ones too) and really touches the line", tapN + " taps, " + tapBad + " off, " + tapMis + " count mismatches");
+  ok(!tapNearBad && tapNear > 0 && tapNear < tapN, "taps are marked near miss only when the wick stopped more than 0.1 ATR short of the line", tapNear + " near of " + tapN + ", " + tapNearBad + " wrong");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
@@ -459,13 +463,15 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.waitForSelector(".wc .chart svg", { timeout: 5000 }).catch(() => {});
   ok(/s=AMZN&tf=4H&wchart=1/.test(wAsk) && (await wl.locator(".chart svg").count()) === 1 && (await wl.locator(".lns .lnr").count()) >= 2, "watch box: Show chart loads that stock's chart with every line", wAsk);
   const wTaps = amzWChart.watch[0].chart.taps.length;
-  ok(new RegExp("○ " + wTaps + " taps? on the thick line: ").test(await wl.textContent()), "watch chart lists every tap with its date and price", wTaps);
+  ok(new RegExp("○ " + wTaps + " taps? on the thick line( \\([^)]*\\))?: ").test(await wl.textContent()), "watch chart lists every tap with its date and price", wTaps);
   const circ = await page.evaluate(() => {
     const bars = Array.from({ length: 320 }, (_, i) => [1790000000 + i * 14400, 100, 101, 99, 100]);
     const C = (taps) => ({ bars, at: 319, tapIdx: taps, line: { i0: taps[0], p0: 101, slope: -0.001, i1: taps[1] }, chains: [], lines: [] });
     const n = (taps) => (chart({ sym: "X", digits: 2, price: 100 }, { tf: "4H", chart: C(taps), status: "watch" }).match(/<circle/g) || []).length;
     return [n([60, 200, 315]), n([5, 200, 315])];
   });
+  const marks = await page.evaluate(() => [tapMark(1, 2, "#000", false), tapMark(1, 2, "#000", true)]);
+  ok(/fill="#000"/.test(marks[0]) && /fill="none"/.test(marks[1]) && /stroke-dasharray/.test(marks[1]) && !/stroke-dasharray/.test(marks[0]), "real touches are solid dots, near misses hollow dashed rings");
   ok(circ[0] === 3 && circ[1] === 2, "the 4-hour chart starts before the line's first tap (up to ~300 candles back), so every tap is circled", circ.join());
   await wl.locator("[data-zoom][data-mode=zoom]").click();
   ok((await wl.locator("svg circle").count()) >= Math.min(wTaps, 1), "the 2-year view circles the taps too", await wl.locator("svg circle").count());
