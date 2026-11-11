@@ -159,6 +159,23 @@ async function scannerTests() {
   const wc = amzW.watch[0] && amzW.watch[0].chart;
   ok(wc && wc.bars.length > 50 && wc.line && wc.line.t0 === amzW.watch[0].line.t0 && Array.isArray(wc.lines) && wc.lines.some((l) => l.action) && wc.zoom.length > 100 && wc.mid.bars.length > 50, "?wchart=1: a watch line gets the same chart a callout gets (its line thick, every line, zoom views)", amzW.watch.length);
   ok(amzN.watch.length && amzN.watch.every((w) => !w.chart && !w._ln), "no watch charts unless asked (the page stays small)");
+  // Taps: every one the line's count includes is in the chart data (older ones too), and each is a real touch:
+  // the candle's low (rising line) or high (falling line) within 0.3 ATR of the line.
+  let tapN = 0, tapBad = 0, tapMis = 0;
+  [["MGC=F", "GC", NOW, true], ["MCL=F", "CL", NOW, true], ["PL=F", "PL", NOW, true], ["AAPL", "AAPL", NOW, false], ["AMZN", "AMZN", AMZN_NOW, false]].forEach(([sym, f, now, fut]) => {
+    const mk = T.scan(load("yahoo_" + f + ".json"), load("yahoo_daily_" + f + ".json"), { sym, now, all: true, watchCharts: true, tfs: ["4H"] });
+    const dl = T.hourly(load("yahoo_daily_" + f + ".json")).bars, b4 = T.fourHour(T.hourly(load("yahoo_" + f + ".json")).bars, fut, now), dA = T.atr(dl), A4 = T.atr(b4);
+    mk.signals.filter((x) => x.chart).map((x) => [x, x.chart]).concat(mk.watch.map((w) => [w, w.chart])).forEach(([x, c]) => {
+      if (c.taps.length !== x.taps) tapMis++;
+      c.taps.forEach((q) => {
+        tapN++;
+        let i = b4.findIndex((b) => b.t === q.t), bar = b4[i], a = A4[i];
+        if (i < 0) { i = dl.findIndex((b) => b.t === q.t); bar = dl[i]; a = dA[i]; }
+        if (!bar || Math.abs((c.line.slope > 0 ? bar.l : bar.h) - q.p) / a > 0.3001) tapBad++;
+      });
+    });
+  });
+  ok(tapN > 30 && !tapBad && !tapMis, "every tap counted is in the chart (older ones too) and really touches the line", tapN + " taps, " + tapBad + " off, " + tapMis + " count mismatches");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
@@ -411,7 +428,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   await wl.locator("[data-wch]").click();
   await page.waitForSelector(".wc .chart svg", { timeout: 5000 }).catch(() => {});
   ok(/s=AMZN&tf=4H&wchart=1/.test(wAsk) && (await wl.locator(".chart svg").count()) === 1 && (await wl.locator(".lns .lnr").count()) >= 2, "watch box: Show chart loads that stock's chart with every line", wAsk);
+  const wTaps = amzWChart.watch[0].chart.taps.length;
+  ok(new RegExp("○ " + wTaps + " taps? on the thick line: ").test(await wl.textContent()), "watch chart lists every tap with its date and price", wTaps);
   await wl.locator("[data-zoom][data-mode=zoom]").click();
+  ok((await wl.locator("svg circle").count()) >= Math.min(wTaps, 1), "the 2-year view circles the taps too", await wl.locator("svg circle").count());
   ok((await wl.locator("svg[aria-label^='Daily chart, 2 years']").count()) === 1, "the watch chart has the 2-year view too");
   await wl.locator("[data-wch]").click();
   ok((await wl.locator(".chart").count()) === 0 && /Show chart/.test(await wl.locator("[data-wch]").textContent()), "Hide chart closes it");

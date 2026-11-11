@@ -512,6 +512,9 @@ function scan(hChart, dChart, opts = {}) {
     return {
       bars: b.slice(off).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
       line: loc(x.action), safety: loc(x.safety), tapIdx: x.tapX.map((t) => t - base).filter((t) => t >= 0),
+      // Every tap on the action line, including ones older than this chart: when (t), where on the line (p),
+      // and X in daily-candle units for the 3-month and 2-year views.
+      taps: x.action ? x.tapX.map((q) => ({ t: q < s.x0 ? s.D[Math.round(q / s.ppd)].t : s.bars[q - s.x0].t, p: px(val(x.action, q)), X: q / s.ppd - zoff })) : [],
       at: x.at - off, from: x.from == null ? null : x.from - off, closedAt: x.closedAt == null ? null : x.closedAt - off,
       chains: edges(ch.up, true).concat(edges(ch.dn, false)),
       lines, zoom: daily.slice(zoff).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),

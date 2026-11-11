@@ -293,6 +293,8 @@ function lineView(m, s, mode) {
     const y = Y(v(Xb));
     if (y > T && y < H - Bm) lab.push({ y, t: TFSHORT[l.tf] || l.tf, col });
   });
+  const act = lines.find((l) => l.action);
+  (C.taps || []).forEach((q) => { if (act && q.X >= Xa && q.X <= Xb) g += '<circle cx="' + X(q.X) + '" cy="' + Y(q.p) + '" r="4.5" fill="none" stroke="' + (act.up ? GREEN : RED) + '" stroke-width="2"/>'; });
   g += "</g>";
   lab.sort((p, q) => p.y - q.y).forEach((l, i, a) => { if (i && l.y - a[i - 1].y < 11) l.y = a[i - 1].y + 11; g += '<text x="' + (W - R + 4) + '" y="' + (l.y + 4) + '" font-size="11" font-weight="700" fill="' + l.col + '">' + l.t + "</text>"; });
   const d = (t) => new Date(t * 1000).toLocaleDateString("en-US", mode === "mid" ? { month: "short", day: "numeric" } : { month: "short", year: "numeric" });
@@ -311,7 +313,10 @@ function linesBlock(m, s, k) {
     (l.action ? ' <span class="tag ap">action</span>' : "") + (l.safety ? ' <span class="tag">safety</span>' : "") + (l.atCallout ? ' <span class="tag">at callout</span>' : "") + '<small> since ' + since(l.t0) + "</small></span><b>" + num(l.now, d) + ' <small class="' + (l.pct >= 0 ? "ok" : "bad") + '">' + (l.pct >= 0 ? "+" : "") + l.pct.toFixed(1) + "%</small></b></div>";
   const above = ls.filter((l) => l.now >= m.price), below = ls.filter((l) => l.now < m.price);
   const opt = (mode, label) => '<button class="btn' + ((zoomed[k] || "") === mode ? " on" : "") + '" data-zoom="' + esc(k) + '" data-mode="' + mode + '" aria-pressed="' + ((zoomed[k] || "") === mode) + '">' + label + "</button>";
-  return '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" +
+  const tp = s.chart.taps || [], td = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit", timeZone: "America/New_York" });
+  const tapNote = tp.length ? '<div class="note" style="margin:6px 0 0">○ <b>' + tp.length + " tap" + (tp.length > 1 ? "s" : "") + "</b> on the thick line: " + tp.map((q) => td(q.t) + " @ " + num(q.p, d)).join(" · ") +
+    (tp.length > (s.chart.tapIdx || []).length && !zoomed[k] ? ". Older ones show on 3 months / 2 years." : "") + "</div>" : "";
+  return tapNote + '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" +
     '<div class="note" style="margin:8px 0 2px">Every line on ' + esc(show(m.sym)) + ", Monthly down to " + TFNAME[s.tf] + ", and where it is now:</div>" +
     above.map(row).join("") + '<div class="lnr now"><span>Price now</span><b>' + num(m.price, d) + "</b></div>" + below.map(row).join("") +
     (ls.length ? "" : '<div class="note">No lines yet.</div>') + "</div>";
