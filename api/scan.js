@@ -34,11 +34,13 @@ function send(res, status, secs, obj) {
 async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
   const found = [], failed = [], recs = [], tfs = chartsFrom(req);
-  // Test-only rule settings: ?touch=0.15 (tap distance in ATR, 0.02-1) and/or ?gap=4 (shortest line in candles, 2-20).
+  // Test-only rule settings: ?touch=0.15 (how far a wick may poke through the line, in ATR, 0.02-1) and/or ?gap=4 (shortest line in candles, 2-20).
   // Answers with just the 6-month record of all scanned stocks; live callouts and alerts never use these.
   const sp = new URL(req.url, "http://x").searchParams, num = (k, lo, hi) => { const v = sp.get(k); if (v == null || v === "") return null; const n = Number(v); return n >= lo && n <= hi ? n : NaN; };
-  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), rules = touch != null || gap != null ? { touch, gap: gap == null ? null : Math.round(gap) } : null;
-  if (rules && (Number.isNaN(touch) || Number.isNaN(gap))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles)" });
+  // ?short=0.3: how far short of the line a wick may stop and still count (0.05 = must actually touch; the site uses 0.3).
+  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1);
+  const rules = touch != null || gap != null || short != null ? { touch, gap: gap == null ? null : Math.round(gap), short } : null;
+  if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR)" });
   let next = 0;
   async function worker() {
     while (next < UNIVERSE.length) {
@@ -54,7 +56,7 @@ async function handler(req, res) {
   await Promise.all(Array.from({ length: POOL }, worker));
   const scanned = UNIVERSE.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
-  if (rules) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), test: { touch: rules.touch == null ? 0.3 : rules.touch, gap: rules.gap == null ? 6 : rules.gap }, scanned, record: combine(recs) });
+  if (rules) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), test: { touch: rules.touch == null ? 0.3 : rules.touch, gap: rules.gap == null ? 6 : rules.gap, short: rules.short == null ? 0.3 : rules.short }, scanned, record: combine(recs) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 

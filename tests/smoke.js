@@ -218,6 +218,8 @@ async function scanTests() {
   const rt = await call("api/scan.js", "/api/scan?touch=0.15&gap=5", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AMZN")), AMZN_NOW * 1000);
   ok(rt.status === 200 && rt.body.test.touch === 0.15 && rt.body.test.gap === 5 && rt.body.record && !rt.body.markets && rt.body.scanned === U.length - 2, "/api/scan?touch=&gap= answers with just the test record of every stock", JSON.stringify(rt.body.test));
   ok((await call("api/scan.js", "/api/scan?touch=5", fakeYahoo(() => "AMZN"), AMZN_NOW * 1000)).status === 400, "out-of-range test settings are refused");
+  const must = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { short: 0.05 } }).record;
+  ok(must.trades < base.trades && TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === base.trades, "?short=0.05 (taps must actually touch) is a test setting only: fewer trades, normal scan unchanged", base.trades + " → " + must.trades);
   const rk = require(path.join(ROOT, "api/scan.js")).ranks;
   const fakeRecs = Array.from({ length: 14 }, (_, i) => ({ sym: "S" + i, trades: i % 5 === 0 ? 2 : 4, wins: 2, totalR: 7 - i }));
   const top = rk(fakeRecs);

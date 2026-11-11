@@ -28,7 +28,10 @@ let MIN_GAP = 6;          // her rule: 6+ candles between taps; also the shortes
 const MAX_ANGLE = 45;     // her rule: under 45 degrees with 3 months on the chart
 const ASPECT = 1.8;       // my number: chart width / height of a normal screen, used to turn slope into degrees
 const NEAR_ATR = 0.1;     // display only: a tap whose wick stops more than 0.1 ATR short of the line is drawn as a near miss
-let TOUCH_ATR = 0.3;      // my number: a wick within 0.3 ATR of the line counts as a tap
+let TOUCH_ATR = 0.3;      // my number: how far a wick may poke THROUGH the line (closing back) and still be a tap
+let SHORT_ATR = 0.3;      // how far SHORT of the line a wick may stop and still be a tap (0.05 = must actually touch; test with ?short=)
+// Does a wick touch the line? under: a line under the lows (wick = the low); otherwise over the highs (wick = the high).
+const touches = (w, v, a, under) => { const short = under ? w - v : v - w; return short <= SHORT_ATR * a && -short <= TOUCH_ATR * a; };
 const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
 const RETEST_MAX = 30;    // my number: how many candles after a break to wait for the retest
 const TP_ZONE = 0.5;      // my number: swing highs/lows within 0.5 ATR count as the same level
@@ -236,12 +239,12 @@ function setup(daily, bars, isFuture, tf) {
   return { tf, ppd, D, x0, A, dA, bars, chainsBefore, act };
 }
 
-// Taps on a line from its start up to (not including) candle `upto`: candles whose wick is within TOUCH_ATR of
+// Taps on a line from its start up to (not including) candle `upto`: candles whose wick actually touches it (see touches()):
 // the line, the extreme of their neighbors, 6+ candles apart. Daily history counts each day as one tap spot.
 function taps(S, ln, upto, up) {
   const key = up ? "l" : "h", out = [];
   const consider = (x, p, tol, ext) => {
-    if (x < ln.a.x - 0.01 || !ext || Math.abs(p - val(ln, x)) > tol) return;
+    if (x < ln.a.x - 0.01 || !ext || !touches(p, val(ln, x), tol, up)) return;
     if (out.length && x - out[out.length - 1] < MIN_GAP) return;
     out.push(x);
   };
@@ -249,13 +252,13 @@ function taps(S, ln, upto, up) {
     const lo = Math.max(0, k - 2), hi = Math.min(S.D.length - 1, k + 2);
     let ext = true;
     for (let j = lo; j <= hi; j++) if (up ? S.D[j].l < d.l : S.D[j].h > d.h) ext = false;
-    consider(k * S.ppd, d[key], TOUCH_ATR * S.dA[k], ext);
+    consider(k * S.ppd, d[key], S.dA[k], ext);
   });
   for (let i = 0; i < upto; i++) {
     const lo = Math.max(0, i - 2), hi = Math.min(upto - 1, i + 2);
     let ext = true;
     for (let j = lo; j <= hi; j++) if (up ? S.bars[j].l < S.bars[i].l : S.bars[j].h > S.bars[i].h) ext = false;
-    consider(S.x0 + i, S.bars[i][key], TOUCH_ATR * S.A[i], ext);
+    consider(S.x0 + i, S.bars[i][key], S.A[i], ext);
   }
   return out;
 }
@@ -310,7 +313,7 @@ function events(S, from, last) {
       for (let j = i + 1; j <= Math.min(last, i + RETEST_MAX); j++) {
         const vj = val(ln, S.x0 + j), c = b[j];
         if (long ? c.c < vj : c.c > vj) break;
-        if (long ? c.l <= vj + TOUCH_ATR * S.A[j] : c.h >= vj - TOUCH_ATR * S.A[j]) {
+        if (long ? c.l <= vj + SHORT_ATR * S.A[j] : c.h >= vj - SHORT_ATR * S.A[j]) { // the pullback actually touches the line
           out.push({ kind: "retest", long, at: j, brk: i, action: ln, safety: long ? S.act[j].up : S.act[j].dn });
           break;
         }
@@ -320,11 +323,11 @@ function events(S, from, last) {
     [[up, true], [dn, false]].forEach(([ln, long]) => {
       if (!ln) return;
       const v = val(ln, x), w = long ? b[i].l : b[i].h;
-      if (Math.abs(w - v) > TOUCH_ATR * S.A[i] || (long ? b[i].c <= v : b[i].c >= v)) return;
+      if (!touches(w, v, S.A[i], long) || (long ? b[i].c <= v : b[i].c >= v)) return;
       const tp = taps(S, ln, i - 2, long);
       if (tp.length < 2) return;
       // A fresh tap: the line wasn't touched in the 6 candles before (her 6+ candles between taps).
-      for (let j = Math.max(0, i - MIN_GAP); j < i; j++) if (Math.abs((long ? b[j].l : b[j].h) - val(ln, S.x0 + j)) <= TOUCH_ATR * S.A[j]) return;
+      for (let j = Math.max(0, i - MIN_GAP); j < i; j++) if (touches(long ? b[j].l : b[j].h, val(ln, S.x0 + j), S.A[j], long)) return;
       out.push({ kind: "bounce", long, at: i, action: ln, safety: ln });
     });
   }
@@ -569,12 +572,13 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
+    if (opts.rules.short != null) SHORT_ATR = opts.rules.short;
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR] = saved; }
 }
 
 module.exports = { scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
