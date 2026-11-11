@@ -412,7 +412,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(!(await page.locator("#mine").isVisible()), "the rules tab has no add-symbol/settings box at the bottom");
   await page.click("[data-tab=watch]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
-  const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " candle sizes";
+  const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away";
   let lookAsk = "";
   await page.route("**/api/trades**look=1**", (r) => { lookAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: { at: Date.now(), markets: [lookBody.markets ? lookBody.markets[0] : lookBody] } }); });
   await page.fill("#lookIn", "aapl"); await page.press("#lookIn", "Enter");
@@ -424,7 +424,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.unroute("**/api/trades**look=1**");
   ok(/⚠ Earnings Thu, Nov 12 after close/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "stocks show an earnings warning (AMZN reports Thu after close)");
   ok(!/Earnings/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().textContent().catch(() => "")), "no earnings warning when none is coming");
-  ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
+  ok(awayTxt.trim() === wantAway, "watch list shows the distance in price only (AMZN)", awayTxt + " vs " + wantAway);
   // Lines about to become A+ get a tag and sort right after A+ lines.
   const soon = await page.evaluate(() => [soonAplus({ grade: "B", days: 18, checks: { taps: true, angle: true, history: false } }), soonAplus({ grade: "B", days: 10, checks: { taps: true, angle: true, history: false } }),
     soonAplus({ grade: "B", days: 19, checks: { taps: true, angle: false, history: false } }), soonAplus({ grade: "A+", days: 30, checks: { taps: true, angle: true, history: true } })]);
