@@ -17,6 +17,7 @@ const fx = (f) => path.join(FX, f);
 const load = (f) => JSON.parse(fs.readFileSync(fx(f)));
 const NOW = 1794264531;
 const AMZN_NOW = 1794340000;
+let amzWChart = null; // AMZN with watch-line charts, for the page test
 let NEWS = { events: [] }; // filled by the news check, then served to the page tests // the AMZN data was saved later (Nov 10 2026) // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
 
 const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", AAPL: "AAPL", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
@@ -152,6 +153,12 @@ async function scannerTests() {
   const d4 = def.body.markets[0], dB = (await tradesApi("/api/trades?tf=both")).body.markets[0], d1 = (await tradesApi("/api/trades?tf=1H")).body.markets[0];
   const r4 = T.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", all: true, now: NOW, tfs: ["4H"] });
   ok(d4.signals.every((x) => x.tf === "4H") && d4.watch.every((w) => w.tf === "4H") && r4.signals.every((x) => x.tf === "4H"), "by default everything comes from the 4-hour chart");
+  const amzW = (await call("api/trades.js", "/api/trades?s=AMZN&tf=both&wchart=1", fakeYahoo((s) => (s === "AMZN" ? "AMZN" : null)), AMZN_NOW * 1000)).body.markets[0];
+  const amzN = (await call("api/trades.js", "/api/trades?s=AMZN&tf=both", fakeYahoo((s) => (s === "AMZN" ? "AMZN" : null)), AMZN_NOW * 1000)).body.markets[0];
+  amzWChart = amzW;
+  const wc = amzW.watch[0] && amzW.watch[0].chart;
+  ok(wc && wc.bars.length > 50 && wc.line && wc.line.t0 === amzW.watch[0].line.t0 && Array.isArray(wc.lines) && wc.lines.some((l) => l.action) && wc.zoom.length > 100 && wc.mid.bars.length > 50, "?wchart=1: a watch line gets the same chart a callout gets (its line thick, every line, zoom views)", amzW.watch.length);
+  ok(amzN.watch.length && amzN.watch.every((w) => !w.chart && !w._ln), "no watch charts unless asked (the page stays small)");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
@@ -384,7 +391,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const hs = await page.locator("#out article.wc").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
-  ok(hs.length === 5 && hs.every((h) => h < 150), "watch-list boxes are compact (under 150px tall on a phone, with a news/market line)", hs.map(Math.round).join(","));
+  ok(hs.length === 5 && hs.every((h) => h < 175), "watch-list boxes are compact (under 175px tall on a phone, with a news/market line and Show chart)", hs.map(Math.round).join(","));
   ok((await page.locator("#out article.wc .wl3.warn").count()) === 0 && (await page.locator("#out article.wc .ck").count()) === 0, "A+ watch boxes show no \"Missing\" note and no long checklist");
   ok((await page.locator("#out article.c").count()) === 5 && (await page.locator("[data-wall]").textContent()) === "Show all 8", "stocks watch list shows the top 5 with a \"Show all 8\" button");
   await page.click("[data-wall]");
@@ -398,6 +405,16 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first();
   ok((await wl.count()) === 1 && (await page.locator("[data-tvl], .tvp").count()) === 0, "watch boxes have no TradingView lines panel");
+  await page.unroute("**/api/trades**");
+  let wAsk = "";
+  await page.route("**/api/trades**", (r) => { const u = decodeURIComponent(r.request().url()); if (!/wchart=1/.test(u)) asked.push(u); if (/wchart=1/.test(u)) { wAsk = u; r.fulfill({ json: { at: Date.now(), markets: [amzWChart] } }); } else r.fulfill({ json: body }); });
+  await wl.locator("[data-wch]").click();
+  await page.waitForSelector(".wc .chart svg", { timeout: 5000 }).catch(() => {});
+  ok(/s=AMZN&tf=4H&wchart=1/.test(wAsk) && (await wl.locator(".chart svg").count()) === 1 && (await wl.locator(".lns .lnr").count()) >= 2, "watch box: Show chart loads that stock's chart with every line", wAsk);
+  await wl.locator("[data-zoom][data-mode=zoom]").click();
+  ok((await wl.locator("svg[aria-label^='Daily chart, 2 years']").count()) === 1, "the watch chart has the 2-year view too");
+  await wl.locator("[data-wch]").click();
+  ok((await wl.locator(".chart").count()) === 0 && /Show chart/.test(await wl.locator("[data-wch]").textContent()), "Hide chart closes it");
   await page.click("[data-k=futures]");
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");

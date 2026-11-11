@@ -111,7 +111,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tl:" + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-let opts = {}, folds = {}, openCharts = {}, zoomed = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
+let opts = {}, folds = {}, openCharts = {}, wcharts = {}, zoomed = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 // Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
@@ -546,7 +546,28 @@ function watchCard(m, w) {
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
     (pushInfo && pushInfo.configured ? '<div class="tv sm"><button class="btn" data-lal="' + esc(m.sym + "|" + w.tf + "|" + w.key) + '">' + (store.get("lineAlerts", {})[m.sym + "|" + w.tf + "|" + w.key] ? "🔔 Alert set ✓" : "🔔 Alert me at this line") + "</button></div>" : "") +
-    "</article>";
+    watchChart(m, w) + "</article>";
+}
+
+// Watch-list chart: loaded when you tap "Show chart" (one stock), so the page itself stays small.
+function watchChart(m, w) {
+  const k = "w" + m.sym + "|" + w.tf + "|" + w.key, c = wcharts[k];
+  let h = '<div class="tv sm"><button class="btn" data-wch="' + esc(k) + '" aria-expanded="' + !!(c && c.shown) + '">' + (c && c.shown ? "Hide chart" : "📈 Show chart") + "</button></div>";
+  if (!c || !c.shown) return h;
+  if (c.loading) return h + '<div class="note"><span class="sp"></span> Loading chart…</div>';
+  if (c.error) return h + '<div class="note bad">' + esc(c.error) + "</div>";
+  const s = { tf: w.tf, chart: c.chart, status: "watch", entry: null, stop: null };
+  return h + (zoomed[k] ? lineView(c.m, s, zoomed[k]) : chart(c.m, s)) + linesBlock(c.m, s, k);
+}
+async function loadWatchChart(k) {
+  const [sym, tf, ...rest] = k.slice(1).split("|"), key = rest.join("|");
+  wcharts[k] = { shown: true, loading: true }; render();
+  try {
+    const j = await (await fetch("/api/trades?s=" + encodeURIComponent(sym) + "&tf=" + chartTF() + "&wchart=1")).json();
+    const m = (j.markets || [])[0], w = m && !m.error && (m.watch || []).find((x) => x.tf === tf && x.key === key) || (m && (m.watch || []).find((x) => x.tf === tf));
+    wcharts[k] = w && w.chart ? { shown: true, m, chart: w.chart } : { shown: true, error: "This line isn't near price anymore. Pull down to refresh." };
+  } catch (e) { wcharts[k] = { shown: true, error: "The chart didn't load. Try again in a minute." }; }
+  render();
 }
 
 const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
@@ -656,7 +677,7 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.lal) {
     const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
@@ -666,6 +687,7 @@ document.addEventListener("click", (e) => {
   if (t.dataset.took) { took(t.dataset.took); render(); return; }
   if (t.dataset.jdel != null) { if (confirm("Remove this trade from your journal?")) { const j = jGet(); j.splice(Number(t.dataset.jdel), 1); jSet(j); render(); } return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
+  if (t.dataset.wch) { const k = t.dataset.wch; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].chart) { wcharts[k].shown = true; render(); } else loadWatchChart(k); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;
   if (t.dataset.opt) {

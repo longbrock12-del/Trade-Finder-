@@ -465,6 +465,7 @@ function scan(hChart, dChart, opts = {}) {
       if (!qualifies(g)) return; // only lines that would make a real callout if price breaks or bounces off them
       watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln, tf), key: ln.a.t + ":" + ln.b.t,
         line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up },
+        _ln: ln, _safety: up ? s.act[last + 1].dn : s.act[last + 1].up, _tapX: g.tapX,
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),
         plan: up ? tf + " close below " + px(v) + " = short break. Tag and hold = long bounce." : tf + " close above " + px(v) + " = long break. Tag and reject = short bounce." });
     });
@@ -523,6 +524,12 @@ function scan(hChart, dChart, opts = {}) {
   };
   // Chart data is most of the download, so it's only sent for trades the page can show (live, fired in the
   // last ~day). opts.all (tests) keeps it for every callout.
+  // Watch-list charts (only when asked: /api/trades?wchart=1, one stock at a time): the same chart a callout
+  // gets, with the watched line as the thick line, the newest line on the other side as the dashed one.
+  wl.forEach((w) => {
+    if (opts.watchCharts) w.chart = chartFor({ tf: w.tf, action: w._ln, safety: w._safety || null, tapX: w._tapX || [], at: S[w.tf].last, from: null, closedAt: null });
+    delete w._ln; delete w._safety; delete w._tapX;
+  });
   const clean = (x) => {
     const o = { ...x, chart: opts.all || (x.status === "open" && now - x.t <= CHART_AGE) ? chartFor(x) : null };
     ["action", "safety", "tapX", "from", "entryRaw", "riskRaw"].forEach((k) => delete o[k]);
