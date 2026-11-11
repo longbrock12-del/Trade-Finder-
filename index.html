@@ -624,9 +624,9 @@ function renderWatch() {
 function watchList() {
   const rows = [];
   data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
-  // A+ first, then lines about to become A+ (only missing the 3 weeks, within a week of it), then the rest; nearest first.
-  const tier = (w) => (w.grade === "A+" ? 0 : soonAplus(w) != null ? 1 : 2);
-  rows.sort((a, b) => tier(a.w) - tier(b.w) || a.w.dist - b.w.dist);
+  // Closest to price first (by % of price, so a $20 stock and a $500 stock compare fairly).
+  const pct = ({ m, w }) => Math.abs(m.price - w.lineNow) / m.price;
+  rows.sort((a, b) => pct(a) - pct(b));
   const top = kind === "stocks" ? rankBox() : ""; // stocks that respect trendlines, before anything is a callout
   if (!rows.length) return top + '<div class="c empty">No callout-quality trendlines near price right now.</div>';
   // Stocks: show the top 5, with a button to see the rest. Futures always show everything.

@@ -430,13 +430,13 @@ async function pageTests(browser, body, optBody, scanBody) {
     soonAplus({ grade: "B", days: 19, checks: { taps: true, angle: false, history: false } }), soonAplus({ grade: "A+", days: 30, checks: { taps: true, angle: true, history: true } })]);
   ok(JSON.stringify(soon) === "[3,null,null,null]", "\"A+ in N days\" only for lines missing just the 3 weeks, within a week of it", JSON.stringify(soon));
   const wb = JSON.parse(JSON.stringify(body)), am = wb.markets.find((m) => m.sym === "AMZN");
-  am.watch = [{ ...am.watch[0], grade: "B", passed: 3, days: 17, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.2, key: "x1", lineTF: "Daily" },
-    { ...am.watch[0], grade: "B", passed: 3, days: 9, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.1, key: "x2", lineTF: "4-hour" }, am.watch[0]];
+  am.watch = [{ ...am.watch[0], grade: "B", passed: 3, days: 17, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.2, key: "x1", lineTF: "Daily", lineNow: +(am.price * 1.03).toFixed(2) },
+    { ...am.watch[0], grade: "B", passed: 3, days: 9, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.1, key: "x2", lineTF: "4-hour", lineNow: +(am.price * 1.001).toFixed(2) }, { ...am.watch[0], lineNow: +(am.price * 0.99).toFixed(2) }];
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: wb }));
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
-  const order = await page.locator("#out article.c").evaluateAll((els) => els.map((e) => (e.textContent.includes("A+ in 4 days") ? "soon" : /A\+ · 4\/4/.test(e.textContent) ? "A+" : "B")));
-  ok(order.slice(0, 3).join() === "A+,soon,B" && (await page.locator("#out .tag", { hasText: "A+ in 4 days" }).count()) === 1, "watch list: A+ first, then \"A+ in 4 days\", then other B lines", order.join());
+  const amzAway = await page.locator("#out article.c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).evaluateAll((els) => els.map((e) => Number((e.querySelector(".wl2 span:last-child").textContent.match(/\$([\d,.]+) away/) || [0, "NaN"])[1].replace(/,/g, ""))));
+  ok(amzAway.length === 3 && amzAway[0] < amzAway[1] && amzAway[1] < amzAway[2] && (await page.locator("#out .tag", { hasText: "A+ in 4 days" }).count()) === 1, "watch list: closest to price first (\"A+ in 4 days\" still tagged)", amzAway.join());
   // Stocks watch list: top 5, then a button for the rest. Futures: no button.
   const many = JSON.parse(JSON.stringify(body)), amz = many.markets.find((m) => m.sym === "AMZN");
   amz.watch = Array.from({ length: 8 }, (_, k) => ({ ...amz.watch[0], key: "k" + k, dist: 0.1 * (k + 1) }));
