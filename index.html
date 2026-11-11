@@ -57,6 +57,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .tvp{width:100%;margin-top:4px;cursor:default}.tvp textarea{width:100%;font:11px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--bd);border-radius:8px;background:var(--soft);color:var(--tx);padding:6px;margin:6px 0}
 .trk .big{font-size:24px;font-weight:800;margin:2px 0}.trr{display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:6px 0 2px;border-top:1px solid var(--bd);font-size:14px}
 .lns{margin-top:8px;cursor:default}
+.cl.sm{padding:10px 12px;margin-bottom:8px}.cl .tog{color:var(--ac);font-weight:600;margin-top:2px}.mini{font-size:13px;margin-top:3px;color:var(--mu)}.mini b{color:var(--tx)}
 .wc{padding:10px 12px;margin-bottom:8px}.wc .wp{font-size:16px}.wl2{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--mu);margin-top:3px}
 .wl2 i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}.wl3{font-size:12.5px;margin-top:3px}.wl3.warn{color:var(--warn)}
 .tv.sm{margin-top:4px}.tv.sm>.btn{border:0;background:none;padding:2px 0;font-size:12.5px;color:var(--ac);font-weight:600}.zsw{display:flex;gap:6px}.zsw .btn{flex:1}.lnr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:5px 0;border-top:1px solid var(--bd);font-size:13px}
@@ -355,30 +356,33 @@ function sizeLine(m, s) {
 
 function card(m, s) {
   const k = keyOf(m, s), st = STATUS[s.status] || [s.status, "mu"], d = m.digits, isNew = window._fresh && window._fresh.has(k);
-  const open = s.status === "open", res = open ? s.nowR : s.status === "closed" ? s.exitR : null;
+  const open = s.status === "open", res = open ? s.nowR : s.status === "closed" ? s.exitR : null, big = !!openCharts[k];
   const pv = m.pointValue, perC = (x) => "$" + num(Math.abs(x) * pv, 0);
   const lineWord = s.dir === "long" ? (s.setup === "bounce" ? "rising" : "falling") : s.setup === "bounce" ? "falling" : "rising";
-  return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '">' +
-    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + "</span>" +
+  const head = '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + "</span>" +
     '<span class="tag">' + esc(s.tf) + '</span><span class="tag">' + esc(s.setup) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") +
     '<div class="nm">' + esc(m.name) + " · " + num(m.price, d) + "</div></div>" +
-    '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + "</div></div>" +
+    '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + '<div class="tog">' + (big ? "Less ▴" : "Details ▾") + "</div></div></div>";
+  const status = canEnter(s) ? '<div class="st ok" style="font-size:15px">▶ GET IN NOW: ' + action(m, s) + " " + esc(show(m.sym)) + (m.kind === "stocks" ? " (stock near " : " near ") + num(m.price, d) + (m.kind === "stocks" ? ")" : "") + "</div>"
+      : open ? '<div class="st warn">Live, but already ' + signR(s.nowR) + " past entry. Late to get in: wait for the next callout.</div>"
+      : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) + (s.exitHow ? " (" + esc(s.exitHow) + ")" : "") : "") + "</div>";
+  // Collapsed: the summary only. Tap the box for everything.
+  if (!big) return '<article class="c cl sm" tabindex="0" data-k="' + esc(k) + '" aria-expanded="false">' + head + status +
+    '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s) + "</article>";
+  return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '" aria-expanded="true">' + head +
     '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop order now (trailing)" : "Stop order") + "</small>" + num(s.stop, d) + "</div>" +
     "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
     (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" : "—") + "</div></div>" +
     (pv && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: starting risk <b>' + perC(s.risk) + "</b>" + (res != null ? " · " + (open ? "now " : "result ") + '<b class="' + (res >= 0 ? "ok" : "bad") + '">' + (res >= 0 ? "+" : "−") + perC(res * s.risk) + "</b>" : "") + " ($" + pv + " per 1.00 move)</div>" : "") +
-    (canEnter(s) ? '<div class="st ok" style="font-size:15px">▶ GET IN NOW: ' + action(m, s) + " " + esc(show(m.sym)) + (m.kind === "stocks" ? " (stock near " : " near ") + num(m.price, d) + (m.kind === "stocks" ? ")" : "") + "</div>"
-      : open ? '<div class="st warn">Live, but already ' + signR(s.nowR) + " past entry. Late to get in: wait for the next callout.</div>"
-      : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) + (s.exitHow ? " (" + esc(s.exitHow) + ")" : "") : "") + "</div>") +
-    sizeLine(m, s) +
+    status + sizeLine(m, s) +
     (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
     (open ? '<div class="note">Set your stop order at <b>' + num(s.stop, d) + "</b>, just past the safety line, and trail it as the line moves. Get out early if a " + TFNAME[s.tf] + " candle closes through the safety line (now at " + num(s.line, d) + ").</div>" : "") +
     (open && s.tp ? '<div class="note">Optional take-profit, her quick-win exit: <b>' + num(s.tp.price, d) + "</b> (" + signR(s.tp.r) + "), just before a level price turned at " + s.tp.touches + " times. Trailing usually lets winners run further; the track record uses trailing.</div>" : "") +
     (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
-    (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + " · tap for chart</div>" +
-    (openCharts[k] ? (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) : "") +
+    (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
+    (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) +
     tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k) +
     optionsBlock(m, s, k) + "</article>";
 }
@@ -566,7 +570,10 @@ document.addEventListener("click", (e) => {
   else if (t.dataset.reset) { removed = []; store.set("removed", removed); render(); load(); }
   else if (t.id === "retry") load();
   else if (t.id === "alerts") toggleAlerts();
-  else if (t.classList.contains("cl")) { const k = t.dataset.k; openCharts[k] = !openCharts[k]; render(); }
+  else if (t.classList.contains("cl")) {
+    if (t.getAttribute("aria-expanded") === "true" && e.target.closest(".chart") && !e.target.closest(".top")) return; // tapping the chart keeps it open
+    const k = t.dataset.k; openCharts[k] = !openCharts[k]; render();
+  }
 });
 document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("cl")) { e.preventDefault(); e.target.click(); } });
 $("sizeF").addEventListener("submit", (e) => {

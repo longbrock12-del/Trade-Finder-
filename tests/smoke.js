@@ -256,6 +256,14 @@ async function pageTests(browser, body, optBody, scanBody) {
   const sizeTxt = await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().locator(".note", { hasText: "Size:" }).textContent();
   ok(nC >= 1 ? sizeTxt.includes("Size: " + nC + " micro contract") : sizeTxt.includes("more than your 1%"), "position size: $10,000 at 1% sets how many micro contracts", sizeTxt + " (risk/contract $" + perC.toFixed(0) + ")");
   ok((await page.evaluate(() => localStorage.getItem("tl:acct"))) === "10000", "account size is saved on the phone");
+  // Callout boxes start collapsed: summary only. Tap to open everything, tap again to close.
+  ok((await page.locator(".cl[aria-expanded=false]").count()) === (await page.locator(".cl").count()) && (await page.locator(".cl .gr").count()) === 0 && (await page.locator(".cl .mini", { hasText: "Stop order" }).count()) >= 1,
+    "callout boxes start collapsed, showing entry, stop order and result in one line");
+  const mgcBox = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
+  const shut = await mgcBox.evaluate((e) => e.getBoundingClientRect().height);
+  await mgcBox.locator(".sym").click();
+  const opened = await mgcBox.evaluate((e) => e.getBoundingClientRect().height);
+  ok((await mgcBox.getAttribute("aria-expanded")) === "true" && opened > shut * 2 && (await mgcBox.locator("svg").count()) >= 1, "tapping a box opens the full details and chart", Math.round(shut) + " → " + Math.round(opened) + "px");
   ok((await page.locator(".cl .gr", { hasText: "Stop order now (trailing)" }).count()) >= 1 && (await page.locator(".cl .note", { hasText: "just past the safety line" }).count()) >= 1, "live cards show the stop order to set, just past the safety line");
   const fut = await page.locator(".cl .st", { hasText: "GET IN NOW" }).allTextContents();
   ok(fut.length >= 1 && fut.every((x) => /GET IN NOW: (BUY|SELL) [A-Z]+ near/.test(x)), "futures cards say GET IN NOW: BUY or SELL (no calls or puts)", fut.join(","));
@@ -277,9 +285,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   const pine = await page.locator(".tvp textarea").first().inputValue(), mgcSig = body.markets.find((m) => m.sym === "MGC=F").signals[0];
   ok(pine.startsWith("//@version=5") && pine.includes("line.new(" + mgcSig.chart.line.t0 * 1000 + ",") && pine.includes("extend=extend.right") && (await page.locator(".tvp .note", { hasText: "Action line" }).count()) === 1,
     "lines panel lists point A/B and a Pine Script with the exact action line", pine.slice(0, 200));
-  ok((await page.locator(".cl svg").count()) === 0, "opening the lines panel doesn't open the chart");
+  ok((await mgc.getAttribute("aria-expanded")) === "true", "opening the lines panel keeps the box open");
   await mgc.locator("[data-tvl]").click();
   ok((await page.locator(".tvp").count()) === 0, "lines panel closes again");
+  await mgc.locator(".chart svg").click();
+  ok((await mgc.getAttribute("aria-expanded")) === "true", "tapping the chart doesn't close the box");
+  await mgc.locator(".top").click();
+  ok((await mgc.getAttribute("aria-expanded")) === "false" && (await page.locator(".cl svg").count()) === 0, "tapping the top of an open box closes it");
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
   ok((await page.locator(".cl .lns .lnr").count()) >= 3 && (await page.locator(".cl .lns .lnr.now").count()) === 1 && (await page.locator(".cl .lns .tag", { hasText: "action" }).count()) === 1, "under the chart: every line on the market, with price now and the action line marked");
@@ -383,7 +395,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   await openFolds(page);
-  ok((await page.locator("[data-opt]").count()) === 1, "live stock callout has an options button");
+  ok((await page.locator("[data-opt]").count()) === 0, "option button stays tucked away while the box is collapsed");
+  await page.locator(".cl", { has: page.locator(".sym", { hasText: /^TEST$/ }) }).first().locator(".sym").click();
+  ok((await page.locator("[data-opt]").count()) === 1, "live stock callout has an options button once opened");
   ok((await page.locator(".cl", { hasText: "GC=F" }).locator("[data-opt]").count()) === 0, "futures callouts have no options button");
   await page.click("[data-opt]"); await page.waitForSelector(".oc", { timeout: 5000 }).catch(() => {});
   ok((await page.locator(".oc").count()) === 1 && (await page.locator(".oc .tag", { hasText: "Best pick" }).count()) === 1, "only the best contract shows, marked Best pick");
@@ -391,9 +405,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   const box = await page.locator(".oc").first().textContent();
   ok(["Bid / Ask $", "Volume ", "Open interest ", "Delta ", "Theta ", "/day)", "Implied volatility ", "%"].every((x) => box.includes(x)), "each contract shows bid/ask, volume, open interest, delta, theta and implied volatility", box);
   ok((await page.locator(".oc .on").first().textContent()).includes("Dec 18, 26 $350 Call"), "contract name reads like a broker's", await page.locator(".oc .on").first().textContent());
-  ok((await page.locator(".cl svg").count()) === 0, "opening options doesn't open the chart");
-  await page.click(".op .oc"); 
-  ok((await page.locator(".cl svg").count()) === 0, "tapping inside the options panel doesn't open the chart");
+  const tb = page.locator(".cl", { has: page.locator(".sym", { hasText: /^TEST$/ }) }).first();
+  ok((await tb.getAttribute("aria-expanded")) === "true", "opening options keeps the box open");
+  await page.click(".op .oc");
+  ok((await tb.getAttribute("aria-expanded")) === "true", "tapping inside the options panel doesn't close the box");
   await page.click("[data-opt]");
   ok((await page.locator(".oc").count()) === 0, "options button hides the panel again");
   ok(!errors.length, "page has no errors", errors.join(" | "));
