@@ -438,6 +438,13 @@ function scan(hChart, dChart, opts = {}) {
   const live = hb[hb.length - 1].c, ref = sets["4H"][sets["4H"].length - 1].c;
   const tick = ref >= 1000 ? 1 : ref >= 50 ? 2 : ref >= 1 ? 3 : 5;
   const px = (x) => r2(x, tick);
+  // Two points on a line at recent candles of its chart (up to 60 candles back, and the newest), for TradingView.
+  // Old swing points (months or years back) may be outside what TradingView has loaded on a 4-hour chart, so the
+  // line is drawn there through recent candles instead: same line, same price now.
+  const tvPts = (st, ln) => {
+    const i1 = st.last, i0 = Math.max(0, Math.min(i1 - 1, Math.max(ln.a.x - st.x0, i1 - 60)));
+    return { t0: st.bars[i0].t, p0: px(val(ln, st.x0 + i0)), t1: st.bars[i1].t, p1: px(val(ln, st.x0 + i1)) };
+  };
   const all = [], watch = [], S = {};
 
   const hist = []; // every callout over the whole window, for the track record
@@ -464,7 +471,7 @@ function scan(hChart, dChart, opts = {}) {
       const g = grade(s, ln, last + 1 > b.length - 1 ? b.length - 1 : last + 1, up);
       if (!qualifies(g)) return; // only lines that would make a real callout if price breaks or bounces off them
       watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln, tf), key: ln.a.t + ":" + ln.b.t,
-        line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up },
+        line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up, tv: tvPts(s, ln) },
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),
         plan: up ? tf + " close below " + px(v) + " = short break. Tag and hold = long bounce." : tf + " close above " + px(v) + " = long break. Tag and reject = short bounce." });
     });
@@ -485,7 +492,7 @@ function scan(hChart, dChart, opts = {}) {
   const chartFor = (x) => {
     const s = S[x.tf], b = s.bars, end = s.last + (b[b.length - 1].live ? 1 : 0), off = Math.max(0, end + 1 - KEEP), base = s.x0 + off;
     // t0/t1: the times of point A and point B, so the line can be redrawn on TradingView.
-    const loc = (ln) => ln && { i0: ln.a.x - base, p0: ln.a.p, slope: ln.slope, i1: ln.b.x - base, p1: ln.b.p, t0: ln.a.t, t1: ln.b.t };
+    const loc = (ln) => ln && { i0: ln.a.x - base, p0: ln.a.p, slope: ln.slope, i1: ln.b.x - base, p1: ln.b.p, t0: ln.a.t, t1: ln.b.t, tv: tvPts(s, ln) };
     const ch = s.chainsBefore(s.last + 1);
     // Only real trendlines: swing point to swing point, 6+ candles, not flat (the same rule as action lines).
     // The short pieces in between would draw as a bend, and they're never traded.
