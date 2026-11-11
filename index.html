@@ -225,7 +225,10 @@ function notifyNew() {
 // highs. The action line is drawn thick, the safety line dashed.
 function chart(m, s) {
   const C = s.chart, B = C.bars, n = B.length, end = n - 1;
-  const from = Math.max(0, Math.min(C.at - 70, end - 120));
+  // Start a few candles before the action line's first tap when it's in the data (up to ~300 candles), so every
+  // tap shows; otherwise the usual last ~120 candles. Older taps show on the 3-month and 2-year views.
+  const tap0 = (C.tapIdx || []).length ? C.tapIdx[0] : Infinity;
+  const from = Math.max(0, end - 300, Math.min(C.at - 70, end - 120, tap0 - 6));
   const view = B.slice(from);
   const lv = (ln, i) => ln.p0 + ln.slope * (i - ln.i0);
   let hi = -Infinity, lo = Infinity;

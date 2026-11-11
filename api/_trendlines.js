@@ -40,7 +40,7 @@ const MIN_DAYS = 7;
 const qualifies = (x) => x.passed >= MIN_PASSED && !!(x.checks && x.checks.taps) && x.days >= MIN_DAYS;
 const WATCH_ATR = 1.5;    // my number: lines within 1.5 ATR of price go on the watch list
 const RECENT_DAYS = 5;    // callouts from the last 5 trading days
-const KEEP = 150;         // candles sent for the chart
+const KEEP = 320;         // candles sent for the chart (enough to start at the line's first tap on most lines)
 const CHART_AGE = 26 * 3600; // charts are sent only for live callouts this recent (the page shows ones under 24 hours old)
 const ZOOM = 500;         // daily candles (about 2 years) for the zoomed-out chart
 // Candles per trading day, for each chart: futures trade ~23 hours, stocks 6.5.

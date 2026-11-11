@@ -430,6 +430,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(/s=AMZN&tf=4H&wchart=1/.test(wAsk) && (await wl.locator(".chart svg").count()) === 1 && (await wl.locator(".lns .lnr").count()) >= 2, "watch box: Show chart loads that stock's chart with every line", wAsk);
   const wTaps = amzWChart.watch[0].chart.taps.length;
   ok(new RegExp("○ " + wTaps + " taps? on the thick line: ").test(await wl.textContent()), "watch chart lists every tap with its date and price", wTaps);
+  const circ = await page.evaluate(() => {
+    const bars = Array.from({ length: 320 }, (_, i) => [1790000000 + i * 14400, 100, 101, 99, 100]);
+    const C = (taps) => ({ bars, at: 319, tapIdx: taps, line: { i0: taps[0], p0: 101, slope: -0.001, i1: taps[1] }, chains: [], lines: [] });
+    const n = (taps) => (chart({ sym: "X", digits: 2, price: 100 }, { tf: "4H", chart: C(taps), status: "watch" }).match(/<circle/g) || []).length;
+    return [n([60, 200, 315]), n([5, 200, 315])];
+  });
+  ok(circ[0] === 3 && circ[1] === 2, "the 4-hour chart starts before the line's first tap (up to ~300 candles back), so every tap is circled", circ.join());
   await wl.locator("[data-zoom][data-mode=zoom]").click();
   ok((await wl.locator("svg circle").count()) >= Math.min(wTaps, 1), "the 2-year view circles the taps too", await wl.locator("svg circle").count());
   ok((await wl.locator("svg[aria-label^='Daily chart, 2 years']").count()) === 1, "the watch chart has the 2-year view too");
