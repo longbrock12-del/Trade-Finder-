@@ -533,8 +533,8 @@ function rankBox() {
     return w ? "<b>Near a line</b> · " + away(m, w) : '<span class="mu">No line nearby</span>';
   };
   return '<div class="c rkb"><div class="st">Respects trendlines · last 6 months</div>' +
-    '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned.</div>" +
-    shown.map((r, i) => '<div class="trr"><span><b>' + (i + 1) + ". " + esc(r.sym) + '</b> <span class="note">' + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span></span><b class="ok">+' + r.totalR.toFixed(1) + "R</b></div>" +
+    '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned. % = what your account would have made risking 1% on each trade (a $10,000 account: +5% = +$500).</div>" +
+    shown.map((r, i) => '<div class="trr"><span><b>' + (i + 1) + ". " + esc(r.sym) + '</b> <span class="note">' + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span></span><b class="ok">+' + r.totalR.toFixed(1) + "%</b></div>" +
       '<div class="note" style="margin:0 0 4px">' + where(r.sym) + "</div>").join("") +
     (list.length > RANK_SHOW ? '<button class="btn" data-fold="ranks" style="width:100%;margin-top:6px">' + (all ? "Show top " + RANK_SHOW : "Show all " + list.length) + "</button>" : "") + "</div>";
 }

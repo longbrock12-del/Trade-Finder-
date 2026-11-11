@@ -713,7 +713,7 @@ async function rankPageTests(browser, body, scanBody) {
   ok((await page.locator(".rkb").count()) === 0, "the ranked box isn't on Callouts");
   await page.click("[data-tab=watch]");
   const box = page.locator(".rkb");
-  ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2R/.test(await box.textContent()), "Stocks watch list: a ranked Respects trendlines box with the top 5");
+  ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2%/.test(await box.textContent()) && /risking 1% on each trade/.test(await box.textContent()), "Stocks watch list: a ranked Respects trendlines box with the top 5");
   ok(/No line nearby/.test(await box.textContent()) && /(Callout now|Near a line)/.test(await box.textContent()), "each ranked stock says where it is now");
   await box.locator("[data-fold=ranks]").click();
   ok((await page.locator(".rkb").locator(".trr").count()) === 8, "Show all opens the whole list");
