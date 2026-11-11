@@ -41,6 +41,7 @@ const qualifies = (x) => x.passed >= MIN_PASSED && !!(x.checks && x.checks.taps)
 const WATCH_ATR = 1.5;    // my number: lines within 1.5 ATR of price go on the watch list
 const RECENT_DAYS = 5;    // callouts from the last 5 trading days
 const KEEP = 150;         // candles sent for the chart
+const CHART_AGE = 26 * 3600; // charts are sent only for live callouts this recent (the page shows ones under 24 hours old)
 const ZOOM = 500;         // daily candles (about 2 years) for the zoomed-out chart
 // Candles per trading day, for each chart: futures trade ~23 hours, stocks 6.5.
 const PER_DAY = { futures: { "4H": 6, "1H": 23 }, stocks: { "4H": 2, "1H": 7 } };
@@ -517,8 +518,10 @@ function scan(hChart, dChart, opts = {}) {
       })(),
     };
   };
+  // Chart data is most of the download, so it's only sent for trades the page can show (live, fired in the
+  // last ~day). opts.all (tests) keeps it for every callout.
   const clean = (x) => {
-    const o = { ...x, chart: chartFor(x) };
+    const o = { ...x, chart: opts.all || (x.status === "open" && now - x.t <= CHART_AGE) ? chartFor(x) : null };
     ["action", "safety", "tapX", "from", "entryRaw", "riskRaw"].forEach((k) => delete o[k]);
     return o;
   };

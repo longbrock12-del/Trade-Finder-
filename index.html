@@ -69,23 +69,29 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .oc .on{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
 .oc .og{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin-top:5px;color:var(--mu)}.oc .og b{color:var(--tx);font-weight:600}
 .ob{margin-top:8px}
-.foot{font-size:12px;color:var(--mu);margin-top:20px;line-height:1.5}
+.stick{position:sticky;top:0;z-index:5;background:var(--bg);margin:0 -16px;padding:8px 16px 2px;padding-top:max(8px,env(safe-area-inset-top))}
+.stick .tabs{margin-top:0}.stick .chips{margin-bottom:8px}
+.sk{height:84px;border-radius:14px;margin-bottom:10px;background:linear-gradient(90deg,var(--soft) 25%,var(--bd) 50%,var(--soft) 75%);background-size:200% 100%;animation:sh 1.2s infinite linear}
+.sk.tall{height:120px}@keyframes sh{to{background-position:-200% 0}}
+#ptr{height:0;overflow:hidden;text-align:center;color:var(--mu);font-size:13px;transition:height .15s}#ptr.on{height:36px;line-height:36px}
+.sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}header>div{min-width:0}
 .sp{display:inline-block;width:10px;height:10px;border:2px solid var(--mu);border-top-color:transparent;border-radius:50%;animation:r 1s linear infinite;vertical-align:-1px}
 @keyframes r{to{transform:rotate(360deg)}}
 @media (max-width:480px){.gr{grid-template-columns:repeat(2,1fr)}}
 </style></head>
 <body><div class="w">
 <header>
-  <div><h1>Trade Finder</h1><div class="sub" id="sub">Tori Trades' top-down trendline strategy · loading…</div></div>
+  <div><h1>Trade Finder</h1><div class="sub" id="sub">Loading…</div></div>
   <button class="btn" id="alerts" aria-pressed="false">🔔 Alerts off</button>
 </header>
-<div class="tabs" role="tablist">
+<div class="stick" id="stick"><div class="tabs" role="tablist">
   <button class="on" data-tab="calls" role="tab">Callouts</button>
   <button data-tab="watch" role="tab">Watch list</button>
   <button data-tab="rules" role="tab">Rules</button>
 </div>
-<div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button></div>
-<main id="out"><div class="empty"><span class="sp"></span> Scanning 4-hour charts…</div></main>
+<div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button></div></div>
+<div id="ptr" aria-hidden="true"></div>
+<main id="out"><div class="sk"></div><div class="sk"></div><div class="sk"></div></main>
 
 <section class="c" id="mine" style="margin-top:18px">
   <div class="st">Your markets</div>
@@ -154,23 +160,27 @@ const ENTER_AGE = 24 * 3600; // a callout older than a day is too old to get int
 const canEnter = (s) => s.status === "open" && !s.liveThrough && s.nowR != null && s.nowR <= ENTER_R && Date.now() / 1000 - s.t <= ENTER_AGE;
 const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
 
+// Futures (and your added symbols) and the stock scan load separately: each shows as soon as it arrives,
+// so futures don't wait for the stock scan.
+let futPart = null, stockPart = null, scanning = false;
+function merge() {
+  if (!futPart && !stockPart) return;
+  const a = futPart || { markets: [] }, b = stockPart || {};
+  const have = new Set((a.markets || []).map((m) => m.sym));
+  data = { at: a.at || b.at || Date.now(), markets: (a.markets || []).concat((b.markets || []).filter((m) => !have.has(m.sym))),
+    scanned: b.scanned, scanErr: !!stockPart && !b.markets, scanning, stockRecord: b.record || null };
+}
 async function load() {
   if (loading) return;
-  loading = true; render();
-  try {
-    // Your futures and added symbols, plus the server's stock scan, side by side.
-    const mine = symbols();
-    const [a, b] = await Promise.all([
-      mine.length ? fetch("/api/trades?s=" + encodeURIComponent(mine.join(",")), { cache: "no-store" }).then((r) => r.json()) : Promise.resolve({ markets: [], at: Date.now() }),
-      fetch("/api/scan").then((r) => r.json()).catch(() => ({ error: "scan failed" })),
-    ]);
-    if (!a.markets && !b.markets) throw new Error(a.error || b.error || "no data");
-    const have = new Set((a.markets || []).map((m) => m.sym));
-    data = { at: a.at || b.at, markets: (a.markets || []).concat((b.markets || []).filter((m) => !have.has(m.sym))), scanned: b.scanned, scanErr: !b.markets, stockRecord: b.record || null };
-    lastErr = null;
-    notifyNew();
-  } catch (e) { lastErr = e.message || "load failed"; }
-  loading = false; render();
+  loading = true; scanning = true; render();
+  const mine = symbols();
+  const fut = (mine.length ? fetch("/api/trades?s=" + encodeURIComponent(mine.join(",")), { cache: "no-store" }).then((r) => r.json()) : Promise.resolve({ markets: [], at: Date.now() }))
+    .then((a) => { if (!a.markets) throw new Error(a.error || "no data"); futPart = a; lastErr = null; merge(); notifyNew(); render(); })
+    .catch((e) => { if (!futPart) lastErr = e.message || "load failed"; render(); });
+  const stk = fetch("/api/scan").then((r) => r.json()).catch(() => ({ error: "scan failed" }))
+    .then((b) => { stockPart = b; scanning = false; merge(); notifyNew(); render(); });
+  await Promise.all([fut, stk]);
+  scanning = false; loading = false; merge(); render();
 }
 
 function callouts() {
@@ -381,8 +391,8 @@ function card(m, s) {
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
-    (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) +
-    tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k) +
+    (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) +
+    tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k)) +
     optionsBlock(m, s, k) + "</article>";
 }
 
@@ -511,6 +521,8 @@ function renderRules() {
     '</div>';
 }
 
+const PULL = 90; // pixels to pull down before a refresh
+const SKELETON = '<div class="sk tall"></div><div class="sk"></div><div class="sk"></div>';
 function render() {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   document.querySelectorAll("#kinds button").forEach((b) => b.classList.toggle("on", b.dataset.k === kind));
@@ -518,14 +530,18 @@ function render() {
   const sub = $("sub");
   if (data) {
     const bad = data.markets.filter((m) => m.error);
-    sub.innerHTML = "Tori Trades' top-down trendline strategy · updated " + esc(new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + (loading ? ' <span class="sp"></span>' : "") +
-      (data.scanned ? " · scanned " + data.scanned + " stocks" : data.scanErr ? ' · <span class="warn">stock scan failed</span>' : "") +
+    sub.innerHTML = "Updated " + esc(new Date(data.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + (loading ? ' <span class="sp"></span>' : "") +
+      (data.scanning ? " · scanning stocks…" : data.scanned ? " · scanned " + data.scanned + " stocks" : data.scanErr ? ' · <span class="warn">stock scan failed</span>' : "") +
       (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => show(m.sym)).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
   const out = $("out");
   if (tab === "rules") out.innerHTML = renderRules();
-  else if (!data) out.innerHTML = lastErr ? '<div class="c err empty">Prices didn\'t load. <button class="btn" id="retry">Try again</button></div>' : '<div class="empty"><span class="sp"></span> Scanning 4-hour charts…</div>';
-  else out.innerHTML = tab === "calls" ? renderCalls() : renderWatch();
+  else if (!data) out.innerHTML = lastErr ? '<div class="c err empty">Prices didn\'t load. <button class="btn" id="retry">Try again</button></div>' : SKELETON;
+  else {
+    // While the stock scan runs: a note on the Stocks tab, and placeholders if no stocks are showing yet.
+    const wait = kind === "stocks" && data.scanning ? '<div class="note" style="margin:0 2px 8px">Scanning about 110 stocks… the first scan can take up to 30 seconds.</div>' : "";
+    out.innerHTML = wait && !data.markets.some((m) => m.kind === "stocks") ? wait + SKELETON : wait + (tab === "calls" ? renderCalls() : renderWatch());
+  }
   const al = store.get("alerts", false);
   $("alerts").textContent = al ? "🔔 Alerts on" : "🔔 Alerts off";
   $("alerts").classList.toggle("on", al); $("alerts").setAttribute("aria-pressed", String(al));
@@ -568,6 +584,21 @@ document.addEventListener("click", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("cl")) { e.preventDefault(); e.target.click(); } });
+(() => {
+  let y0 = null, dy = 0;
+  const ptr = $("ptr");
+  addEventListener("touchstart", (e) => { y0 = window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  addEventListener("touchmove", (e) => {
+    if (y0 == null) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy > 20) { ptr.classList.add("on"); ptr.textContent = dy > PULL ? "Release to refresh" : "Pull to refresh"; }
+  }, { passive: true });
+  addEventListener("touchend", () => {
+    if (y0 != null && dy > PULL && !loading) { ptr.textContent = "Refreshing…"; load().then(() => ptr.classList.remove("on")); }
+    else ptr.classList.remove("on");
+    y0 = null; dy = 0;
+  });
+})();
 $("sizeF").addEventListener("submit", (e) => {
   e.preventDefault();
   const a = parseFloat(String($("acct").value).replace(/[$,]/g, "")), p = parseFloat($("riskP").value);

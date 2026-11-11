@@ -221,7 +221,11 @@ async function pageTests(browser, body, optBody, scanBody) {
   console.log("Page");
   // The saved futures have no live callout at that moment, so make Micro Gold's newest one live, fired an hour ago.
   body = JSON.parse(JSON.stringify(body));
-  Object.assign(body.markets.find((m) => m.sym === "MGC=F").signals[0], { status: "open", nowR: 0.1, liveThrough: false, t: NOW - 3600 });
+  const T2 = require(path.join(ROOT, "api/_trendlines.js")), chartOf = (f, sym, sig, now) => T2.scan(load("yahoo_" + f + ".json"), load("yahoo_daily_" + f + ".json"), { sym, all: true, now }).signals.find((x) => x.t === sig.t && x.setup === sig.setup && x.tf === sig.tf).chart;
+  const mgcSig0 = body.markets.find((m) => m.sym === "MGC=F").signals[0];
+  ok(mgcSig0.status === "open" || mgcSig0.chart === null, "charts aren't sent for callouts the page can't show (smaller download)");
+  // (charts are only sent for live callouts, so attach this one's chart before making it live)
+  Object.assign(mgcSig0, { chart: chartOf("GC", "MGC=F", mgcSig0, NOW), status: "open", nowR: 0.1, liveThrough: false, t: NOW - 3600 });
   const page = await browser.newPage({ viewport: { width: 390, height: 900 } }), errors = [], asked = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
@@ -229,7 +233,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.route("**/api/scan", (r) => r.fulfill({ json: scanJson }));
   await page.clock.setFixedTime(NOW * 1000); // the browser's "now" = when the saved data was taken
   await page.goto("http://127.0.0.1:" + PORT + "/");
-  await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
+  await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
   const futR = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.totalR, 0);
   const trk = (await page.locator(".trk").textContent());
   ok(await page.evaluate(() => document.getElementById("out").firstElementChild.classList.contains("trk")), "the track record box is at the top");
@@ -319,7 +323,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   am.watch = [{ ...am.watch[0], grade: "B", passed: 3, days: 17, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.2, key: "x1", lineTF: "Daily" },
     { ...am.watch[0], grade: "B", passed: 3, days: 9, checks: { taps: true, spacing: true, angle: true, history: false }, dist: 0.1, key: "x2", lineTF: "4-hour" }, am.watch[0]];
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: wb }));
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const order = await page.locator("#out article.c").evaluateAll((els) => els.map((e) => (e.textContent.includes("A+ in 4 days") ? "soon" : /A\+ · 4\/4/.test(e.textContent) ? "A+" : "B")));
   ok(order.slice(0, 3).join() === "A+,soon,B" && (await page.locator("#out .tag", { hasText: "A+ in 4 days" }).count()) === 1, "watch list: A+ first, then \"A+ in 4 days\", then other B lines", order.join());
@@ -327,7 +331,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   const many = JSON.parse(JSON.stringify(body)), amz = many.markets.find((m) => m.sym === "AMZN");
   amz.watch = Array.from({ length: 8 }, (_, k) => ({ ...amz.watch[0], key: "k" + k, dist: 0.1 * (k + 1) }));
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: many }));
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const hs = await page.locator("#out article.wc").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
   ok(hs.length === 5 && hs.every((h) => h < 140), "watch-list boxes are compact (under 140px tall on a phone)", hs.map(Math.round).join(","));
@@ -340,7 +344,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-k=futures]");
   ok((await page.locator("[data-wall]").count()) === 0, "futures watch list has no show-all button");
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first();
   await wl.locator("[data-tvl]").click();
@@ -367,11 +371,11 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.getAttribute("meta[name=apple-mobile-web-app-title]", "content")) === "Trade Finder", "iPhone home-screen label is Trade Finder");
   // Stocks found by the scan show up next to your own symbols.
   scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") }; // NVDA here carries AMZN's charts
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent)); await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   const sr = scanBody.record, strk = await page.locator(".trk").textContent();
   ok(!strk.includes("Overall") && !strk.includes("futures"), "stocks tab shows only the stocks ROI");
   ok(strk.includes("Track record: stocks") && strk.includes(sr.trades + " trades") && strk.includes((sr.totalR >= 0 ? "+" : "−") + Math.abs(sr.totalR).toFixed(1) + "%"), "stocks track record shows all scanned stocks added up", strk.slice(0, 160));
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
   await page.click("[data-tab=watch]");
   ok((await page.locator(".c .sym", { hasText: "NVDA" }).count()) >= 1, "stocks from the scan appear under Stocks (on the Watch list)");
   await page.click("[data-tab=calls]");
@@ -379,26 +383,28 @@ async function pageTests(browser, body, optBody, scanBody) {
 
   // A live stock callout gets an options button; the panel loads contracts and doesn't flip the chart.
   const b2 = JSON.parse(JSON.stringify(body)), stock = b2.markets.find((m) => m.sym === "TEST");
-  const sig = stock.signals.find((x) => x.stop0 != null) || stock.signals[0]; sig.status = "open"; sig.nowR = 0.1; sig.liveThrough = false; sig.t = NOW - 3600; // fired an hour ago
+  const sig = stock.signals.find((x) => x.stop0 != null) || stock.signals[0];
+  if (!sig.chart) sig.chart = chartOf("TEST", "TEST", sig, NOW);
+  sig.status = "open"; sig.nowR = 0.1; sig.liveThrough = false; sig.t = NOW - 3600; // fired an hour ago
   if (sig.stop0 == null) Object.assign(sig, { stop0: sig.entry * 0.97, stop: sig.entry * 0.97, risk: sig.entry * 0.03, dir: "long" });
   await page.unroute("**/api/trades**");
   await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
   let optAsk = "";
   await page.route("**/api/options**", (r) => { optAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: optBody }); });
   await page.setViewportSize({ width: 390, height: 900 });
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-k=stocks]");
   ok((await page.locator(".cl .st", { hasText: /GET IN NOW: BUY (CALL|PUT) TEST \(stock near/ }).count()) === 1, "the card itself says GET IN NOW: BUY CALL/PUT");
   const late = JSON.parse(JSON.stringify(b2)); late.markets.find((m) => m.sym === "TEST").signals[0].nowR = 1.4;
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: late }));
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   ok((await page.locator(".gi.none").count()) === 1 && (await page.locator(".cl .sym", { hasText: /^TEST$/ }).count()) === 0, "a live trade already 1.4R past entry is no longer listed");
   const old2 = JSON.parse(JSON.stringify(b2)); Object.assign(old2.markets.find((m) => m.sym === "TEST").signals[0], { t: NOW - 2 * 86400 });
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: old2 }));
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   ok((await page.locator(".gi.none").count()) === 1 && (await page.locator(".cl .sym", { hasText: /^TEST$/ }).count()) === 0, "a live trade from 2 days ago is no longer listed (still counted in the track record)");
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: b2 }));
-  await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
+  await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await openFolds(page);
   ok((await page.locator("[data-opt]").count()) === 0, "option button stays tucked away while the box is collapsed");
   await page.locator(".cl", { has: page.locator(".sym", { hasText: /^TEST$/ }) }).first().locator(".sym").click();
@@ -420,6 +426,55 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.close();
 }
 
+// Faster loading and the polish: futures first, placeholders, sticky tabs, one-line header, pull to refresh.
+async function polishTests(browser, body, scanBody) {
+  console.log("Loading and layout");
+  const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true }), errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  let trades = 0, release;
+  const scanGate = new Promise((r) => { release = r; });
+  await page.route("**/api/trades**", (r) => { trades++; r.fulfill({ json: body }); });
+  await page.route("**/api/scan", async (r) => { await scanGate; r.fulfill({ json: scanBody }); }); // a slow stock scan
+  await page.clock.setFixedTime(NOW * 1000);
+  await page.goto("http://127.0.0.1:" + PORT + "/");
+  ok((await page.locator("#out .sk").count()) >= 1 || (await page.locator(".trk").count()) >= 1, "grey placeholder boxes show while loading");
+  await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
+  ok((await page.locator(".trk").count()) === 1 && /scanning stocks…/.test(await page.textContent("#sub")), "futures show right away while the stock scan is still running");
+  await page.click("[data-k=stocks]");
+  ok(/Scanning about 110 stocks/.test(await page.textContent("#out")), "stocks tab says the scan is running");
+  release();
+  await page.waitForFunction(() => /scanned/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
+  ok(/scanned \d+ stocks/.test(await page.textContent("#sub")) && !/Scanning about 110 stocks/.test(await page.textContent("#out")), "stocks fill in when the scan finishes", await page.textContent("#sub"));
+  const subH = await page.locator("#sub").evaluate((e) => e.getBoundingClientRect().height);
+  ok(subH < 24 && /^Updated \d/.test((await page.textContent("#sub")).trim()), "header is one short line (Updated … · scanned … stocks)", subH + "px");
+  await page.click("[data-k=futures]");
+  await page.evaluate(() => { document.body.style.minHeight = "3000px"; window.scrollTo(0, 1500); });
+  await page.waitForTimeout(100);
+  const top = await page.locator("#stick").evaluate((e) => e.getBoundingClientRect().top);
+  ok(top <= 1 && (await page.locator(".tabs").isVisible()) && (await page.locator("#kinds").isVisible()), "tabs and Futures/Stocks stay at the top while scrolling", "top " + top);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const before = trades;
+  await page.evaluate(async () => {
+    const t = (y) => new Touch({ identifier: 1, target: document.body, clientX: 150, clientY: y });
+    window.dispatchEvent(new TouchEvent("touchstart", { touches: [t(100)] }));
+    window.dispatchEvent(new TouchEvent("touchmove", { touches: [t(260)] }));
+    window.dispatchEvent(new TouchEvent("touchend", { touches: [] }));
+  });
+  await page.waitForTimeout(500);
+  ok(trades > before, "pulling down from the top refreshes", before + " → " + trades);
+  const before2 = trades;
+  await page.evaluate(async () => {
+    const t = (y) => new Touch({ identifier: 1, target: document.body, clientX: 150, clientY: y });
+    window.dispatchEvent(new TouchEvent("touchstart", { touches: [t(100)] }));
+    window.dispatchEvent(new TouchEvent("touchmove", { touches: [t(130)] }));
+    window.dispatchEvent(new TouchEvent("touchend", { touches: [] }));
+  });
+  await page.waitForTimeout(300);
+  ok(trades === before2, "a small pull doesn't refresh");
+  ok(!errors.length, "no errors while loading", errors.join(" | "));
+  await page.close();
+}
+
 (async () => {
   let body;
   try { body = await scannerTests(); } catch (e) { ok(false, "scanner tests crashed", e.message); }
@@ -431,6 +486,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await new Promise((r) => setTimeout(r, 1000));
   const browser = await chromium.launch();
   try { if (body && optBody && scanBody) await pageTests(browser, body, optBody, scanBody); } catch (e) { ok(false, "page tests crashed", e.message); }
+  try { if (body && scanBody) await polishTests(browser, body, scanBody); } catch (e) { ok(false, "loading/layout tests crashed", e.message); }
   await browser.close(); server.kill();
   console.log(failed ? "\n" + failed + " check(s) FAILED" : "\nAll checks passed");
   process.exit(failed ? 1 : 0);
