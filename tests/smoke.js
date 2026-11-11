@@ -361,7 +361,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-k=futures]");
   ok(!(await page.locator("#onlyGood").isVisible()), "the stocks filter is hidden on the futures tab");
   await page.click("[data-k=stocks]"); await page.click("[data-tab=journal]");
-  ok(!(await page.locator("#onlyGood").isVisible()) && (await page.locator("#addIn").isVisible()), "the stocks filter is hidden on the journal (settings still there)");
+  ok(!(await page.locator("#mine").isVisible()), "the journal has no add-symbol/settings box at the bottom");
   await page.click("[data-tab=rules]");
   ok(!(await page.locator("#mine").isVisible()), "the rules tab has no add-symbol/settings box at the bottom");
   await page.click("[data-tab=watch]");

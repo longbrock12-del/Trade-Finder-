@@ -615,7 +615,7 @@ function render() {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   document.querySelectorAll("#kinds button").forEach((b) => b.classList.toggle("on", b.dataset.k === kind));
   $("kinds").style.display = tab === "rules" ? "none" : "";
-  $("mine").style.display = tab === "rules" ? "none" : ""; // no settings under the rules
+  $("mine").style.display = tab === "calls" || tab === "watch" ? "" : "none"; // settings only under Callouts and Watch list
   $("goodRow").style.display = kind === "stocks" && (tab === "calls" || tab === "watch") ? "flex" : "none"; // stocks filter only where it changes something
   const sub = $("sub");
   if (data) {
