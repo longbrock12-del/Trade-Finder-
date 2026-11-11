@@ -57,7 +57,8 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .tvp{width:100%;margin-top:4px;cursor:default}.tvp textarea{width:100%;font:11px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--bd);border-radius:8px;background:var(--soft);color:var(--tx);padding:6px;margin:6px 0}
 .trk .big{font-size:24px;font-weight:800;margin:2px 0}.trr{display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:6px 0 2px;border-top:1px solid var(--bd);font-size:14px}
 .lns{margin-top:8px;cursor:default}
-.cl.sm{padding:10px 12px;margin-bottom:8px}.cl .tog{color:var(--ac);font-weight:600;margin-top:2px}.mini{font-size:13px;margin-top:3px;color:var(--mu)}.mini b{color:var(--tx)}
+.cl.sm{padding:10px 12px;margin-bottom:8px}.cl .tog{color:var(--ac);font-weight:600;margin-top:2px}.cl.sm .tog{margin:0}.mini{font-size:12.5px;margin-top:3px;color:var(--mu)}.mini b{color:var(--tx)}
+.cl.sm .st{font-size:14px;margin-top:4px}.note.mini{margin-top:2px}.note.mini.warn{color:var(--warn)}
 .wc{padding:10px 12px;margin-bottom:8px}.wc .wp{font-size:16px}.wl2{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--mu);margin-top:3px}
 .wl2 i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}.wl3{font-size:12.5px;margin-top:3px}.wl3.warn{color:var(--warn)}
 .tv.sm{margin-top:4px}.tv.sm>.btn{border:0;background:none;padding:2px 0;font-size:12.5px;color:var(--ac);font-weight:600}.zsw{display:flex;gap:6px}.zsw .btn{flex:1}.lnr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:5px 0;border-top:1px solid var(--bd);font-size:13px}
@@ -354,11 +355,13 @@ async function loadOptions(m, s, k) {
 }
 
 // Position size from her 1-2% rule: how many contracts/shares so the starting risk fits your risk budget.
-function sizeLine(m, s) {
+function sizeLine(m, s, short) {
   const acct = store.get("acct", 0), pct = store.get("riskP", 1);
   if (!acct || s.risk == null || s.status !== "open") return "";
   const budget = (acct * pct) / 100, per = m.pointValue ? s.risk * m.pointValue : s.risk, unit = m.pointValue ? "micro contract" : "share";
   const n = Math.floor(budget / per);
+  if (short) return n < 1 ? '<div class="note mini warn">Size: 1 ' + unit + " risks $" + num(per, 0) + ", more than your " + pct + "%</div>"
+    : '<div class="note mini">Size: <b>' + n + " " + unit + (n > 1 ? "s" : "") + "</b> · about $" + num(n * per, 0) + " risk</div>";
   if (n < 1) return '<div class="note warn">Size: 1 ' + unit + " risks $" + num(per, 0) + ", more than your " + pct + "% ($" + num(budget, 0) + "). Skip it, or it's a high-risk setup for your account.</div>";
   return '<div class="note">Size: <b>' + n + " " + unit + (n > 1 ? "s" : "") + "</b>, risking about $" + num(n * per, 0) + " (" + pct + "% of $" + num(acct, 0) + " = $" + num(budget, 0) + ")" + (m.kind === "stocks" ? ". With options, use the dollar risk, not the share count." : "") + "</div>";
 }
@@ -375,9 +378,12 @@ function card(m, s) {
   const status = canEnter(s) ? '<div class="st ok" style="font-size:15px">▶ GET IN NOW: ' + action(m, s) + " " + esc(show(m.sym)) + (m.kind === "stocks" ? " (stock near " : " near ") + num(m.price, d) + (m.kind === "stocks" ? ")" : "") + "</div>"
       : open ? '<div class="st warn">Live, but already ' + signR(s.nowR) + " past entry. Late to get in: wait for the next callout.</div>"
       : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) + (s.exitHow ? " (" + esc(s.exitHow) + ")" : "") : "") + "</div>";
-  // Collapsed: the summary only. Tap the box for everything.
-  if (!big) return '<article class="c cl sm" tabindex="0" data-k="' + esc(k) + '" aria-expanded="false">' + head + status +
-    '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s) + "</article>";
+  // Collapsed: a compact summary like the watch list. Tap the box for everything.
+  if (!big) return '<article class="c cl sm" tabindex="0" data-k="' + esc(k) + '" aria-expanded="false">' +
+    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + '</span><span class="tag">' + esc(s.tf) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") + "</div>" +
+    '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + ' · <span class="tog">Details ▾</span></div></div>' +
+    status.replace('style="font-size:15px"', "") +
+    '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s, true) + "</article>";
   return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '" aria-expanded="true">' + head +
     '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop order now (trailing)" : "Stop order") + "</small>" + num(s.stop, d) + "</div>" +
     "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +

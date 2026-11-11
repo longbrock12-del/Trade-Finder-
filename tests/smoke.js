@@ -267,6 +267,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   // Callout boxes start collapsed: summary only. Tap to open everything, tap again to close.
   ok((await page.locator(".cl[aria-expanded=false]").count()) === (await page.locator(".cl").count()) && (await page.locator(".cl .gr").count()) === 0 && (await page.locator(".cl .mini", { hasText: "Stop order" }).count()) >= 1,
     "callout boxes start collapsed, showing entry, stop order and result in one line");
+  const cbH = await page.locator(".cl.sm").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+  ok(cbH.length >= 1 && cbH.every((h) => h < 130), "collapsed callout boxes are compact (under 130px on a phone)", cbH.map(Math.round).join(","));
+  ok((await page.locator(".cl.sm .nm").count()) === 0 && (await page.locator(".cl.sm .tag", { hasText: /^(bounce|3-touch break|2-touch break|break & retest)$/ }).count()) === 0, "collapsed boxes leave the setup name and market line for the opened view");
   const mgcBox = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
   const shut = await mgcBox.evaluate((e) => e.getBoundingClientRect().height);
   await mgcBox.locator(".sym").click();
