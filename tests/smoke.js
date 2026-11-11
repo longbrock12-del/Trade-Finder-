@@ -322,22 +322,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   // TradingView: a link on every card to the same market and chart, and the lines as points and a Pine Script.
   ok((await page.locator("a[href*='tradingview.com']").count()) === 0, "no TradingView links on the cards");
   const mgc = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
-  await mgc.locator("[data-tvl]").click();
-  const pine = await page.locator(".tvp textarea").first().inputValue(), mgcSig = body.markets.find((m) => m.sym === "MGC=F").signals[0];
-  const tvl = mgcSig.chart.line, tvAt = (t) => tvl.p0 + tvl.slope * ((mgcSig.chart.bars.findIndex((q) => q[0] === t)) - tvl.i0);
-  ok(tvl.tv && tvl.tv.t1 === mgcSig.chart.bars[mgcSig.chart.bars.length - 1][0] || tvl.tv.t1 === mgcSig.chart.bars[mgcSig.chart.bars.length - 2][0], "TradingView anchors: the newest candle", JSON.stringify(tvl.tv));
-  ok(Math.abs(tvAt(tvl.tv.t0) - tvl.tv.p0) < 0.2 && Math.abs(tvAt(tvl.tv.t1) - tvl.tv.p1) < 0.2 && tvl.tv.t1 - tvl.tv.t0 <= 61 * 4 * 3600 * 2, "TradingView anchors sit on the same line, on recent candles (so TradingView has them loaded)", JSON.stringify(tvl.tv));
-  ok(/\nif barstate\.islast\n/.test(pine) && /var line l0 = na/.test(pine) && /    line\.delete\(l0\)\n    l0 := line\.new\(/.test(pine), "Pine Script draws the lines on the latest bar (so TradingView shows them)", pine.slice(0, 300));
-  ok(pine.startsWith("//@version=5") && pine.includes("line.new(" + mgcSig.chart.line.t0 * 1000 + ",") && pine.includes(", " + mgcSig.chart.line.tv.t1 * 1000 + ", ") && pine.includes("extend=extend.right") && (await page.locator(".tvp .note", { hasText: "Action line" }).count()) === 1,
-    "lines panel lists point A/B and a Pine Script with the exact action line", pine.slice(0, 200));
-  ok((await mgc.getAttribute("aria-expanded")) === "true", "opening the lines panel keeps the box open");
-  await mgc.locator("[data-tvl]").click();
-  ok((await page.locator(".tvp").count()) === 0, "lines panel closes again");
+  ok((await page.locator("[data-tvl], .tvp, textarea").count()) === 0 && !/Lines for TradingView/.test(await page.textContent("#out")), "no Lines for TradingView panel on the cards");
   // Journal: take this trade, close it with an exit price, see the result and stats, remove it.
   await mgc.locator("[data-took]").click();
   ok((await mgc.locator("[data-took]").textContent()) === "In your journal ✓", "\"I took this trade\" adds it to the journal");
   await page.click("[data-tab=journal]");
   ok((await page.locator("#out article.wc").count()) === 1 && (await page.locator("#kinds").isHidden()) && /1 open trade/.test(await page.locator("#out").textContent()), "Journal tab lists the open trade (no Futures/Stocks chips there)");
+  const mgcSig = body.markets.find((m) => m.sym === "MGC=F").signals[0];
   const jEntry = mgcSig.entry, jRisk = mgcSig.risk, jExit = mgcSig.dir === "long" ? jEntry + 2 * jRisk : jEntry - 2 * jRisk;
   await page.fill("#out .jx input", String(jExit)); await page.click("#out .jx button");
   const jTxt = await page.locator("#out").textContent();
@@ -406,12 +397,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first();
-  await wl.locator("[data-tvl]").click();
-  ok((await page.locator(".tvp textarea").inputValue()).includes("line.new("), "watch list lines can be copied for TradingView");
-  const wpine = await page.locator(".tvp textarea").inputValue(), nl = (wpine.match(/line\.new\(/g) || []).length;
-  ok(nl >= 2 && nl <= 40 && /#1fa463, width=/.test(wpine) && /#d64545, width=/.test(wpine) && /width=3/.test(wpine) && /width=1\)/.test(wpine), "watch list script draws every trendline: green under the lows, red over the highs, the card's line thick", nl + " lines " + wpine.replace(/\n/g, " / ").slice(0, 900));
-  const anyW = body.markets.concat(scanBody.markets).flatMap((m) => m.watch || [])[0];
-  ok(anyW && Array.isArray(anyW.all) && anyW.all.some((l) => l.up) && anyW.all.some((l) => !l.up) && anyW.all.every((l) => l.t1 > l.t0 && l.p0 > 0 && l.p1 > 0), "watch items carry all of the chart's trendlines (both sides)", anyW && anyW.all && anyW.all.length);
+  ok((await wl.count()) === 1 && (await page.locator("[data-tvl], .tvp").count()) === 0, "watch boxes have no TradingView lines panel");
   await page.click("[data-k=futures]");
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");

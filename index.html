@@ -54,7 +54,6 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .gi{border:2px solid var(--gd);border-radius:14px;padding:12px 13px;margin-bottom:12px;background:var(--card)}
 .gi.none{border-color:var(--bd)}.gi h3{margin:0 0 4px;font-size:16px}
 .tv{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}.tv a.btn{text-decoration:none;color:var(--ac)}
-.tvp{width:100%;margin-top:4px;cursor:default}.tvp textarea{width:100%;font:11px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--bd);border-radius:8px;background:var(--soft);color:var(--tx);padding:6px;margin:6px 0}
 .trk .big{font-size:24px;font-weight:800;margin:2px 0}.trr{display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:6px 0 2px;border-top:1px solid var(--bd);font-size:14px}
 .lns{margin-top:8px;cursor:default}
 .cl.sm{padding:10px 12px;margin-bottom:8px}.cl .tog{color:var(--ac);font-weight:600;margin-top:2px}.cl.sm .tog{margin:0}.mini{font-size:12.5px;margin-top:3px;color:var(--mu)}.mini b{color:var(--tx)}
@@ -112,7 +111,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tl:" + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-let opts = {}, folds = {}, openCharts = {}, tvOpen = {}, zoomed = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
+let opts = {}, folds = {}, openCharts = {}, zoomed = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 // Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
@@ -133,34 +132,6 @@ const STATUS = {
 };
 const TFNAME = { "4H": "4-hour", "1H": "1-hour" };
 const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
-// Her lines for TradingView: points to draw with the ray tool, and a Pine Script to paste into the Pine Editor.
-// lines: [{ t0, p0, t1, p1, up, dashed, name }] (t in seconds). Rays to the right, green rising, red falling.
-function pineScript(m, lines, extra) {
-  // Drawn on the latest bar (re-made each update) so TradingView always shows them; old copies are deleted.
-  // Main lines (thick): from point A to the same line on the newest candle (l.tv), so they land at today's level.
-  // extra: every other trendline on the chart (thin), point A to point B: green under the lows, red over the highs.
-  const d = (m.digits || 2) + 1, same = (a, b) => a.t0 === b.t0 && a.t1 === b.t1;
-  const rest = (extra || []).filter((e) => !lines.some((l) => same(l, e)));
-  const all = lines.map((l) => ({ ...l, main: true })).concat(rest).slice(0, 40);
-  const row = (l0, i) => {
-    const l = l0.tv ? { t0: l0.t0, p0: l0.p0, t1: l0.tv.t1, p1: l0.tv.p1 } : l0;
-    return "    line.delete(l" + i + ")\n    l" + i + " := line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
-      ", xloc=xloc.bar_time, extend=extend.right, color=" + (l0.up ? "#1fa463" : "#d64545") + ", width=" + (l0.main ? (l0.dashed ? 2 : 3) : 1) + (l0.dashed ? ", style=line.style_dashed" : "") + ") // " + (l0.name || (l0.up ? "Rising " : "Falling ") + (l0.tf || "") + " line");
-  };
-  return ["//@version=5", 'indicator("Trade Finder lines: ' + show(m.sym) + '", overlay=true, max_lines_count=50)']
-    .concat(all.map((l, i) => "var line l" + i + " = na"), ["if barstate.islast"], all.map(row)).join("\n");
-}
-function tvBlock(m, lines, tf, key, small, extra) {
-  const dt = (t) => new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
-  const shown = tvOpen[key];
-  return '<div class="tv' + (small ? " sm" : "") + '">' +
-    '<button class="btn" data-tvl="' + esc(key) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide lines" : "Lines for TradingView") + "</button>" +
-    (shown ? '<div class="tvp"><div class="note" style="margin-top:0">Draw with the ray tool, point A then point B (New York time):</div>' +
-      lines.map((l) => '<div class="note"><b style="color:' + (l.up ? "#1fa463" : "#d64545") + '">' + esc(l.name) + "</b>: A " + dt(l.t0) + " @ " + num(l.p0, m.digits) + " → B " + dt(l.t1) + " @ " + num(l.p1, m.digits) + "</div>").join("") +
-      '<div class="note">Or on a computer: copy this, open TradingView\'s Pine Editor, paste it, and click "Add to chart". It draws this line (thick) and every other trendline on the chart (thin): green under the lows, red over the highs. Use the 4h chart of the same symbol.</div>' +
-      '<textarea readonly rows="5" aria-label="Pine Script with the lines">' + esc(pineScript(m, lines, extra)) + '</textarea><button class="btn" data-copy="1">Copy script</button></div>' : "") +
-    "</div>";
-}
 
 // "Get in now": a live callout that hasn't run more than ENTER_R past its entry and isn't through its stop.
 const ENTER_R = 0.5;
@@ -455,8 +426,7 @@ function card(m, s) {
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
-    (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) +
-    tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k, false, s.chart.lines)) +
+    (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k)) +
     journalBtn(m, s, k) + optionsBlock(m, s, k) + "</article>";
 }
 
@@ -576,7 +546,7 @@ function watchCard(m, w) {
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
     (pushInfo && pushInfo.configured ? '<div class="tv sm"><button class="btn" data-lal="' + esc(m.sym + "|" + w.tf + "|" + w.key) + '">' + (store.get("lineAlerts", {})[m.sym + "|" + w.tf + "|" + w.key] ? "🔔 Alert set ✓" : "🔔 Alert me at this line") + "</button></div>" : "") +
-    (w.line ? tvBlock(m, [{ ...w.line, name: (up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key, true, w.all) : "") + "</article>";
+    "</article>";
 }
 
 const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
@@ -686,7 +656,7 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-took],[data-jdel],[data-lal],.op,.tvp,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.lal) {
     const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
@@ -698,15 +668,6 @@ document.addEventListener("click", (e) => {
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;
-  if (t.dataset.tvl) { tvOpen[t.dataset.tvl] = !tvOpen[t.dataset.tvl]; render(); return; }
-  if (t.dataset.copy) {
-    const ta = t.parentNode.querySelector("textarea");
-    const done = () => { t.textContent = "Copied ✓"; };
-    if (navigator.clipboard) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); });
-    else { ta.select(); try { document.execCommand("copy"); done(); } catch (er) { /* select it at least */ } }
-    return;
-  }
-  if (t.classList.contains("tvp")) return;
   if (t.dataset.opt) {
     const k = t.dataset.opt, o = opts[k];
     if (o && (o.data || o.loading)) { o.shown = !o.shown; render(); return; } // a failed load retries
