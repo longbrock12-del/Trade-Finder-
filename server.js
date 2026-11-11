@@ -7,6 +7,7 @@ const trades = require("./api/trades.js");
 const options = require("./api/options.js");
 const scanStocks = require("./api/scan.js");
 const news = require("./api/news.js");
+const earningsApi = require("./api/earnings.js");
 const push = require("./api/push.js");
 const notify = require("./api/notify.js");
 
@@ -35,6 +36,7 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/options") return options(req, res);
   if (pathname === "/api/scan") return scanStocks(req, res);
   if (pathname === "/api/news") return news(req, res);
+  if (pathname === "/api/earnings") return earningsApi(req, res);
   if (pathname === "/api/push") return push(req, res);
   if (pathname === "/api/notify") return notify(req, res);
   res.writeHead(404, { "Content-Type": "text/plain" });

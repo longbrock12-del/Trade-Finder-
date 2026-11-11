@@ -1,0 +1,79 @@
+{
+ "data": {
+  "asOf": "Thu, Nov 12, 2026",
+  "headers": {
+   "time": "Time",
+   "symbol": "Symbol",
+   "name": "Company Name",
+   "marketCap": "Market Cap",
+   "fiscalQuarterEnding": "Fiscal Quarter Ending",
+   "epsForecast": "Consensus EPS* Forecast",
+   "noOfEsts": "# of Ests",
+   "lastYearRptDt": "Last Year's Report Date",
+   "lastYearEPS": "Last year's EPS*"
+  },
+  "rows": [
+   {
+    "lastYearRptDt": "11/13/2025",
+    "lastYearEPS": "$0.63",
+    "time": "time-pre-market",
+    "symbol": "BN",
+    "name": "Brookfield Corporation",
+    "marketCap": "$103,928,119,000",
+    "fiscalQuarterEnding": "Sep/2026",
+    "epsForecast": "$0.72",
+    "noOfEsts": "3"
+   },
+   {
+    "lastYearRptDt": "11/11/2025",
+    "lastYearEPS": "($0.39)",
+    "time": "time-pre-market",
+    "symbol": "NBIS",
+    "name": "Nebius Group N.V.",
+    "marketCap": "$36,428,599,000",
+    "fiscalQuarterEnding": "Sep/2026",
+    "epsForecast": "($0.61)",
+    "noOfEsts": "4"
+   },
+   {
+    "lastYearRptDt": "11/12/2025",
+    "lastYearEPS": "$0.81",
+    "time": "time-after-hours",
+    "symbol": "CSCO",
+    "name": "Cisco Systems, Inc.",
+    "marketCap": "$386,964,914,000",
+    "fiscalQuarterEnding": "Oct/2026",
+    "epsForecast": "$1.15",
+    "noOfEsts": "8"
+   },
+   {
+    "lastYearRptDt": "11/13/2025",
+    "lastYearEPS": "$2.17",
+    "time": "time-after-hours",
+    "symbol": "AMAT",
+    "name": "Applied Materials, Inc.",
+    "marketCap": "$295,638,860,000",
+    "fiscalQuarterEnding": "Oct/2026",
+    "epsForecast": "$4.06",
+    "noOfEsts": "10"
+   },
+   {
+    "lastYearRptDt": "N/A",
+    "lastYearEPS": "$0.06",
+    "time": "time-not-supplied",
+    "symbol": "BNT",
+    "name": "Brookfield Wealth Solutions Ltd.",
+    "marketCap": "$14,393,624,600",
+    "fiscalQuarterEnding": "Sep/2026",
+    "epsForecast": "",
+    "noOfEsts": "3"
+   }
+  ]
+ },
+ "message": null,
+ "status": {
+  "rCode": 200,
+  "bCodeMessage": null,
+  "developerMessage": null
+ }
+}

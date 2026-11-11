@@ -143,7 +143,7 @@ const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
 
 // Futures (and your added symbols) and the stock scan load separately: each shows as soon as it arrives,
 // so futures don't wait for the stock scan.
-let futPart = null, stockPart = null, scanning = false, newsEvents = [];
+let futPart = null, stockPart = null, scanning = false, newsEvents = [], earnings = {};
 
 // Market hours (New York time; holidays aren't counted). Futures: Sunday 6 PM to Friday 5 PM, with a
 // 5-6 PM break each weekday. Stocks: 9:30 AM to 4 PM, Monday to Friday. Returns "" when open.
@@ -170,6 +170,13 @@ function infoLine(m) {
     const at = ev[0].t <= now ? "just out" : new Date(ev[0].t * 1000).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
     parts.push('<span class="warn" title="Big news can blow through trendlines">⚠ ' + esc(at) + ": " + esc(ev[0].title) + (ev.length > 1 ? " +" + (ev.length - 1) : "") + "</span>");
   }
+  // Stocks: earnings in the next 2 weeks (a gap can jump the trendline; option prices drop right after).
+  const er = m.kind === "stocks" && earnings[m.sym];
+  if (er) {
+    const d = new Date(er.date + "T12:00:00-05:00"), days = Math.round((Date.parse(er.date + "T00:00:00-05:00") - Date.now()) / 86400000);
+    const lab = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" }) + (er.when ? " " + er.when : "");
+    parts.push('<span class="' + (days <= 3 ? "bad" : "warn") + '" title="Earnings can gap the stock through a trendline, and option prices drop right after">⚠ Earnings ' + esc(lab) + "</span>");
+  }
   return parts.length ? '<div class="note mini">' + parts.join(" · ") + "</div>" : "";
 }
 const chartTF = () => "4H"; // everything runs on the 4-hour chart (the server still supports ?tf=1H|both, unused)
@@ -190,6 +197,8 @@ async function load() {
   const stk = fetch("/api/scan?tf=" + chartTF()).then((r) => r.json()).catch(() => ({ error: "scan failed" }))
     .then((b) => { stockPart = b; scanning = false; merge(); notifyNew(); render(); });
   const nws = fetch("/api/news").then((r) => r.json()).then((n) => { newsEvents = n.events || []; render(); }).catch(() => {});
+  const extraStocks = symbols().filter((x) => !/=F$/.test(x));
+  fetch("/api/earnings" + (extraStocks.length ? "?s=" + encodeURIComponent(extraStocks.join(",")) : "")).then((r) => r.json()).then((n) => { earnings = n.earnings || {}; render(); }).catch(() => {});
   await Promise.all([fut, stk, nws]);
   scanning = false; loading = false; merge(); render();
 }

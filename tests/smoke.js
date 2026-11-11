@@ -18,6 +18,7 @@ const load = (f) => JSON.parse(fs.readFileSync(fx(f)));
 const NOW = 1794264531;
 const AMZN_NOW = 1794340000;
 let amzWChart = null; // AMZN with watch-line charts, for the page test
+const EARN = { earnings: { AMZN: { date: "2026-11-12", when: "after close" } } }; // AMZN reports the day after the saved data
 let NEWS = { events: [] }; // filled by the news check, then served to the page tests // the AMZN data was saved later (Nov 10 2026) // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
 
 const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", AAPL: "AAPL", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
@@ -211,6 +212,12 @@ async function scanTests() {
   ok(Array.isArray(B.ranks) && B.ranks.length === (amzRec.trades >= 3 && amzRec.totalR > 0 ? 10 : 0), "the scan sends the respects-trendlines list", (B.ranks || []).length + " " + amzRec.totalR);
   // News: big US events (High impact) plus the crude oil inventory report; other countries and holidays left out.
   const cal = load("ff_calendar.json"), nr = await call("api/news.js", "/api/news", async () => ({ ok: true, status: 200, json: async () => cal }));
+  // Earnings (Nasdaq calendar): rows for the stocks we scan, with before open / after close.
+  const E = require(path.join(ROOT, "api/earnings.js")), ecal = load("nasdaq_earnings.json");
+  const ep = E.pick(ecal, "2026-11-12", new Set(["CSCO", "BN", "BNT", "ZZZ"]));
+  ok(ep.length === 3 && ep.find((x) => x.sym === "CSCO").when === "after close" && ep.find((x) => x.sym === "BN").when === "before open" && ep.find((x) => x.sym === "BNT").when === "" && ep.every((x) => x.date === "2026-11-12"), "earnings calendar: only our stocks, with before open / after close", JSON.stringify(ep));
+  ok(E.days(Date.UTC(2026, 10, 14, 15)).every((d) => ![0, 6].includes(new Date(d + "T12:00:00Z").getUTCDay())) && E.days(Date.UTC(2026, 10, 14, 15))[0] === "2026-11-16", "earnings: looks ahead 2 weeks of weekdays (New York dates)");
+  ok(E.pick({}, "2026-11-12", new Set(["CSCO"])).length === 0, "earnings: a bad calendar day gives no rows (no crash)");
   ok(nr.status === 200 && nr.body.events.map((e) => e.title).join("|") === "Core CPI m/m|CPI m/m|Crude Oil Inventories|PPI m/m" && nr.body.events.find((e) => e.crude).title === "Crude Oil Inventories",
     "news keeps big US releases and the crude oil inventory report (marked crude-only)", nr.body.events.map((e) => e.title).join("|"));
   const nf = await call("api/news.js", "/api/news", async () => ({ ok: false, status: 500 }));
@@ -276,6 +283,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   let scanJson = { at: Date.now(), scanned: 108, failed: ["NIO", "PDD"], markets: [] };
   await page.route("**/api/scan**", (r) => r.fulfill({ json: scanJson }));
   await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
+  await page.route("**/api/earnings**", (r) => r.fulfill({ json: EARN }));
   await page.clock.setFixedTime(NOW * 1000); // the browser's "now" = when the saved data was taken
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
@@ -388,6 +396,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=watch]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
   const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
+  ok(/⚠ Earnings Thu, Nov 12 after close/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "stocks show an earnings warning (AMZN reports Thu after close)");
+  ok(!/Earnings/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().textContent().catch(() => "")), "no earnings warning when none is coming");
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
   // Lines about to become A+ get a tag and sort right after A+ lines.
   const soon = await page.evaluate(() => [soonAplus({ grade: "B", days: 18, checks: { taps: true, angle: true, history: false } }), soonAplus({ grade: "B", days: 10, checks: { taps: true, angle: true, history: false } }),
@@ -640,6 +650,7 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.route("**/api/trades**", (r) => r.fulfill({ json: body }));
   await page.route("**/api/scan**", (r) => r.fulfill({ json: scanBody }));
   await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
+  await page.route("**/api/earnings**", (r) => r.fulfill({ json: EARN }));
   await page.route("**/api/push**", (r) => r.fulfill({ json: pushBody }));
   await page.clock.setFixedTime(NOW * 1000);
   await page.goto("http://127.0.0.1:" + PORT + "/");
@@ -666,6 +677,7 @@ async function rankPageTests(browser, body, scanBody) {
   await page.route("**/api/trades**", (r) => r.fulfill({ json: body }));
   await page.route("**/api/scan**", (r) => r.fulfill({ json: { ...scanBody, ranks } }));
   await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
+  await page.route("**/api/earnings**", (r) => r.fulfill({ json: EARN }));
   await page.clock.setFixedTime(NOW * 1000);
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /scanned/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
@@ -695,6 +707,7 @@ async function polishTests(browser, body, scanBody) {
   await page.route("**/api/trades**", (r) => { trades++; r.fulfill({ json: body }); });
   await page.route("**/api/scan**", async (r) => { await scanGate; r.fulfill({ json: scanBody }); }); // a slow stock scan
   await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
+  await page.route("**/api/earnings**", (r) => r.fulfill({ json: EARN }));
   await page.clock.setFixedTime(NOW * 1000);
   await page.goto("http://127.0.0.1:" + PORT + "/");
   ok((await page.locator("#out .sk").count()) >= 1 || (await page.locator(".trk").count()) >= 1, "grey placeholder boxes show while loading");
