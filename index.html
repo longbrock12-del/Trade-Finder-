@@ -101,7 +101,6 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
   <div class="st" style="margin-top:14px">Chart</div>
   <div class="note" style="margin-top:2px">Callouts, the watch list and the track record all use this chart. Her rule: pick one and stick to it.</div>
   <div class="zsw" id="tfSw" style="margin-top:8px"><button class="btn" data-tf="4H">4-hour</button><button class="btn" data-tf="1H">1-hour</button><button class="btn" data-tf="both">Both</button></div>
-  <label class="note" id="goodRow" style="display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--tx)"><input type="checkbox" id="onlyGood"> Stocks: only the top 10 that respect trendlines</label>
   <div class="st" style="margin-top:14px">Position size</div>
   <div class="note" style="margin-top:2px">Her rule: risk 1–2% of your account on each trade. Enter yours and every callout shows how many contracts or shares to trade. Saved on this phone only.</div>
   <form class="bar" id="sizeF"><input id="acct" inputmode="decimal" placeholder="Account size, e.g. 10000" aria-label="Account size in dollars" style="text-transform:none"><input id="riskP" inputmode="decimal" placeholder="Risk %" aria-label="Risk percent per trade" style="max-width:90px;text-transform:none"><button class="btn">Save</button></form>
@@ -221,7 +220,7 @@ async function load() {
 function callouts() {
   if (!data) return [];
   const out = [];
-  data.markets.forEach((m) => { if (!m.error && m.kind === kind && respects(m)) (m.signals || []).forEach((s) => out.push({ m, s })); });
+  data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.signals || []).forEach((s) => out.push({ m, s })); });
   return out;
 }
 
@@ -498,7 +497,7 @@ function renderCalls() {
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
     (folds.live ? "▾ " : "▸ ") + "Trades to get into now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
-  return trackBox() + (kind === "stocks" ? rankBox() : "") + getInBox(live) + bar;
+  return trackBox() + getInBox(live) + bar;
 }
 
 // Stocks that respect trendlines: every scanned stock ranked by its 6-month record on this chart (3+ trades, positive).
@@ -559,22 +558,18 @@ const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
 function renderWatch() {
   if (!data) return "";
   const rows = [];
-  data.markets.forEach((m) => { if (!m.error && m.kind === kind && respects(m)) (m.watch || []).forEach((w) => rows.push({ m, w })); });
+  data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
   // A+ first, then lines about to become A+ (only missing the 3 weeks, within a week of it), then the rest; nearest first.
   const tier = (w) => (w.grade === "A+" ? 0 : soonAplus(w) != null ? 1 : 2);
   rows.sort((a, b) => tier(a.w) - tier(b.w) || a.w.dist - b.w.dist);
-  if (!rows.length) return '<div class="c empty">No callout-quality trendlines within 1.5 ATR of price right now.</div>';
+  const top = kind === "stocks" ? rankBox() : ""; // stocks that respect trendlines, before anything is a callout
+  if (!rows.length) return top + '<div class="c empty">No callout-quality trendlines within 1.5 ATR of price right now.</div>';
   // Stocks: show the top 5, with a button to see the rest. Futures always show everything.
   const cut = kind === "stocks" && rows.length > WATCH_SHOW, all = !!store.get("watchAll", false), shown = cut && !all ? rows.slice(0, WATCH_SHOW) : rows;
   const more = cut ? '<button class="btn" data-wall="1" aria-expanded="' + all + '" style="width:100%;margin-bottom:12px">' + (all ? "Show only the top " + WATCH_SHOW : "Show all " + rows.length) + "</button>" : "";
-  return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">Lines that would make a real callout if price breaks or bounces off them. Set alerts on these.</div>' +
+  return top + '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">Lines that would make a real callout if price breaks or bounces off them. Set alerts on these.</div>' +
     shown.map(({ m, w }) => watchCard(m, w)).join("") + more;
 }
-
-// Stocks filter (optional): only stocks whose own 6-month record (this chart) is positive, with 3+ trades.
-// Stocks filter: only the top-10 "Respects trendlines" stocks (falls back to the stock's own record before the scan loads).
-const respects = (m) => m.kind !== "stocks" || !store.get("onlyGood", false) ||
-  (data && data.stockRanks ? data.stockRanks.some((r) => r.sym === m.sym) : !!(m.record && m.record.trades >= 3 && m.record.totalR > 0));
 
 // Journal (her rule: journal every trade), saved on this phone. Each entry: the callout as you took it, and
 // your exit when you close it.
@@ -640,7 +635,6 @@ function render() {
   document.querySelectorAll("#kinds button").forEach((b) => b.classList.toggle("on", b.dataset.k === kind));
   $("kinds").style.display = tab === "rules" ? "none" : "";
   $("mine").style.display = tab === "calls" || tab === "watch" ? "" : "none"; // settings only under Callouts and Watch list
-  $("goodRow").style.display = kind === "stocks" && (tab === "calls" || tab === "watch") ? "flex" : "none"; // stocks filter only where it changes something
   const sub = $("sub");
   if (data) {
     const bad = data.markets.filter((m) => m.error);
@@ -733,8 +727,6 @@ document.addEventListener("submit", (e) => {
   const j = jGet(), x = j[Number(f.dataset.ji)];
   if (x) { x.exit = v; x.closedAt = Date.now(); jSet(j); render(); }
 });
-$("onlyGood").checked = !!store.get("onlyGood", false);
-$("onlyGood").addEventListener("change", (e) => { store.set("onlyGood", e.target.checked); render(); });
 $("sizeF").addEventListener("submit", (e) => {
   e.preventDefault();
   const a = parseFloat(String($("acct").value).replace(/[$,]/g, "")), p = parseFloat($("riskP").value);

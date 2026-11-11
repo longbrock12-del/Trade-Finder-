@@ -360,13 +360,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl svg[aria-label*='3 months'], .cl svg[aria-label*='2 years']").count()) === 0 && (await page.locator(".cl svg").count()) === 1, "and back to the callout's chart; switching doesn't close it");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
-  const amzR = body.markets.find((m) => m.sym === "AMZN").record, amzGood = amzR.trades >= 3 && amzR.totalR > 0;
-  await page.check("#onlyGood");
-  ok((await page.locator(".c .sym", { hasText: /^AMZN$/ }).count() > 0) === amzGood, "stocks filter: AMZN shows only if its 6-month record is positive (" + amzR.totalR + "R)");
-  await page.uncheck("#onlyGood");
-  ok((await page.locator(".c .sym", { hasText: /^AMZN$/ }).count()) >= 1 && (await page.evaluate(() => localStorage.getItem("tl:onlyGood"))) === "false", "turning the filter off shows it again (and is remembered)");
+  ok(!(await page.locator("#onlyGood").count()), "no stocks filter checkbox (the Respects trendlines list replaces it)");
   await page.click("[data-k=futures]");
-  ok(!(await page.locator("#onlyGood").isVisible()), "the stocks filter is hidden on the futures tab");
   await page.click("[data-k=stocks]"); await page.click("[data-tab=journal]");
   ok(!(await page.locator("#mine").isVisible()), "the journal has no add-symbol/settings box at the bottom");
   await page.click("[data-tab=rules]");
@@ -611,18 +606,18 @@ async function rankPageTests(browser, body, scanBody) {
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /scanned/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
   await page.click("[data-k=stocks]");
+  ok((await page.locator(".rkb").count()) === 0, "the ranked box isn't on Callouts");
+  await page.click("[data-tab=watch]");
   const box = page.locator(".rkb");
-  ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2R/.test(await box.textContent()), "Stocks callouts: a ranked Respects trendlines box with the top 5");
+  ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2R/.test(await box.textContent()), "Stocks watch list: a ranked Respects trendlines box with the top 5");
   ok(/No line nearby/.test(await box.textContent()) && /(Callout now|Near a line)/.test(await box.textContent()), "each ranked stock says where it is now");
   await box.locator("[data-fold=ranks]").click();
   ok((await page.locator(".rkb").locator(".trr").count()) === 8, "Show all opens the whole list");
   await page.click("[data-k=futures]");
   ok((await page.locator(".rkb").count()) === 0, "the ranked box is only on Stocks");
-  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
-  await page.check("#onlyGood");
+  await page.click("[data-k=stocks]");
   const shown = await page.locator(".c .sym").allTextContents();
-  ok(shown.includes(inList) && !shown.includes(outList), "the stocks filter keeps only stocks on the respects-trendlines list", shown.join());
-  ok(/top 10 that respect trendlines/.test(await page.textContent("#goodRow")), "the filter says it uses the top 10");
+  ok(shown.includes(inList) && shown.includes(outList), "the watch list still shows every stock with a line (no filter)", shown.join());
   ok(!errors.length, "no page errors with the ranked list", errors.join(" | "));
   await page.close();
 }
