@@ -24,10 +24,10 @@
 // Numbers that are my reading of loose wording, not hers, are marked "my number".
 
 const HOUR = 3600, DAY = 86400;
-const MIN_GAP = 6;        // her rule: 6+ candles between taps; also the shortest line that counts as an action line
+let MIN_GAP = 6;          // her rule: 6+ candles between taps; also the shortest line that counts as an action line
 const MAX_ANGLE = 45;     // her rule: under 45 degrees with 3 months on the chart
 const ASPECT = 1.8;       // my number: chart width / height of a normal screen, used to turn slope into degrees
-const TOUCH_ATR = 0.3;    // my number: a wick within 0.3 ATR of the line counts as a tap
+let TOUCH_ATR = 0.3;      // my number: a wick within 0.3 ATR of the line counts as a tap
 const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
 const RETEST_MAX = 30;    // my number: how many candles after a break to wait for the retest
 const TP_ZONE = 0.5;      // my number: swing highs/lows within 0.5 ATR count as the same level
@@ -424,7 +424,7 @@ function record(hist) {
 }
 
 // hChart: Yahoo hourly bars (6 months). dChart: Yahoo daily bars (10 years).
-function scan(hChart, dChart, opts = {}) {
+function scanCore(hChart, dChart, opts = {}) {
   const now = opts.now || Date.now() / 1000;
   const { meta, bars: hb } = hourly(hChart);
   const sym = opts.sym || meta.symbol;
@@ -556,6 +556,18 @@ function scan(hChart, dChart, opts = {}) {
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
     dailyBars: daily.length, signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), record: opts.history === false ? null : record(hist),
   };
+}
+
+// opts.rules (tests only, e.g. /api/scan?touch=0.15): run the replay with a different tap distance (touch, in ATR)
+// or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
+function scan(hChart, dChart, opts = {}) {
+  if (!opts.rules) return scanCore(hChart, dChart, opts);
+  const saved = [TOUCH_ATR, MIN_GAP];
+  try {
+    if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
+    if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
+    return scanCore(hChart, dChart, opts);
+  } finally { [TOUCH_ATR, MIN_GAP] = saved; }
 }
 
 module.exports = { scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

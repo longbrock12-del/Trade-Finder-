@@ -207,6 +207,13 @@ async function scanTests() {
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
   ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0 && m.signals.length <= 1), "scan returns only stocks with a setup, one callout each, under their own symbols");
   ok(ms < 30000, "full scan runs in under 30 seconds of work", ms + "ms");
+  // Test-only rule settings: change the replay, never the normal scan.
+  const TL = require(path.join(ROOT, "api/_trendlines.js")), gcArgs = () => [load("yahoo_GC.json"), load("yahoo_daily_GC.json")];
+  const base = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record, tight = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { touch: 0.1 } }).record, after = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
+  ok(tight.trades < base.trades && after.trades === base.trades && after.totalR === base.totalR, "test settings (?touch=0.1) change the replay, and the normal scan is untouched afterwards", base.trades + " → " + tight.trades + " → " + after.trades);
+  const rt = await call("api/scan.js", "/api/scan?touch=0.15&gap=5", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AMZN")), AMZN_NOW * 1000);
+  ok(rt.status === 200 && rt.body.test.touch === 0.15 && rt.body.test.gap === 5 && rt.body.record && !rt.body.markets && rt.body.scanned === U.length - 2, "/api/scan?touch=&gap= answers with just the test record of every stock", JSON.stringify(rt.body.test));
+  ok((await call("api/scan.js", "/api/scan?touch=5", fakeYahoo(() => "AMZN"), AMZN_NOW * 1000)).status === 400, "out-of-range test settings are refused");
   const rk = require(path.join(ROOT, "api/scan.js")).ranks;
   const fakeRecs = Array.from({ length: 14 }, (_, i) => ({ sym: "S" + i, trades: i % 5 === 0 ? 2 : 4, wins: 2, totalR: 7 - i }));
   const top = rk(fakeRecs);
