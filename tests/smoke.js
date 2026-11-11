@@ -312,7 +312,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   const fr = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record), sum = (k) => fr.reduce((a, r) => a + r[k], 0);
   const wlTxt = await page.locator(".trk .wl").first().textContent();
   ok((await page.locator(".trk .wl", { hasText: "By setup" }).count()) === 1, "Details also shows results by setup");
-  ok(wlTxt.includes("Average win +" + (sum("winSum") / sum("nWin")).toFixed(1) + "R") && wlTxt.includes("average loss −" + (sum("lossSum") / sum("nLoss")).toFixed(1) + "R") &&
+  ok(wlTxt.includes("Average win +" + (sum("winSum") / sum("nWin")).toFixed(1) + "%") && wlTxt.includes("average loss −" + (sum("lossSum") / sum("nLoss")).toFixed(1) + "%") &&
     wlTxt.includes((sum("winSum") / sum("nWin") / (sum("lossSum") / sum("nLoss"))).toFixed(1) + "× bigger than losses") && wlTxt.includes("For every $1 lost, $" + (sum("winSum") / sum("lossSum")).toFixed(2)) && wlTxt.includes("Winners held"),
     "Details shows average win and loss, how much bigger wins are, $ made per $1 lost, and time held", wlTxt);
   ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
@@ -381,8 +381,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   const jEntry = mgcSig.entry, jRisk = mgcSig.risk, jExit = mgcSig.dir === "long" ? jEntry + 2 * jRisk : jEntry - 2 * jRisk;
   await page.fill("#out .jx input", String(jExit)); await page.click("#out .jx button");
   const jTxt = await page.locator("#out").textContent();
-  ok(/\+2\.00R/.test(jTxt) && /1 closed trade · 100% wins · 0 open/.test(jTxt) && /Bounces: 1 · 100% wins · \+2\.0R|Breaks: 1 · 100% wins · \+2\.0R|Break & retest: 1 · 100% wins · \+2\.0R/.test(jTxt) && /per contract/.test(jTxt),
-    "closing it with an exit price shows +2R, win rate, results by setup and $ per micro contract", jTxt.slice(0, 260));
+  ok(/\+2\.0%/.test(jTxt) && /1 closed trade · 100% wins · 0 open/.test(jTxt) && /Bounces: 1 · 100% wins · \+2\.0%|Breaks: 1 · 100% wins · \+2\.0%|Break & retest: 1 · 100% wins · \+2\.0%/.test(jTxt) && /per contract/.test(jTxt),
+    "closing it with an exit price shows +2%, win rate, results by setup and $ per micro contract", jTxt.slice(0, 260));
   ok((await page.evaluate(() => JSON.parse(localStorage.getItem("tl:journal")).length)) === 1, "journal is saved on the phone");
   page.once("dialog", (dg) => dg.accept());
   await page.click("#out [data-jdel]");
@@ -663,7 +663,7 @@ async function alertTests() {
   site = { trades: { markets: [mk(1980, { ...sig, status: "closed", exitR: -1, exitHow: "stop order", exitPx: 1989 })] } };
   await invoke("api/notify.js", "GET");
   const m4 = pushed.map((x) => open(x.body));
-  ok(m4.length === 1 && m4[0].title === "Exit BUY MGC: −1.0R" && /Stop order hit at 1989/.test(m4[0].body), "exit alerts: the phone is told when the trade closes, with the result", JSON.stringify(m4));
+  ok(m4.length === 1 && m4[0].title === "Exit BUY MGC: −1.0%" && /Stop order hit at 1989/.test(m4[0].body), "exit alerts: the phone is told when the trade closes, with the result", JSON.stringify(m4));
   const l2 = (await invoke("api/push.js", "GET")).body.live[0];
   ok(l2.status === "closed" && l2.exitR === -1, "when the trade closes, the live record keeps its result", JSON.stringify(l2));
   ok((await invoke("api/push.js", "POST", { action: "unsubscribe", endpoint: sub.endpoint })).body.ok && !H("tf:subs").has(sub.endpoint), "a phone can turn alerts off");
@@ -685,7 +685,7 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(200);
   const tr = await page.locator(".trk").first().textContent();
-  ok(/Live record since .*1 closed · 0% wins · −1\.0R · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
+  ok(/Live record since .*1 closed · 0% wins · −1\.0% · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const n = await page.locator("[data-lal]").count();
   ok(n > 0 && /Alert me at this line/.test(await page.locator("[data-lal]").first().textContent()), "watch-list lines have an Alert me button", n);

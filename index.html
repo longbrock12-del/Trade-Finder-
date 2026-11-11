@@ -139,7 +139,8 @@ const ENTER_R = 0.5;
 const action = (m, s) => (m.kind === "stocks" ? (s.dir === "long" ? "BUY CALL" : "BUY PUT") : s.dir === "long" ? "BUY" : "SELL");
 const ENTER_AGE = 24 * 3600; // a callout older than a day is too old to get into
 const canEnter = (s) => s.status === "open" && !s.liveThrough && s.nowR != null && s.nowR <= ENTER_R && Date.now() / 1000 - s.t <= ENTER_AGE;
-const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
+// Results shown as account % at 1% risk per trade: a trade that made 1.2x its risk = +1.2% of the account.
+const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(1) + "%";
 
 // Futures (and your added symbols) and the stock scan load separately: each shows as soon as it arrives,
 // so futures don't wait for the stock scan.
@@ -384,12 +385,12 @@ function optionsBlock(m, s, k) {
         "<span>Volume <b>" + num(c.volume, 0) + "</b></span><span>Open interest <b>" + num(c.oi, 0) + "</b></span>" +
         "<span>Delta <b>" + num(c.delta, 2) + "</b></span><span>Theta <b>" + num(c.theta, 2) + "</b> <small>(" + (c.theta < 0 ? "−" : "") + "$" + num(Math.abs(c.theta) * 100, 0) + "/day)</small></span>" +
         "<span>Implied volatility <b>" + c.iv + "%</b></span><span>Expires in <b>" + c.dte + " days</b></span>" +
-        "<span>" + (d.targetIsDefault ? "At 2R " : "At target ") + money(d.target) + ': <b class="ok">~' + money(c.atTarget) + " (+" + c.atTargetPct + "%)</b></span>" +
+        "<span>" + (d.targetIsDefault ? "At 2× risk " : "At target ") + money(d.target) + ': <b class="ok">~' + money(c.atTarget) + " (+" + c.atTargetPct + "%)</b></span>" +
         "<span>At stop " + money(d.stop) + ': <b class="bad">~' + money(c.atStop) + " (" + c.atStopPct + "%)</b></span>" +
         "<span>Breakeven at expiry <b>" + money(c.breakeven) + "</b></span></div></div>";
     });
-    h += '<div class="note">Bid/ask from Cboe, 15 minutes delayed. "Estimated price now" moves that price by how far the stock has moved since (using delta and gamma): usually within a few cents, less exact in fast moves or around earnings. Check the live price in your broker before buying. "At 2R" and "at stop" are estimates if the move happens soon; time decay lowers them the longer it takes. ' +
-      "2R is just a yardstick (twice the stock's risk). Her exit is the safety line: get out of the option when the stock closes through it. Options aren't part of Tori's strategy. See Rules.</div>";
+    h += '<div class="note">Bid/ask from Cboe, 15 minutes delayed. "Estimated price now" moves that price by how far the stock has moved since (using delta and gamma): usually within a few cents, less exact in fast moves or around earnings. Check the live price in your broker before buying. "At 2× risk" and "at stop" are estimates if the move happens soon; time decay lowers them the longer it takes. ' +
+      "2× risk is just a yardstick (twice the stock's move to the stop). Her exit is the safety line: get out of the option when the stock closes through it. Options aren't part of Tori's strategy. See Rules.</div>";
   }
   return h + "</div>";
 }
@@ -463,7 +464,7 @@ function getInBox(all) {
 // Track record: the same rules replayed over the last 6 months of prices (see record() in api/_trendlines.js).
 // % return = total R x 1%, i.e. risking 1% of the account per trade (her beginner rule).
 function trackBox() {
-  const pct = (r) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%", Rs = (r, d = 1) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(d) + "R";
+  const pct = (r) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%", Rs = (r, d = 1) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(d) + "%";
   const since = (t) => (t ? new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
   let sum, rows = "", name;
   if (kind === "futures") {
@@ -486,7 +487,7 @@ function trackBox() {
   const lv = ((pushInfo && pushInfo.live) || []).filter((x) => (x.view || "4H") === chartTF() && x.kind === kind);
   const lvDone = lv.filter((x) => x.status === "closed" && x.exitR != null), lvR = lvDone.reduce((a, x) => a + x.exitR, 0);
   const liveLine = lv.length ? '<div class="note" style="margin-top:4px"><b>Live record</b> since ' + since(Math.min(...lv.map((x) => x.t))) + ": " + lvDone.length + " closed · " +
-    (lvDone.length ? Math.round((100 * lvDone.filter((x) => x.exitR > 0).length) / lvDone.length) + '% wins · <b class="' + (lvR >= 0 ? "ok" : "bad") + '">' + (lvR >= 0 ? "+" : "−") + Math.abs(lvR).toFixed(1) + "R</b> · " : "") + (lv.length - lvDone.length) + " open</div>" : "";
+    (lvDone.length ? Math.round((100 * lvDone.filter((x) => x.exitR > 0).length) / lvDone.length) + '% wins · <b class="' + (lvR >= 0 ? "ok" : "bad") + '">' + (lvR >= 0 ? "+" : "−") + Math.abs(lvR).toFixed(1) + "%</b> · " : "") + (lv.length - lvDone.length) + " open</div>" : "";
   // Wins vs losses, in plain words. Sums across the futures markets (or all scanned stocks).
   const parts = kind === "futures" ? data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record) : [data.stockRecord];
   const add = (k) => parts.reduce((a, r) => a + (r[k] || 0), 0), nW = add("nWin"), nL = add("nLoss");
@@ -497,14 +498,14 @@ function trackBox() {
   const bySetup = Object.keys(bs).length ? '<div class="wl"><div class="st">By setup (she says to track these separately)</div>' + ["break", "retest", "bounce"].filter((k) => bs[k]).map((k) =>
     "<div>" + NAMES[k] + ": " + bs[k].trades + " trades · " + Math.round((100 * bs[k].wins) / bs[k].trades) + '% wins · <b class="' + (bs[k].totalR >= 0 ? "ok" : "bad") + '">' + Rs(bs[k].totalR) + "</b></div>").join("") + "</div>" : "";
   const sizes = nW && nL ? '<div class="wl"><div class="st">How the wins and losses look</div>' +
-    "<div>Average win <b class=\"ok\">+" + (add("winSum") / nW).toFixed(1) + "R</b> · average loss <b class=\"bad\">−" + (add("lossSum") / nL).toFixed(1) + "R</b></div>" +
+    "<div>Average win <b class=\"ok\">+" + (add("winSum") / nW).toFixed(1) + "%</b> · average loss <b class=\"bad\">−" + (add("lossSum") / nL).toFixed(1) + "%</b></div>" +
     "<div>Wins are <b>" + (add("winSum") / nW / (add("lossSum") / nL)).toFixed(1) + "×</b> bigger than losses</div>" +
     "<div>For every $1 lost, <b>$" + (add("winSum") / add("lossSum")).toFixed(2) + "</b> was made</div>" +
     "<div>Winners held " + days(add("winHrs") / nW) + ", losers " + days(add("lossHrs") / nL) + "</div>" +
-    '<div class="note" style="margin-top:4px">R = your starting risk. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
+    '<div class="note" style="margin-top:4px">% = what the account made or lost, risking 1% on each trade. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
   return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div>' + liveLine + '</div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
-    (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
+    (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. Results are what the account would have made risking 1% on each trade (at 2% risk, double them). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 
 function renderCalls() {
@@ -624,9 +625,9 @@ function renderWatch() {
 function watchList() {
   const rows = [];
   data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
-  // Closest to price first (by % of price, so a $20 stock and a $500 stock compare fairly).
-  const pct = ({ m, w }) => Math.abs(m.price - w.lineNow) / m.price;
-  rows.sort((a, b) => pct(a) - pct(b));
+  // Fewest dollars away first: stocks in $ per share, futures in $ per contract (the amounts the boxes show).
+  const usd = ({ m, w }) => Math.abs(m.price - w.lineNow) * (m.pointValue || 1);
+  rows.sort((a, b) => usd(a) - usd(b));
   const top = kind === "stocks" ? rankBox() : ""; // stocks that respect trendlines, before anything is a callout
   if (!rows.length) return top + '<div class="c empty">No callout-quality trendlines near price right now.</div>';
   // Stocks: show the top 5, with a button to see the rest. Futures always show everything.
@@ -661,13 +662,13 @@ function renderJournal() {
   const by = {};
   done.forEach((x, i) => { const k = SETUP_KIND(x.setup), b = (by[k] = by[k] || { n: 0, w: 0, r: 0 }); b.n++; if (rs[i] > 0) b.w++; b.r += rs[i]; });
   const head = '<div class="c trk"><div class="st">Your journal</div>' + (done.length
-    ? '<div class="big ' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + 'R</div><div class="note" style="margin-top:0">' + done.length + " closed trade" + (done.length > 1 ? "s" : "") + " · " + Math.round((100 * rs.filter((r) => r > 0).length) / done.length) + "% wins · " + (j.length - done.length) + " open</div>" +
-      '<div class="wl" style="margin-top:8px"><div class="st">By setup</div>' + Object.keys(by).map((k) => "<div>" + k + ": " + by[k].n + " · " + Math.round((100 * by[k].w) / by[k].n) + '% wins · <b class="' + (by[k].r >= 0 ? "ok" : "bad") + '">' + (by[k].r >= 0 ? "+" : "−") + Math.abs(by[k].r).toFixed(1) + "R</b></div>").join("") + "</div>"
+    ? '<div class="big ' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + '%</div><div class="note" style="margin-top:0">' + done.length + " closed trade" + (done.length > 1 ? "s" : "") + " · " + Math.round((100 * rs.filter((r) => r > 0).length) / done.length) + "% wins · " + (j.length - done.length) + " open</div>" +
+      '<div class="wl" style="margin-top:8px"><div class="st">By setup</div>' + Object.keys(by).map((k) => "<div>" + k + ": " + by[k].n + " · " + Math.round((100 * by[k].w) / by[k].n) + '% wins · <b class="' + (by[k].r >= 0 ? "ok" : "bad") + '">' + (by[k].r >= 0 ? "+" : "−") + Math.abs(by[k].r).toFixed(1) + "%</b></div>").join("") + "</div>"
     : '<div class="note">' + j.length + " open trade" + (j.length > 1 ? "s" : "") + ". Enter your exit price when you close one.</div>") + "</div>";
   return head + j.map((x, i) => {
     const r = R(x), d = x.digits || 2, money = x.pv && r != null ? " · " + (r >= 0 ? "+" : "−") + "$" + num(Math.abs(r * x.risk * x.pv), 0) + " per contract" : "";
     return '<article class="c wc"><div class="top"><div><span class="sym">' + esc(show(x.sym)) + '</span> <span class="tag ' + x.dir + '">' + x.dir.toUpperCase() + '</span><span class="tag">' + esc(x.tf) + '</span><span class="tag">' + esc(x.setup) + '</span><span class="tag">' + esc(x.grade) + "</span></div>" +
-      (r != null ? '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r >= 0 ? "+" : "") + r.toFixed(2) + "R</b>" : '<span class="tag">open</span>') + "</div>" +
+      (r != null ? '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r >= 0 ? "+" : "") + r.toFixed(1) + "%</b>" : '<span class="tag">open</span>') + "</div>" +
       '<div class="wl2"><span>Entry ' + num(x.entry, d) + " · stop " + num(x.stop, d) + "</span><span>" + new Date(x.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + "</span></div>" +
       (x.exit != null ? '<div class="wl3">Exit ' + num(x.exit, d) + money + "</div>"
         : '<form class="bar jx" data-ji="' + i + '"><input inputmode="decimal" placeholder="Exit price" aria-label="Exit price" style="text-transform:none"><button class="btn">Close trade</button></form>') +

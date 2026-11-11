@@ -85,7 +85,7 @@ module.exports = async function handler(req, res) {
     }
     // 3: update open trades in the live record (same rules as the replay: safety line, or a newer callout replaces it).
     // Exit alerts too: when the stop trails to a new level (0.1R or more), and when the trade closes.
-    const R1 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "R";
+    const R1 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "%"; // account % at 1% risk per trade, like the page
     let exits = 0;
     for (const [lk, x] of Object.entries(await S.hgetallJSON("tf:live"))) {
       if (x.status !== "open") continue;
