@@ -351,6 +351,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   const rulesTxt = await page.locator(".rules").textContent();
   ok(["Break & retest", "Bounce", "just past", "1–2%", "Commit to one timeframe", "Journal every trade", "Practice first", "Redraw daily"].every((x) => rulesTxt.includes(x)), "rules tab covers her whole system: setups, stop past the line, sizing, one timeframe, journaling, practice, upkeep");
   ok((await page.locator(".rules .tag", { hasText: "automatic" }).count()) >= 7 && (await page.locator(".rules .tag", { hasText: /^you$/ }).count()) >= 3, "each step says whether it's automatic or yours");
+  ok(!/Sources:/.test(await page.locator(".rules").textContent()) && (await page.locator(".rules li").last().textContent()).startsWith("Practice first"), "rules end with step 12 (no text under it)");
   ok((await page.locator("text=How the computer does it").count()) === 0 && (await page.locator("#out >> text=Option contracts").count()) === 0, "rules tab has no computer or options sections");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
