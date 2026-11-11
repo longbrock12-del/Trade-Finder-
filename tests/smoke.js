@@ -358,6 +358,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".c .sym", { hasText: /^AMZN$/ }).count() > 0) === amzGood, "stocks filter: AMZN shows only if its 6-month record is positive (" + amzR.totalR + "R)");
   await page.uncheck("#onlyGood");
   ok((await page.locator(".c .sym", { hasText: /^AMZN$/ }).count()) >= 1 && (await page.evaluate(() => localStorage.getItem("tl:onlyGood"))) === "false", "turning the filter off shows it again (and is remembered)");
+  await page.click("[data-k=futures]");
+  ok(!(await page.locator("#onlyGood").isVisible()), "the stocks filter is hidden on the futures tab");
+  await page.click("[data-k=stocks]"); await page.click("[data-tab=journal]");
+  ok(!(await page.locator("#onlyGood").isVisible()) && (await page.locator("#addIn").isVisible()), "the stocks filter is hidden on the journal (settings still there)");
+  await page.click("[data-tab=rules]");
+  ok(!(await page.locator("#mine").isVisible()), "the rules tab has no add-symbol/settings box at the bottom");
+  await page.click("[data-tab=watch]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
   const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
