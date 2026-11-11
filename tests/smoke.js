@@ -292,7 +292,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl svg[aria-label*='3 months'], .cl svg[aria-label*='2 years']").count()) === 0 && (await page.locator(".cl svg").count()) === 1, "and back to the callout's chart; switching doesn't close it");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
-  const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".mu", { hasText: "away" }).first().textContent();
+  const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
   const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
   // Lines about to become A+ get a tag and sort right after A+ lines.
@@ -313,6 +313,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => r.fulfill({ json: many }));
   await page.reload(); await page.waitForFunction(() => /updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
+  const hs = await page.locator("#out article.wc").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+  ok(hs.length === 5 && hs.every((h) => h < 140), "watch-list boxes are compact (under 140px tall on a phone)", hs.map(Math.round).join(","));
+  ok((await page.locator("#out article.wc .wl3.warn").count()) === 0 && (await page.locator("#out article.wc .ck").count()) === 0, "A+ watch boxes show no \"Missing\" note and no long checklist");
   ok((await page.locator("#out article.c").count()) === 5 && (await page.locator("[data-wall]").textContent()) === "Show all 8", "stocks watch list shows the top 5 with a \"Show all 8\" button");
   await page.click("[data-wall]");
   ok((await page.locator("#out article.c").count()) === 8 && (await page.locator("[data-wall]").textContent()).startsWith("Show only the top 5"), "Show all opens the rest, and the button shrinks it back");

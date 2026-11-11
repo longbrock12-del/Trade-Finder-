@@ -56,7 +56,10 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .tv{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}.tv a.btn{text-decoration:none;color:var(--ac)}
 .tvp{width:100%;margin-top:4px;cursor:default}.tvp textarea{width:100%;font:11px/1.4 ui-monospace,Menlo,monospace;border:1px solid var(--bd);border-radius:8px;background:var(--soft);color:var(--tx);padding:6px;margin:6px 0}
 .trk .big{font-size:24px;font-weight:800;margin:2px 0}.trr{display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:6px 0 2px;border-top:1px solid var(--bd);font-size:14px}
-.lns{margin-top:8px;cursor:default}.zsw{display:flex;gap:6px}.zsw .btn{flex:1}.lnr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:5px 0;border-top:1px solid var(--bd);font-size:13px}
+.lns{margin-top:8px;cursor:default}
+.wc{padding:10px 12px;margin-bottom:8px}.wc .wp{font-size:16px}.wl2{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--mu);margin-top:3px}
+.wl2 i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}.wl3{font-size:12.5px;margin-top:3px}.wl3.warn{color:var(--warn)}
+.tv.sm{margin-top:4px}.tv.sm>.btn{border:0;background:none;padding:2px 0;font-size:12.5px;color:var(--ac);font-weight:600}.zsw{display:flex;gap:6px}.zsw .btn{flex:1}.lnr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:5px 0;border-top:1px solid var(--bd);font-size:13px}
 .lnr i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}.lnr small{color:var(--mu);font-size:11px;font-weight:400}
 .lnr.now{background:var(--soft);border-radius:6px;padding:5px 6px;font-weight:700}
 .wl{background:var(--soft);border-radius:10px;padding:9px 10px;margin-bottom:10px;font-size:14px;line-height:1.6}
@@ -131,10 +134,10 @@ function pineScript(m, lines) {
     ", xloc=xloc.bar_time, extend=extend.right, color=" + (l.up ? "color.new(#1fa463, 0)" : "color.new(#d64545, 0)") + ", width=" + (l.dashed ? 1 : 2) + (l.dashed ? ", style=line.style_dashed" : "") + ") // " + l.name;
   return ["//@version=5", 'indicator("Trade Finder lines: ' + show(m.sym) + '", overlay=true)', "var bool drawn = false", "if not drawn", "    drawn := true"].concat(lines.map(row)).join("\n");
 }
-function tvBlock(m, lines, tf, key) {
+function tvBlock(m, lines, tf, key, small) {
   const dt = (t) => new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
   const shown = tvOpen[key];
-  return '<div class="tv">' +
+  return '<div class="tv' + (small ? " sm" : "") + '">' +
     '<button class="btn" data-tvl="' + esc(key) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide lines" : "Lines for TradingView") + "</button>" +
     (shown ? '<div class="tvp"><div class="note" style="margin-top:0">Draw with the ray tool, point A then point B (New York time):</div>' +
       lines.map((l) => '<div class="note"><b style="color:' + (l.up ? "#1fa463" : "#d64545") + '">' + esc(l.name) + "</b>: A " + dt(l.t0) + " @ " + num(l.p0, m.digits) + " → B " + dt(l.t1) + " @ " + num(l.p1, m.digits) + "</div>").join("") +
@@ -463,6 +466,21 @@ function soonAplus(w) {
   return left >= 1 && left <= 7 ? left : null;
 }
 
+// One compact watch-list box: symbol, tags and the line's price; which line and how far; the plan; anything missing.
+function watchCard(m, w) {
+  const c = w.checks || {}, miss = [];
+  if (!c.taps) miss.push(w.taps + " taps (3+)");
+  if (!c.angle) miss.push(w.angle + "° (under 45°)");
+  if (!c.history) miss.push("3+ weeks (" + w.days + " days)");
+  const soon = soonAplus(w), up = w.kind.startsWith("rising");
+  const plan = up ? "Close below = short · tag and hold = long" : "Close above = long · tag and reject = short";
+  return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" +
+    (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
+    '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
+    '<div class="wl3">' + esc(plan) + "</div>" + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
+    (w.line ? tvBlock(m, [{ ...w.line, name: (up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key, true) : "") + "</article>";
+}
+
 const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
 function renderWatch() {
   if (!data) return "";
@@ -475,11 +493,8 @@ function renderWatch() {
   // Stocks: show the top 5, with a button to see the rest. Futures always show everything.
   const cut = kind === "stocks" && rows.length > WATCH_SHOW, all = !!store.get("watchAll", false), shown = cut && !all ? rows.slice(0, WATCH_SHOW) : rows;
   const more = cut ? '<button class="btn" data-wall="1" aria-expanded="' + all + '" style="width:100%;margin-bottom:12px">' + (all ? "Show only the top " + WATCH_SHOW : "Show all " + rows.length) + "</button>" : "";
-  return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">The newest line in each chain on the 4-hour and 1-hour charts, only if it passes the same rules as callouts (3 of 4, always 3+ taps, 1+ week old), so a break or bounce here would be a real callout. Set a price alert on these. Distance is shown in price and in ATRs (typical candle sizes on that chart).</div>' +
-    shown.map(({ m, w }) => '<article class="c"><div class="top"><div><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + '/4</span>' + (soonAplus(w) != null ? '<span class="tag ap">A+ in ' + soonAplus(w) + " day" + (soonAplus(w) > 1 ? "s" : "") + "</span>" : "") + '<span class="tag">' + esc(w.lineTF) + " · " + esc(w.kind) + '</span><div class="nm">' + esc(m.name) + " · " + num(m.price, m.digits) + "</div></div>" +
-      '<div style="text-align:right"><b>' + num(w.lineNow, m.digits) + '</b><div class="mu" style="font-size:12px">' + away(m, w) + "</div></div></div>" +
-      '<div class="st" style="margin-top:8px">' + esc(w.plan) + "</div>" + checks(w) +
-      (w.line ? tvBlock(m, [{ ...w.line, name: (w.line.up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key) : "") + "</article>").join("") + more;
+  return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">Lines that would make a real callout if price breaks or bounces off them. Set alerts on these.</div>' +
+    shown.map(({ m, w }) => watchCard(m, w)).join("") + more;
 }
 
 function renderRules() {
