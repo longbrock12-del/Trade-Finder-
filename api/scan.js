@@ -49,7 +49,14 @@ async function handler(req, res) {
   await Promise.all(Array.from({ length: POOL }, worker));
   const scanned = UNIVERSE.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
-  send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs) });
+  send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
+}
+
+// Stocks that respect trendlines: the top 10 by 6-month total R on this chart (3+ trades, positive total).
+const RANKS = 10;
+function ranks(recs) {
+  return recs.filter((r) => r.trades >= 3 && r.totalR > 0).sort((a, b) => b.totalR - a.totalR).slice(0, RANKS)
+    .map((r) => ({ sym: r.sym, trades: r.trades, wins: r.wins, totalR: Math.round(r.totalR * 10) / 10 }));
 }
 
 // The track record of every scanned stock added up, plus the best and worst stocks by total R.
@@ -66,4 +73,5 @@ function combine(recs) {
 }
 
 module.exports = handler;
+module.exports.ranks = ranks;
 module.exports.UNIVERSE = UNIVERSE;

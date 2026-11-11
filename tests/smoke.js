@@ -178,6 +178,13 @@ async function scanTests() {
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
   ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0 && m.signals.length <= 1), "scan returns only stocks with a setup, one callout each, under their own symbols");
   ok(ms < 30000, "full scan runs in under 30 seconds of work", ms + "ms");
+  const rk = require(path.join(ROOT, "api/scan.js")).ranks;
+  const fakeRecs = Array.from({ length: 14 }, (_, i) => ({ sym: "S" + i, trades: i % 5 === 0 ? 2 : 4, wins: 2, totalR: 7 - i }));
+  const top = rk(fakeRecs);
+  ok(top.length === 5 && top.map((x) => x.sym).join() === "S1,S2,S3,S4,S6" && top.every((x) => x.trades >= 3 && x.totalR > 0), "respects-trendlines list: best total R first, 3+ trades and positive only, at most 10", top.map((x) => x.sym).join());
+  ok(rk(Array.from({ length: 30 }, (_, i) => ({ sym: "T" + i, trades: 5, wins: 3, totalR: 30 - i }))).length === 10, "respects-trendlines list stops at 10");
+  const amzRec = B.markets[0].record || {};
+  ok(Array.isArray(B.ranks) && B.ranks.length === (amzRec.trades >= 3 && amzRec.totalR > 0 ? 10 : 0), "the scan sends the respects-trendlines list", (B.ranks || []).length + " " + amzRec.totalR);
   // News: big US events (High impact) plus the crude oil inventory report; other countries and holidays left out.
   const cal = load("ff_calendar.json"), nr = await call("api/news.js", "/api/news", async () => ({ ok: true, status: 200, json: async () => cal }));
   ok(nr.status === 200 && nr.body.events.map((e) => e.title).join("|") === "Core CPI m/m|CPI m/m|Crude Oil Inventories|PPI m/m" && nr.body.events.find((e) => e.crude).title === "Crude Oil Inventories",
@@ -591,6 +598,35 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.close();
 }
 
+async function rankPageTests(browser, body, scanBody) {
+  console.log("Respects trendlines list");
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 } }), errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const syms = scanBody.markets.map((m) => m.sym), inList = syms[0], outList = syms.find((x) => x !== inList);
+  const ranks = [{ sym: inList, trades: 9, wins: 6, totalR: 8.2 }, { sym: "ZZZZ", trades: 5, wins: 3, totalR: 4.1 }].concat(Array.from({ length: 6 }, (_, i) => ({ sym: "R" + i, trades: 4, wins: 2, totalR: 3 - i * 0.3 })));
+  await page.route("**/api/trades**", (r) => r.fulfill({ json: body }));
+  await page.route("**/api/scan**", (r) => r.fulfill({ json: { ...scanBody, ranks } }));
+  await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
+  await page.clock.setFixedTime(NOW * 1000);
+  await page.goto("http://127.0.0.1:" + PORT + "/");
+  await page.waitForFunction(() => /scanned/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
+  await page.click("[data-k=stocks]");
+  const box = page.locator(".rkb");
+  ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2R/.test(await box.textContent()), "Stocks callouts: a ranked Respects trendlines box with the top 5");
+  ok(/No line nearby/.test(await box.textContent()) && /(Callout now|Near a line)/.test(await box.textContent()), "each ranked stock says where it is now");
+  await box.locator("[data-fold=ranks]").click();
+  ok((await page.locator(".rkb").locator(".trr").count()) === 8, "Show all opens the whole list");
+  await page.click("[data-k=futures]");
+  ok((await page.locator(".rkb").count()) === 0, "the ranked box is only on Stocks");
+  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
+  await page.check("#onlyGood");
+  const shown = await page.locator(".c .sym").allTextContents();
+  ok(shown.includes(inList) && !shown.includes(outList), "the stocks filter keeps only stocks on the respects-trendlines list", shown.join());
+  ok(/top 10 that respect trendlines/.test(await page.textContent("#goodRow")), "the filter says it uses the top 10");
+  ok(!errors.length, "no page errors with the ranked list", errors.join(" | "));
+  await page.close();
+}
+
 async function polishTests(browser, body, scanBody) {
   console.log("Loading and layout");
   const page = await browser.newPage({ viewport: { width: 390, height: 700 }, hasTouch: true }), errors = [];
@@ -654,6 +690,7 @@ async function polishTests(browser, body, scanBody) {
   const browser = await chromium.launch();
   try { if (body && optBody && scanBody) await pageTests(browser, body, optBody, scanBody); } catch (e) { ok(false, "page tests crashed", e.message); }
   try { if (body && scanBody) await polishTests(browser, body, scanBody); } catch (e) { ok(false, "loading/layout tests crashed", e.message); }
+  try { if (body && scanBody) await rankPageTests(browser, body, scanBody); } catch (e) { ok(false, "ranked list tests crashed", e.message); }
   try { if (body && scanBody && pushBody) await alertPageTests(browser, body, scanBody, pushBody); } catch (e) { ok(false, "alert page tests crashed", e.message); }
   await browser.close(); server.kill();
   console.log(failed ? "\n" + failed + " check(s) FAILED" : "\nAll checks passed");

@@ -101,7 +101,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
   <div class="st" style="margin-top:14px">Chart</div>
   <div class="note" style="margin-top:2px">Callouts, the watch list and the track record all use this chart. Her rule: pick one and stick to it.</div>
   <div class="zsw" id="tfSw" style="margin-top:8px"><button class="btn" data-tf="4H">4-hour</button><button class="btn" data-tf="1H">1-hour</button><button class="btn" data-tf="both">Both</button></div>
-  <label class="note" id="goodRow" style="display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--tx)"><input type="checkbox" id="onlyGood"> Stocks: only ones that respect trendlines (positive 6-month record)</label>
+  <label class="note" id="goodRow" style="display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--tx)"><input type="checkbox" id="onlyGood"> Stocks: only the top 10 that respect trendlines</label>
   <div class="st" style="margin-top:14px">Position size</div>
   <div class="note" style="margin-top:2px">Her rule: risk 1–2% of your account on each trade. Enter yours and every callout shows how many contracts or shares to trade. Saved on this phone only.</div>
   <form class="bar" id="sizeF"><input id="acct" inputmode="decimal" placeholder="Account size, e.g. 10000" aria-label="Account size in dollars" style="text-transform:none"><input id="riskP" inputmode="decimal" placeholder="Risk %" aria-label="Risk percent per trade" style="max-width:90px;text-transform:none"><button class="btn">Save</button></form>
@@ -202,7 +202,7 @@ function merge() {
   const a = futPart || { markets: [] }, b = stockPart || {};
   const have = new Set((a.markets || []).map((m) => m.sym));
   data = { at: a.at || b.at || Date.now(), markets: (a.markets || []).concat((b.markets || []).filter((m) => !have.has(m.sym))),
-    scanned: b.scanned, scanErr: !!stockPart && !b.markets, scanning, stockRecord: b.record || null };
+    scanned: b.scanned, scanErr: !!stockPart && !b.markets, scanning, stockRecord: b.record || null, stockRanks: b.ranks || null };
 }
 async function load() {
   if (loading) return;
@@ -498,7 +498,29 @@ function renderCalls() {
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
     (folds.live ? "▾ " : "▸ ") + "Trades to get into now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
-  return trackBox() + getInBox(live) + bar;
+  return trackBox() + (kind === "stocks" ? rankBox() : "") + getInBox(live) + bar;
+}
+
+// Stocks that respect trendlines: every scanned stock ranked by its 6-month record on this chart (3+ trades, positive).
+// Each row says where the stock is now: a callout, near a line, or nothing nearby.
+const RANK_SHOW = 5;
+function rankBox() {
+  const list = data.stockRanks || [];
+  if (!list.length) return "";
+  const all = !!folds.ranks, shown = all ? list : list.slice(0, RANK_SHOW);
+  const where = (sym) => {
+    const m = data.markets.find((q) => q.sym === sym && !q.error);
+    if (!m) return '<span class="mu">No line nearby</span>';
+    const s = (m.signals || []).find((x) => canEnter(x));
+    if (s) return '<b class="ok">▶ Callout now: ' + action(m, s) + "</b>";
+    const w = (m.watch || []).slice().sort((a, b) => a.dist - b.dist)[0];
+    return w ? "<b>Near a line</b> · " + w.dist + " ATR away" : '<span class="mu">No line nearby</span>';
+  };
+  return '<div class="c rkb"><div class="st">Respects trendlines · ' + TF_LABEL[chartTF()] + ", last 6 months</div>" +
+    '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned.</div>" +
+    shown.map((r, i) => '<div class="trr"><span><b>' + (i + 1) + ". " + esc(r.sym) + '</b> <span class="note">' + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span></span><b class="ok">+' + r.totalR.toFixed(1) + "R</b></div>" +
+      '<div class="note" style="margin:0 0 4px">' + where(r.sym) + "</div>").join("") +
+    (list.length > RANK_SHOW ? '<button class="btn" data-fold="ranks" style="width:100%;margin-top:6px">' + (all ? "Show top " + RANK_SHOW : "Show all " + list.length) + "</button>" : "") + "</div>";
 }
 
 // How far price is from a watch-list line: in price (stocks in $, futures in points plus $ per micro contract)
@@ -550,7 +572,9 @@ function renderWatch() {
 }
 
 // Stocks filter (optional): only stocks whose own 6-month record (this chart) is positive, with 3+ trades.
-const respects = (m) => m.kind !== "stocks" || !store.get("onlyGood", false) || !!(m.record && m.record.trades >= 3 && m.record.totalR > 0);
+// Stocks filter: only the top-10 "Respects trendlines" stocks (falls back to the stock's own record before the scan loads).
+const respects = (m) => m.kind !== "stocks" || !store.get("onlyGood", false) ||
+  (data && data.stockRanks ? data.stockRanks.some((r) => r.sym === m.sym) : !!(m.record && m.record.trades >= 3 && m.record.totalR > 0));
 
 // Journal (her rule: journal every trade), saved on this phone. Each entry: the callout as you took it, and
 // your exit when you close it.
