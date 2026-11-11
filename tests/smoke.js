@@ -314,7 +314,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
   ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
   ok(asked.length && asked[0].includes("s=MGC=F,MCL=F") && asked[0].includes("tf=4H"), "page asks for Micro Gold and Micro Crude on the 4-hour chart", asked[0]);
-  ok(/4-hour chart/.test(await page.locator(".trk").textContent()) && (await page.locator("#tfSw button.on").textContent()) === "4-hour", "track record and the Chart switch say 4-hour");
+  ok((await page.locator("#tfSw").count()) === 0 && !/1-hour|Both/.test(await page.textContent("#mine")) && !/4-hour chart/.test(await page.locator(".trk").textContent()), "no chart switch: the 4-hour chart is just the standard (not shown)");
   const syms = await page.locator(".cl .sym").allTextContents();
   ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));
   ok(!/=F/.test(await page.textContent("#mkList")), "your-markets list shows MGC, MCL without =F");
@@ -415,10 +415,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
   ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Track record: stocks" }).count() + await page.locator(".gi.none", { hasText: "stocks" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
-  const nAsk = asked.length;
-  await page.click("#tfSw [data-tf='1H']"); await page.waitForTimeout(300);
-  ok(asked.length > nAsk && asked[asked.length - 1].includes("tf=1H") && (await page.locator("#tfSw button.on").textContent()) === "1-hour" && (await page.evaluate(() => localStorage.getItem("tl:tf"))) === '"1H"', "switching the Chart to 1-hour reloads with it and remembers the choice");
-  await page.click("#tfSw [data-tf='4H']"); await page.waitForTimeout(300);
+  await page.evaluate(() => localStorage.setItem("tl:tf", '"1H"')); await page.reload(); await page.waitForTimeout(500);
+  ok(asked[asked.length - 1].includes("tf=4H"), "an old 1-hour choice on the phone is ignored: still the 4-hour chart");
   await page.fill("#addIn", "amd"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
   ok(asked.some((u) => u.includes("AMD")), "adding a symbol rescans with it");
   await page.fill("#addIn", "gc"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);

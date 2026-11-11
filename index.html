@@ -98,9 +98,6 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 <section class="c" id="mine" style="margin-top:18px">
   <form class="bar" id="add"><input id="addIn" placeholder="Add symbol, e.g. AMD or MGC" maxlength="15" autocomplete="off" aria-label="Add symbol"><button class="btn">Add</button></form>
   <div class="mk" id="mkList"></div>
-  <div class="st" style="margin-top:14px">Chart</div>
-  <div class="note" style="margin-top:2px">Callouts, the watch list and the track record all use this chart. Her rule: pick one and stick to it.</div>
-  <div class="zsw" id="tfSw" style="margin-top:8px"><button class="btn" data-tf="4H">4-hour</button><button class="btn" data-tf="1H">1-hour</button><button class="btn" data-tf="both">Both</button></div>
   <div class="st" style="margin-top:14px">Position size</div>
   <div class="note" style="margin-top:2px">Her rule: risk 1–2% of your account on each trade. Enter yours and every callout shows how many contracts or shares to trade. Saved on this phone only.</div>
   <form class="bar" id="sizeF"><input id="acct" inputmode="decimal" placeholder="Account size, e.g. 10000" aria-label="Account size in dollars" style="text-transform:none"><input id="riskP" inputmode="decimal" placeholder="Risk %" aria-label="Risk percent per trade" style="max-width:90px;text-transform:none"><button class="btn">Save</button></form>
@@ -194,8 +191,7 @@ function infoLine(m) {
   }
   return parts.length ? '<div class="note mini">' + parts.join(" · ") + "</div>" : "";
 }
-const chartTF = () => (["4H", "1H", "both"].includes(store.get("tf", "4H")) ? store.get("tf", "4H") : "4H"); // 4-hour by default
-const TF_LABEL = { "4H": "4-hour chart", "1H": "1-hour chart", both: "4-hour + 1-hour charts" };
+const chartTF = () => "4H"; // everything runs on the 4-hour chart (the server still supports ?tf=1H|both, unused)
 function merge() {
   if (!futPart && !stockPart) return;
   const a = futPart || { markets: [] }, b = stockPart || {};
@@ -485,7 +481,7 @@ function trackBox() {
     "<div>For every $1 lost, <b>$" + (add("winSum") / add("lossSum")).toFixed(2) + "</b> was made</div>" +
     "<div>Winners held " + days(add("winHrs") / nW) + ", losers " + days(add("lossHrs") / nL) + "</div>" +
     '<div class="note" style="margin-top:4px">R = your starting risk. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
-  return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + " · " + TF_LABEL[chartTF()] + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
+  return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div>' + liveLine + '</div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
     (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
@@ -515,7 +511,7 @@ function rankBox() {
     const w = (m.watch || []).slice().sort((a, b) => a.dist - b.dist)[0];
     return w ? "<b>Near a line</b> · " + w.dist + " ATR away" : '<span class="mu">No line nearby</span>';
   };
-  return '<div class="c rkb"><div class="st">Respects trendlines · ' + TF_LABEL[chartTF()] + ", last 6 months</div>" +
+  return '<div class="c rkb"><div class="st">Respects trendlines · last 6 months</div>' +
     '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned.</div>" +
     shown.map((r, i) => '<div class="trr"><span><b>' + (i + 1) + ". " + esc(r.sym) + '</b> <span class="note">' + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span></span><b class="ok">+' + r.totalR.toFixed(1) + "R</b></div>" +
       '<div class="note" style="margin:0 0 4px">' + where(r.sym) + "</div>").join("") +
@@ -652,7 +648,6 @@ function render() {
     const wait = kind === "stocks" && data.scanning ? '<div class="note" style="margin:0 2px 8px">Scanning about 110 stocks… the first scan can take up to 30 seconds.</div>' : "";
     out.innerHTML = wait && !data.markets.some((m) => m.kind === "stocks") ? wait + SKELETON : wait + (tab === "calls" ? renderCalls() : renderWatch());
   }
-  document.querySelectorAll("#tfSw button").forEach((b) => b.classList.toggle("on", b.dataset.tf === chartTF()));
   const al = store.get("alerts", false);
   $("alerts").textContent = al ? (store.get("push", false) ? "🔔 Phone alerts on" : "🔔 Alerts on") : "🔔 Alerts off";
   $("alerts").classList.toggle("on", al); $("alerts").setAttribute("aria-pressed", String(al));
@@ -662,7 +657,7 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-tf],[data-took],[data-jdel],[data-lal],.op,.tvp,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-took],[data-jdel],[data-lal],.op,.tvp,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.lal) {
     const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
@@ -671,7 +666,6 @@ document.addEventListener("click", (e) => {
   }
   if (t.dataset.took) { took(t.dataset.took); render(); return; }
   if (t.dataset.jdel != null) { if (confirm("Remove this trade from your journal?")) { const j = jGet(); j.splice(Number(t.dataset.jdel), 1); jSet(j); render(); } return; }
-  if (t.dataset.tf) { if (t.dataset.tf !== chartTF()) { store.set("tf", t.dataset.tf); if (store.get("push", false)) pushSub().then((sub) => sub && post({ action: "subscribe", sub: sub.toJSON(), prefs: { tf: t.dataset.tf } })).catch(() => {}); futPart = stockPart = data = null; loading = false; load(); } render(); return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;
@@ -799,7 +793,11 @@ async function lineAlert(m, w) {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { document.title = "Trade Finder"; if (!data || Date.now() - data.at > REFRESH) load(); } });
 setInterval(() => { if (!document.hidden) load(); }, REFRESH);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-fetch("/api/push").then((r) => r.json()).then((j) => { pushInfo = j; render(); }).catch(() => {});
+fetch("/api/push").then((r) => r.json()).then((j) => {
+  pushInfo = j; render();
+  // Phones that picked 1-hour or Both before: back to the 4-hour chart, alerts included.
+  if (store.get("tf", "4H") !== "4H") { store.set("tf", "4H"); if (store.get("push", false)) pushSub().then((sub) => sub && post({ action: "subscribe", sub: sub.toJSON(), prefs: { tf: "4H" } })).catch(() => {}); }
+}).catch(() => {});
 render(); load();
 </script>
 </body></html>
