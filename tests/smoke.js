@@ -412,7 +412,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(!(await page.locator("#mine").isVisible()), "the rules tab has no add-symbol/settings box at the bottom");
   await page.click("[data-tab=watch]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
-  const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
+  const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " candle sizes";
   let lookAsk = "";
   await page.route("**/api/trades**look=1**", (r) => { lookAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: { at: Date.now(), markets: [lookBody.markets ? lookBody.markets[0] : lookBody] } }); });
   await page.fill("#lookIn", "aapl"); await page.press("#lookIn", "Enter");

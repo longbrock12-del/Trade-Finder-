@@ -530,7 +530,7 @@ function rankBox() {
     const s = (m.signals || []).find((x) => canEnter(x));
     if (s) return '<b class="ok">▶ Callout now: ' + action(m, s) + "</b>";
     const w = (m.watch || []).slice().sort((a, b) => a.dist - b.dist)[0];
-    return w ? "<b>Near a line</b> · " + w.dist + " ATR away" : '<span class="mu">No line nearby</span>';
+    return w ? "<b>Near a line</b> · " + w.dist + " candle sizes away" : '<span class="mu">No line nearby</span>';
   };
   return '<div class="c rkb"><div class="st">Respects trendlines · last 6 months</div>' +
     '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned.</div>" +
@@ -540,11 +540,11 @@ function rankBox() {
 }
 
 // How far price is from a watch-list line: in price (stocks in $, futures in points plus $ per micro contract)
-// and in ATRs (typical candle sizes on that chart).
+// and in candle sizes (ATR: a typical candle's size on that chart).
 function away(m, w) {
   const d = Math.abs(m.price - w.lineNow);
   const px = m.kind === "stocks" ? "$" + num(d, 2) : num(d, m.digits) + " pts" + (m.pointValue ? " ($" + num(d * m.pointValue, 0) + "/contract)" : "");
-  return px + " away · " + w.dist + " ATR";
+  return px + " away · " + w.dist + " candle sizes";
 }
 
 // Days until a B line becomes A+, if 3 weeks of history is the only rule it's missing and it's within a week.
@@ -601,7 +601,7 @@ function lookBox() {
   if (looked.error) return h + '<article class="c wc"><div class="note bad">' + esc(looked.error) + '</div><button class="btn" data-lookx="1">Close</button></article>';
   const m = looked.m, L = m.look, s = { tf: "4H", chart: L.chart, status: "watch", entry: null, stop: null, checks: L.checks, taps: L.taps, angle: L.angle, days: L.days }, k = "L" + m.sym;
   return h + '<article class="c wc">' + top + '<span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + '/4</span></div><b class="wp">' + num(m.price, m.digits) + "</b></div>" +
-    '<div class="wl2"><span><i style="background:' + (L.up ? "#1fa463" : "#d64545") + '"></i>Nearest: ' + (L.up ? "Rising " : "Falling ") + esc(L.lineTF) + " line at " + num(L.lineNow, m.digits) + "</span><span>" + L.dist + " ATR away</span></div>" +
+    '<div class="wl2"><span><i style="background:' + (L.up ? "#1fa463" : "#d64545") + '"></i>Nearest: ' + (L.up ? "Rising " : "Falling ") + esc(L.lineTF) + " line at " + num(L.lineNow, m.digits) + "</span><span>" + L.dist + " candle sizes away</span></div>" +
     infoLine(m) + checks(s) + chart(m, s) + linesBlock(m, s, k) +
     '<button class="btn" data-lookx="1" style="width:100%;margin-top:8px">Close</button></article>';
 }
@@ -629,7 +629,7 @@ function watchList() {
   const tier = (w) => (w.grade === "A+" ? 0 : soonAplus(w) != null ? 1 : 2);
   rows.sort((a, b) => tier(a.w) - tier(b.w) || a.w.dist - b.w.dist);
   const top = kind === "stocks" ? rankBox() : ""; // stocks that respect trendlines, before anything is a callout
-  if (!rows.length) return top + '<div class="c empty">No callout-quality trendlines within 1.5 ATR of price right now.</div>';
+  if (!rows.length) return top + '<div class="c empty">No callout-quality trendlines within 1½ candle sizes of price right now.</div>';
   // Stocks: show the top 5, with a button to see the rest. Futures always show everything.
   const cut = kind === "stocks" && rows.length > WATCH_SHOW, all = !!store.get("watchAll", false), shown = cut && !all ? rows.slice(0, WATCH_SHOW) : rows;
   const more = cut ? '<button class="btn" data-wall="1" aria-expanded="' + all + '" style="width:100%;margin-bottom:12px">' + (all ? "Show only the top " + WATCH_SHOW : "Show all " + rows.length) + "</button>" : "";
