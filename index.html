@@ -26,7 +26,7 @@ header{display:flex;justify-content:space-between;align-items:flex-start;gap:10p
 h1{font-size:21px;margin:0;letter-spacing:-.01em}.sub{color:var(--mu);font-size:13px;margin-top:2px}
 .btn{border:1px solid var(--bd);background:var(--card);border-radius:10px;padding:8px 11px;font-size:13px;font-weight:600;white-space:nowrap}
 .btn.on{background:var(--ac);border-color:var(--ac);color:#fff}
-.tabs{display:flex;gap:6px;margin:4px 0 10px}.tabs button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--card);font-weight:600}
+.tabs{display:flex;gap:6px;margin:4px 0 10px}.tabs button{flex:1;padding:10px 4px;font-size:14px;border-radius:10px;border:1px solid var(--bd);background:var(--card);font-weight:600}
 .tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.chips button{border:1px solid var(--bd);background:var(--card);border-radius:999px;padding:5px 12px;font-size:13px}
 .chips button.on{border-color:var(--ac);color:var(--ac);font-weight:600}
@@ -88,6 +88,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 <div class="stick" id="stick"><div class="tabs" role="tablist">
   <button class="on" data-tab="calls" role="tab">Callouts</button>
   <button data-tab="watch" role="tab">Watch list</button>
+  <button data-tab="journal" role="tab">Journal</button>
   <button data-tab="rules" role="tab">Rules</button>
 </div>
 <div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button></div></div>
@@ -102,6 +103,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
   <div class="st" style="margin-top:14px">Chart</div>
   <div class="note" style="margin-top:2px">Callouts, the watch list and the track record all use this chart. Her rule: pick one and stick to it.</div>
   <div class="zsw" id="tfSw" style="margin-top:8px"><button class="btn" data-tf="4H">4-hour</button><button class="btn" data-tf="1H">1-hour</button><button class="btn" data-tf="both">Both</button></div>
+  <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--tx)"><input type="checkbox" id="onlyGood"> Stocks: only ones that respect trendlines (positive 6-month record)</label>
   <div class="st" style="margin-top:14px">Position size</div>
   <div class="note" style="margin-top:2px">Her rule: risk 1–2% of your account on each trade. Enter yours and every callout shows how many contracts or shares to trade. Saved on this phone only.</div>
   <form class="bar" id="sizeF"><input id="acct" inputmode="decimal" placeholder="Account size, e.g. 10000" aria-label="Account size in dollars" style="text-transform:none"><input id="riskP" inputmode="decimal" placeholder="Risk %" aria-label="Risk percent per trade" style="max-width:90px;text-transform:none"><button class="btn">Save</button></form>
@@ -221,7 +223,7 @@ async function load() {
 function callouts() {
   if (!data) return [];
   const out = [];
-  data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.signals || []).forEach((s) => out.push({ m, s })); });
+  data.markets.forEach((m) => { if (!m.error && m.kind === kind && respects(m)) (m.signals || []).forEach((s) => out.push({ m, s })); });
   return out;
 }
 
@@ -433,7 +435,7 @@ function card(m, s) {
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
     (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) +
     tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k)) +
-    optionsBlock(m, s, k) + "</article>";
+    journalBtn(m, s, k) + optionsBlock(m, s, k) + "</article>";
 }
 
 // The box at the top of Callouts: what to get into right now, for the chosen market type.
@@ -531,7 +533,7 @@ const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
 function renderWatch() {
   if (!data) return "";
   const rows = [];
-  data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
+  data.markets.forEach((m) => { if (!m.error && m.kind === kind && respects(m)) (m.watch || []).forEach((w) => rows.push({ m, w })); });
   // A+ first, then lines about to become A+ (only missing the 3 weeks, within a week of it), then the rest; nearest first.
   const tier = (w) => (w.grade === "A+" ? 0 : soonAplus(w) != null ? 1 : 2);
   rows.sort((a, b) => tier(a.w) - tier(b.w) || a.w.dist - b.w.dist);
@@ -541,6 +543,48 @@ function renderWatch() {
   const more = cut ? '<button class="btn" data-wall="1" aria-expanded="' + all + '" style="width:100%;margin-bottom:12px">' + (all ? "Show only the top " + WATCH_SHOW : "Show all " + rows.length) + "</button>" : "";
   return '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">Lines that would make a real callout if price breaks or bounces off them. Set alerts on these.</div>' +
     shown.map(({ m, w }) => watchCard(m, w)).join("") + more;
+}
+
+// Stocks filter (optional): only stocks whose own 6-month record (this chart) is positive, with 3+ trades.
+const respects = (m) => m.kind !== "stocks" || !store.get("onlyGood", false) || !!(m.record && m.record.trades >= 3 && m.record.totalR > 0);
+
+// Journal (her rule: journal every trade), saved on this phone. Each entry: the callout as you took it, and
+// your exit when you close it.
+const jGet = () => store.get("journal", []), jSet = (j) => store.set("journal", j);
+const SETUP_KIND = (setup) => (setup === "bounce" ? "Bounces" : setup === "break & retest" ? "Break & retest" : "Breaks");
+function journalBtn(m, s, k) {
+  const inJ = jGet().some((x) => x.key === k);
+  return '<div class="ob"><button class="btn' + (inJ ? " on" : "") + '" data-took="' + esc(k) + '"' + (inJ ? " disabled" : "") + ">" + (inJ ? "In your journal ✓" : "I took this trade") + "</button></div>";
+}
+function took(k) {
+  if (!data) return;
+  data.markets.forEach((m) => (m.signals || []).forEach((s) => {
+    if (keyOf(m, s) !== k || jGet().some((x) => x.key === k)) return;
+    const j = jGet();
+    j.unshift({ key: k, sym: m.sym, kind: m.kind, digits: m.digits, pv: m.pointValue || null, dir: s.dir, tf: s.tf, setup: s.setup, grade: s.grade,
+      entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), size: null, exit: null, closedAt: null });
+    jSet(j);
+  }));
+}
+function renderJournal() {
+  const j = jGet(), R = (x) => (x.exit == null ? null : ((x.dir === "long" ? 1 : -1) * (x.exit - x.entry)) / x.risk);
+  if (!j.length) return '<div class="c empty">No trades yet. Open a callout and tap <b>I took this trade</b> to start your journal.</div>';
+  const done = j.filter((x) => x.exit != null), rs = done.map(R), tot = rs.reduce((a, r) => a + r, 0);
+  const by = {};
+  done.forEach((x, i) => { const k = SETUP_KIND(x.setup), b = (by[k] = by[k] || { n: 0, w: 0, r: 0 }); b.n++; if (rs[i] > 0) b.w++; b.r += rs[i]; });
+  const head = '<div class="c trk"><div class="st">Your journal</div>' + (done.length
+    ? '<div class="big ' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + 'R</div><div class="note" style="margin-top:0">' + done.length + " closed trade" + (done.length > 1 ? "s" : "") + " · " + Math.round((100 * rs.filter((r) => r > 0).length) / done.length) + "% wins · " + (j.length - done.length) + " open</div>" +
+      '<div class="wl" style="margin-top:8px"><div class="st">By setup</div>' + Object.keys(by).map((k) => "<div>" + k + ": " + by[k].n + " · " + Math.round((100 * by[k].w) / by[k].n) + '% wins · <b class="' + (by[k].r >= 0 ? "ok" : "bad") + '">' + (by[k].r >= 0 ? "+" : "−") + Math.abs(by[k].r).toFixed(1) + "R</b></div>").join("") + "</div>"
+    : '<div class="note">' + j.length + " open trade" + (j.length > 1 ? "s" : "") + ". Enter your exit price when you close one.</div>") + "</div>";
+  return head + j.map((x, i) => {
+    const r = R(x), d = x.digits || 2, money = x.pv && r != null ? " · " + (r >= 0 ? "+" : "−") + "$" + num(Math.abs(r * x.risk * x.pv), 0) + " per contract" : "";
+    return '<article class="c wc"><div class="top"><div><span class="sym">' + esc(show(x.sym)) + '</span> <span class="tag ' + x.dir + '">' + x.dir.toUpperCase() + '</span><span class="tag">' + esc(x.tf) + '</span><span class="tag">' + esc(x.setup) + '</span><span class="tag">' + esc(x.grade) + "</span></div>" +
+      (r != null ? '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r >= 0 ? "+" : "") + r.toFixed(2) + "R</b>" : '<span class="tag">open</span>') + "</div>" +
+      '<div class="wl2"><span>Entry ' + num(x.entry, d) + " · stop " + num(x.stop, d) + "</span><span>" + new Date(x.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + "</span></div>" +
+      (x.exit != null ? '<div class="wl3">Exit ' + num(x.exit, d) + money + "</div>"
+        : '<form class="bar jx" data-ji="' + i + '"><input inputmode="decimal" placeholder="Exit price" aria-label="Exit price" style="text-transform:none"><button class="btn">Close trade</button></form>') +
+      '<button class="btn jdel" data-jdel="' + i + '" style="border:0;background:none;padding:2px 0;font-size:12px;color:var(--mu)">Remove</button></article>';
+  }).join("");
 }
 
 function renderRules() {
@@ -556,7 +600,7 @@ function renderRules() {
     "<li><b>Grade it</b>" + A + " (her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. A+ = all 4. Your filter: at least 3 of 4, always with 3+ taps, and at least 1 week of history (her playbook minimum).</li>" +
     "<li><b>Redraw daily</b>" + A + ": after price breaks a line, move point B to the new high or low so nothing pokes through. Trade Finder redraws every scan.</li>" +
     "<li><b>Commit to one timeframe</b>" + A + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder uses the 4-hour chart unless you change it under Chart at the bottom of the Callouts tab.</li>" +
-    "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. The Track record splits results by setup.</li>" +
+    "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. Tap <b>I took this trade</b> on a callout and it goes in the Journal tab, split by setup.</li>" +
     "<li><b>Practice first</b>" + Y + ": paper trade with a realistic account size until it's consistent.</li></ol>" +
     '</div>';
 }
@@ -575,7 +619,9 @@ function render() {
       (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => show(m.sym)).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
   const out = $("out");
+  $("kinds").style.display = tab === "rules" || tab === "journal" ? "none" : "";
   if (tab === "rules") out.innerHTML = renderRules();
+  else if (tab === "journal") out.innerHTML = renderJournal();
   else if (!data) out.innerHTML = lastErr ? '<div class="c err empty">Prices didn\'t load. <button class="btn" id="retry">Try again</button></div>' : SKELETON;
   else {
     // While the stock scan runs: a note on the Stocks tab, and placeholders if no stocks are showing yet.
@@ -592,8 +638,10 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-tf],.op,.tvp,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-tf],[data-took],[data-jdel],.op,.tvp,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
+  if (t.dataset.took) { took(t.dataset.took); render(); return; }
+  if (t.dataset.jdel != null) { if (confirm("Remove this trade from your journal?")) { const j = jGet(); j.splice(Number(t.dataset.jdel), 1); jSet(j); render(); } return; }
   if (t.dataset.tf) { if (t.dataset.tf !== chartTF()) { store.set("tf", t.dataset.tf); futPart = stockPart = data = null; loading = false; load(); } render(); return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
@@ -641,6 +689,17 @@ document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key ==
     y0 = null; dy = 0;
   });
 })();
+document.addEventListener("submit", (e) => {
+  const f = e.target.closest(".jx");
+  if (!f) return;
+  e.preventDefault();
+  const v = parseFloat(String(f.querySelector("input").value).replace(/[$,]/g, ""));
+  if (!(v > 0)) return;
+  const j = jGet(), x = j[Number(f.dataset.ji)];
+  if (x) { x.exit = v; x.closedAt = Date.now(); jSet(j); render(); }
+});
+$("onlyGood").checked = !!store.get("onlyGood", false);
+$("onlyGood").addEventListener("change", (e) => { store.set("onlyGood", e.target.checked); render(); });
 $("sizeF").addEventListener("submit", (e) => {
   e.preventDefault();
   const a = parseFloat(String($("acct").value).replace(/[$,]/g, "")), p = parseFloat($("riskP").value);

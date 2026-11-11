@@ -322,6 +322,21 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await mgc.getAttribute("aria-expanded")) === "true", "opening the lines panel keeps the box open");
   await mgc.locator("[data-tvl]").click();
   ok((await page.locator(".tvp").count()) === 0, "lines panel closes again");
+  // Journal: take this trade, close it with an exit price, see the result and stats, remove it.
+  await mgc.locator("[data-took]").click();
+  ok((await mgc.locator("[data-took]").textContent()) === "In your journal ✓", "\"I took this trade\" adds it to the journal");
+  await page.click("[data-tab=journal]");
+  ok((await page.locator("#out article.wc").count()) === 1 && (await page.locator("#kinds").isHidden()) && /1 open trade/.test(await page.locator("#out").textContent()), "Journal tab lists the open trade (no Futures/Stocks chips there)");
+  const jEntry = mgcSig.entry, jRisk = mgcSig.risk, jExit = mgcSig.dir === "long" ? jEntry + 2 * jRisk : jEntry - 2 * jRisk;
+  await page.fill("#out .jx input", String(jExit)); await page.click("#out .jx button");
+  const jTxt = await page.locator("#out").textContent();
+  ok(/\+2\.00R/.test(jTxt) && /1 closed trade · 100% wins · 0 open/.test(jTxt) && /Bounces: 1 · 100% wins · \+2\.0R|Breaks: 1 · 100% wins · \+2\.0R|Break & retest: 1 · 100% wins · \+2\.0R/.test(jTxt) && /per contract/.test(jTxt),
+    "closing it with an exit price shows +2R, win rate, results by setup and $ per micro contract", jTxt.slice(0, 260));
+  ok((await page.evaluate(() => JSON.parse(localStorage.getItem("tl:journal")).length)) === 1, "journal is saved on the phone");
+  page.once("dialog", (dg) => dg.accept());
+  await page.click("#out [data-jdel]");
+  ok(/No trades yet/.test(await page.locator("#out").textContent()), "a journal entry can be removed");
+  await page.click("[data-tab=calls]");
   await mgc.locator(".chart svg").click();
   ok((await mgc.getAttribute("aria-expanded")) === "true", "tapping the chart doesn't close the box");
   await mgc.locator(".top").click();
@@ -338,6 +353,11 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl svg[aria-label*='3 months'], .cl svg[aria-label*='2 years']").count()) === 0 && (await page.locator(".cl svg").count()) === 1, "and back to the callout's chart; switching doesn't close it");
   ok((await page.locator(".cl svg line[stroke='#1fa463']").count()) + (await page.locator(".cl svg line[stroke='#d64545']").count()) >= 2, "the chart draws her green rising and red falling lines");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
+  const amzR = body.markets.find((m) => m.sym === "AMZN").record, amzGood = amzR.trades >= 3 && amzR.totalR > 0;
+  await page.check("#onlyGood");
+  ok((await page.locator(".c .sym", { hasText: /^AMZN$/ }).count() > 0) === amzGood, "stocks filter: AMZN shows only if its 6-month record is positive (" + amzR.totalR + "R)");
+  await page.uncheck("#onlyGood");
+  ok((await page.locator(".c .sym", { hasText: /^AMZN$/ }).count()) >= 1 && (await page.evaluate(() => localStorage.getItem("tl:onlyGood"))) === "false", "turning the filter off shows it again (and is remembered)");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
   const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
