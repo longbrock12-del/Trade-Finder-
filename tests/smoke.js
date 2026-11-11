@@ -408,6 +408,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   const wl = page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first();
   await wl.locator("[data-tvl]").click();
   ok((await page.locator(".tvp textarea").inputValue()).includes("line.new("), "watch list lines can be copied for TradingView");
+  const wpine = await page.locator(".tvp textarea").inputValue(), nl = (wpine.match(/line\.new\(/g) || []).length;
+  ok(nl >= 2 && nl <= 40 && /#1fa463, width=/.test(wpine) && /#d64545, width=/.test(wpine) && /width=3/.test(wpine) && /width=1\)/.test(wpine), "watch list script draws every trendline: green under the lows, red over the highs, the card's line thick", nl + " lines " + wpine.replace(/\n/g, " / ").slice(0, 900));
+  const anyW = body.markets.concat(scanBody.markets).flatMap((m) => m.watch || [])[0];
+  ok(anyW && Array.isArray(anyW.all) && anyW.all.some((l) => l.up) && anyW.all.some((l) => !l.up) && anyW.all.every((l) => l.t1 > l.t0 && l.p0 > 0 && l.p1 > 0), "watch items carry all of the chart's trendlines (both sides)", anyW && anyW.all && anyW.all.length);
   await page.click("[data-k=futures]");
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");

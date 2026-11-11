@@ -135,25 +135,30 @@ const TFNAME = { "4H": "4-hour", "1H": "1-hour" };
 const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
 // Her lines for TradingView: points to draw with the ray tool, and a Pine Script to paste into the Pine Editor.
 // lines: [{ t0, p0, t1, p1, up, dashed, name }] (t in seconds). Rays to the right, green rising, red falling.
-function pineScript(m, lines) {
+function pineScript(m, lines, extra) {
   // Drawn on the latest bar (re-made each update) so TradingView always shows them; old copies are deleted.
-  const d = (m.digits || 2) + 1;
-  // From point A (the first swing point) to the same line on the newest candle (l.tv), then on to the right,
-  // so it reads like a hand-drawn line and lands at today's level.
-  const row = (l0, i) => { const l = l0.tv ? { t0: l0.t0, p0: l0.p0, t1: l0.tv.t1, p1: l0.tv.p1 } : l0; return "    line.delete(l" + i + ")\n    l" + i + " := line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
-    ", xloc=xloc.bar_time, extend=extend.right, color=" + (l0.up ? "#1fa463" : "#d64545") + ", width=" + (l0.dashed ? 1 : 2) + (l0.dashed ? ", style=line.style_dashed" : "") + ") // " + l0.name; };
+  // Main lines (thick): from point A to the same line on the newest candle (l.tv), so they land at today's level.
+  // extra: every other trendline on the chart (thin), point A to point B: green under the lows, red over the highs.
+  const d = (m.digits || 2) + 1, same = (a, b) => a.t0 === b.t0 && a.t1 === b.t1;
+  const rest = (extra || []).filter((e) => !lines.some((l) => same(l, e)));
+  const all = lines.map((l) => ({ ...l, main: true })).concat(rest).slice(0, 40);
+  const row = (l0, i) => {
+    const l = l0.tv ? { t0: l0.t0, p0: l0.p0, t1: l0.tv.t1, p1: l0.tv.p1 } : l0;
+    return "    line.delete(l" + i + ")\n    l" + i + " := line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
+      ", xloc=xloc.bar_time, extend=extend.right, color=" + (l0.up ? "#1fa463" : "#d64545") + ", width=" + (l0.main ? (l0.dashed ? 2 : 3) : 1) + (l0.dashed ? ", style=line.style_dashed" : "") + ") // " + (l0.name || (l0.up ? "Rising " : "Falling ") + (l0.tf || "") + " line");
+  };
   return ["//@version=5", 'indicator("Trade Finder lines: ' + show(m.sym) + '", overlay=true, max_lines_count=50)']
-    .concat(lines.map((l, i) => "var line l" + i + " = na"), ["if barstate.islast"], lines.map(row)).join("\n");
+    .concat(all.map((l, i) => "var line l" + i + " = na"), ["if barstate.islast"], all.map(row)).join("\n");
 }
-function tvBlock(m, lines, tf, key, small) {
+function tvBlock(m, lines, tf, key, small, extra) {
   const dt = (t) => new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
   const shown = tvOpen[key];
   return '<div class="tv' + (small ? " sm" : "") + '">' +
     '<button class="btn" data-tvl="' + esc(key) + '" aria-expanded="' + !!shown + '">' + (shown ? "Hide lines" : "Lines for TradingView") + "</button>" +
     (shown ? '<div class="tvp"><div class="note" style="margin-top:0">Draw with the ray tool, point A then point B (New York time):</div>' +
       lines.map((l) => '<div class="note"><b style="color:' + (l.up ? "#1fa463" : "#d64545") + '">' + esc(l.name) + "</b>: A " + dt(l.t0) + " @ " + num(l.p0, m.digits) + " → B " + dt(l.t1) + " @ " + num(l.p1, m.digits) + "</div>").join("") +
-      '<div class="note">Or on a computer: copy this, open TradingView\'s Pine Editor, paste it, and click "Add to chart".</div>' +
-      '<textarea readonly rows="5" aria-label="Pine Script with the lines">' + esc(pineScript(m, lines)) + '</textarea><button class="btn" data-copy="1">Copy script</button></div>' : "") +
+      '<div class="note">Or on a computer: copy this, open TradingView\'s Pine Editor, paste it, and click "Add to chart". It draws this line (thick) and every other trendline on the chart (thin): green under the lows, red over the highs. Use the 4h chart of the same symbol.</div>' +
+      '<textarea readonly rows="5" aria-label="Pine Script with the lines">' + esc(pineScript(m, lines, extra)) + '</textarea><button class="btn" data-copy="1">Copy script</button></div>' : "") +
     "</div>";
 }
 
@@ -451,7 +456,7 @@ function card(m, s) {
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
     (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k) +
-    tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k)) +
+    tvBlock(m, [s.chart.line && { ...s.chart.line, up: s.chart.line.slope > 0, name: "Action line" }, s.chart.safety && s.setup !== "bounce" && { ...s.chart.safety, up: s.chart.safety.slope > 0, dashed: true, name: "Safety line" }].filter(Boolean), s.tf, "c" + k, false, s.chart.lines)) +
     journalBtn(m, s, k) + optionsBlock(m, s, k) + "</article>";
 }
 
@@ -571,7 +576,7 @@ function watchCard(m, w) {
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
     (pushInfo && pushInfo.configured ? '<div class="tv sm"><button class="btn" data-lal="' + esc(m.sym + "|" + w.tf + "|" + w.key) + '">' + (store.get("lineAlerts", {})[m.sym + "|" + w.tf + "|" + w.key] ? "🔔 Alert set ✓" : "🔔 Alert me at this line") + "</button></div>" : "") +
-    (w.line ? tvBlock(m, [{ ...w.line, name: (up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key, true) : "") + "</article>";
+    (w.line ? tvBlock(m, [{ ...w.line, name: (up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key, true, w.all) : "") + "</article>";
 }
 
 const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
