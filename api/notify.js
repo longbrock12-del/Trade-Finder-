@@ -1,7 +1,8 @@
 // Trade Finder - GET /api/notify: the 15-minute check behind phone alerts (called by a GitHub schedule).
 // 1. New "Get in now" callouts: push one alert per callout to each phone (on that phone's chart setting).
 // 2. Watch-line alerts: when price reaches a line someone asked about, alert once and remove it.
-// 3. Live track record: every callout that was sent is saved, and updated until it closes.
+// 3. Live track record: every callout that was sent is saved, and updated until it closes, with exit alerts
+//    (stop moved, trade closed).
 // Runs at most once every 9 minutes however often it's called, so calling it is harmless.
 const S = require("./_store.js"), P = require("./_push.js");
 const { vapid, subjectOf } = require("./push.js");
@@ -83,18 +84,36 @@ module.exports = async function handler(req, res) {
       if (subs[ep] && keep.length !== (x.alerts || []).length) await S.hsetJSON("tf:subs", ep, { ...x, alerts: keep });
     }
     // 3: update open trades in the live record (same rules as the replay: safety line, or a newer callout replaces it).
+    // Exit alerts too: when the stop trails to a new level (0.1R or more), and when the trade closes.
+    const R1 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "R";
+    let exits = 0;
     for (const [lk, x] of Object.entries(await S.hgetallJSON("tf:live"))) {
       if (x.status !== "open") continue;
-      const m = (byTf[x.view || "4H"] || []).find((q) => q.sym === x.sym);
+      const view = x.view || "4H", m = (byTf[view] || []).find((q) => q.sym === x.sym);
       if (!m) continue;
       const s = (m.signals || []).find((q) => keyOf(m, q) === x.key), sign = x.dir === "long" ? 1 : -1;
-      if (s && s.status === "closed") Object.assign(x, { status: "closed", exitR: s.exitR, closedAt: Date.now(), how: s.exitHow });
-      else if (s) x.nowR = s.nowR;
-      else if ((m.signals || []).length) Object.assign(x, { status: "closed", exitR: Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100, closedAt: Date.now(), how: "replaced by a newer callout" });
-      else x.nowR = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
+      const toView = (q) => ((q.prefs && q.prefs.tf) || "4H") === view, name = actionOf(m, x) + " " + show(x.sym);
+      if (s && s.status === "closed") {
+        Object.assign(x, { status: "closed", exitR: s.exitR, closedAt: Date.now(), how: s.exitHow });
+        exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(s.exitR), tag: "exit-" + x.key, url: "/",
+          body: (s.exitHow === "stop order" ? "Stop order hit" : "A " + x.tf + " candle closed through the safety line") + (s.exitPx != null ? " at " + s.exitPx : "") + ". Trade over: " + R1(s.exitR) + "." });
+      } else if (s) {
+        x.nowR = s.nowR;
+        const was = x.stopNow != null ? x.stopNow : x.stop;
+        if (s.stop != null && was != null && sign * (s.stop - was) >= 0.1 * x.risk) {
+          x.stopNow = s.stop;
+          exits += await sendAll(toView, { title: "Move stop: " + name, tag: "stop-" + x.key, url: "/",
+            body: "New stop " + s.stop + " (was " + was + "), trailing the safety line. Trade now " + R1(s.nowR) + "." });
+        }
+      } else if ((m.signals || []).length) {
+        const r = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
+        Object.assign(x, { status: "closed", exitR: r, closedAt: Date.now(), how: "replaced by a newer callout" });
+        exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(r), tag: "exit-" + x.key, url: "/",
+          body: "A newer callout on " + show(x.sym) + " replaces this trade. Close it near " + m.price + " (" + R1(r) + ")." });
+      } else x.nowR = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
       await S.hsetJSON("tf:live", lk, x);
     }
-    reply(res, { ran: true, notified, alerted, phones: Object.keys(subs).length });
+    reply(res, { ran: true, notified, alerted, exits, phones: Object.keys(subs).length });
   } catch (e) {
     reply(res, { ran: false, error: e.message || "failed" });
   }
