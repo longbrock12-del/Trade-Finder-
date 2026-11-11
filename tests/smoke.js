@@ -252,6 +252,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-fold=live]");
   await openFolds(page);
   ok((await page.locator("#kinds button").allTextContents()).join() === "Futures,Stocks", "only Futures and Stocks chips (no All)");
+  ok((await page.locator(".foot").count()) === 0 && !/Callouts are made by a computer/.test(await page.textContent("body")), "no explanation text at the bottom of the page");
   ok((await page.locator("[data-fold=done]").count()) === 0 && !/Finished/.test(await page.locator("#out").textContent()), "no Finished list (closed trades only count in the track record)");
   ok((await page.locator(".cl .note", { hasText: "Size:" }).count()) === 0, "no position size until you enter an account size");
   await page.fill("#acct", "10,000"); await page.fill("#riskP", "1"); await page.click("#sizeF button");
