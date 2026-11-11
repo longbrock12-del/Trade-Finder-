@@ -533,6 +533,18 @@ function scan(hChart, dChart, opts = {}) {
     if (opts.watchCharts) w.chart = chartFor({ tf: w.tf, action: w._ln, safety: w._safety || null, tapX: w._tapX || [], at: S[w.tf].last, from: null, closedAt: null });
     delete w._ln; delete w._safety; delete w._tapX;
   });
+  // Look up (/api/trades?look=1, one market): the 4-hour chart around whichever of the two newest lines is nearer
+  // to price, with every line and its taps, whether or not it's on the watch list.
+  let look = null;
+  if (opts.lookup && S["4H"]) {
+    const s = S["4H"], i = s.last + 1, ends = [[s.act[i].up, true], [s.act[i].dn, false]].filter(([ln]) => ln);
+    if (ends.length) {
+      const [ln, up] = ends.sort((p, q) => Math.abs(val(p[0], s.x0 + i) - live) - Math.abs(val(q[0], s.x0 + i) - live))[0];
+      const other = up ? s.act[i].dn : s.act[i].up, g = grade(s, ln, Math.min(i, s.bars.length - 1), up), v = val(ln, s.x0 + i);
+      look = { tf: "4H", lineTF: tfOfLine(ln, "4H"), up, lineNow: px(v), dist: r2(Math.abs(live - v) / s.A[s.last], 1), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
+        chart: chartFor({ tf: "4H", action: ln, safety: other || null, tapX: g.tapX, at: s.last, from: null, closedAt: null }) };
+    }
+  }
   const clean = (x) => {
     const o = { ...x, chart: opts.all || (x.status === "open" && now - x.t <= CHART_AGE) ? chartFor(x) : null };
     ["action", "safety", "tapX", "from", "entryRaw", "riskRaw"].forEach((k) => delete o[k]);
@@ -542,7 +554,7 @@ function scan(hChart, dChart, opts = {}) {
   return {
     sym, name: meta.shortName || meta.longName || sym, kind: isFuture ? "futures" : "stocks",
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
-    dailyBars: daily.length, signals: sigs.map(clean), watch: wl.slice(0, 4), record: opts.history === false ? null : record(hist),
+    dailyBars: daily.length, signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), record: opts.history === false ? null : record(hist),
   };
 }
 

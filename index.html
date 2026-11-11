@@ -111,7 +111,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("tl:" + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-let opts = {}, folds = {}, openCharts = {}, wcharts = {}, zoomed = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
+let opts = {}, folds = {}, openCharts = {}, wcharts = {}, looked = null, zoomed = {}, data = null, tab = "calls", kind = ["futures", "stocks"].includes(store.get("kind", "")) ? store.get("kind", "") : "futures", loading = false, lastErr = null;
 let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 // Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
@@ -587,9 +587,37 @@ async function loadWatchChart(k) {
   render();
 }
 
+// Look up any stock or futures contract: its 4-hour chart around the nearest line, with every line and its taps.
+function lookBox() {
+  let h = '<form class="bar" id="lookF" style="margin-bottom:10px"><input id="lookIn" placeholder="Look up any stock, e.g. UBER" maxlength="15" autocomplete="off" aria-label="Look up a symbol" value="' + esc((looked && looked.q) || "") + '"><button class="btn">Look up</button></form>';
+  if (!looked) return h;
+  const top = '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(looked.sym)) + '</span> <span class="tag">4H</span>';
+  if (looked.loading) return h + '<article class="c wc"><div class="note"><span class="sp"></span> Loading ' + esc(show(looked.sym)) + "…</div></article>";
+  if (looked.error) return h + '<article class="c wc"><div class="note bad">' + esc(looked.error) + '</div><button class="btn" data-lookx="1">Close</button></article>';
+  const m = looked.m, L = m.look, s = { tf: "4H", chart: L.chart, status: "watch", entry: null, stop: null, checks: L.checks, taps: L.taps, angle: L.angle, days: L.days }, k = "L" + m.sym;
+  return h + '<article class="c wc">' + top + '<span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + '/4</span></div><b class="wp">' + num(m.price, m.digits) + "</b></div>" +
+    '<div class="wl2"><span><i style="background:' + (L.up ? "#1fa463" : "#d64545") + '"></i>Nearest: ' + (L.up ? "Rising " : "Falling ") + esc(L.lineTF) + " line at " + num(L.lineNow, m.digits) + "</span><span>" + L.dist + " ATR away</span></div>" +
+    infoLine(m) + checks(s) + chart(m, s) + linesBlock(m, s, k) +
+    '<button class="btn" data-lookx="1" style="width:100%;margin-top:8px">Close</button></article>';
+}
+async function lookUp(q) {
+  let sym = q.trim().toUpperCase();
+  if (FUT_ROOTS.includes(sym)) sym += "=F";
+  if (!/^[A-Z0-9^][A-Z0-9.=^-]{0,14}$/.test(sym)) return;
+  looked = { q, sym, loading: true }; render();
+  try {
+    const j = await (await fetch("/api/trades?s=" + encodeURIComponent(sym) + "&tf=4H&look=1")).json(), m = (j.markets || [])[0];
+    looked = !m || m.error ? { q, sym, error: "Couldn't find " + show(sym) + ". Check the symbol." } : !m.look ? { q, sym, error: "No trendlines on " + show(sym) + " yet." } : { q, sym, m };
+  } catch (e) { looked = { q, sym, error: "That didn't load. Try again in a minute." }; }
+  render();
+}
+
 const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
 function renderWatch() {
-  if (!data) return "";
+  if (!data) return lookBox();
+  return lookBox() + watchList();
+}
+function watchList() {
   const rows = [];
   data.markets.forEach((m) => { if (!m.error && m.kind === kind) (m.watch || []).forEach((w) => rows.push({ m, w })); });
   // A+ first, then lines about to become A+ (only missing the 3 weeks, within a week of it), then the rest; nearest first.
@@ -675,7 +703,7 @@ function render() {
       (data.scanning ? " · scanning stocks…" : data.scanned ? " · scanned " + data.scanned + " stocks" : data.scanErr ? ' · <span class="warn">stock scan failed</span>' : "") +
       (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => show(m.sym)).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
-  const out = $("out");
+  const out = $("out"), typing = document.activeElement && document.activeElement.id === "lookIn" ? document.activeElement : null, typed = typing ? [typing.value, typing.selectionStart] : null;
   $("kinds").style.display = tab === "rules" || tab === "journal" ? "none" : "";
   if (tab === "rules") out.innerHTML = renderRules();
   else if (tab === "journal") out.innerHTML = renderJournal();
@@ -685,6 +713,7 @@ function render() {
     const wait = kind === "stocks" && data.scanning ? '<div class="note" style="margin:0 2px 8px">Scanning about 110 stocks… the first scan can take up to 30 seconds.</div>' : "";
     out.innerHTML = wait && !data.markets.some((m) => m.kind === "stocks") ? wait + SKELETON : wait + (tab === "calls" ? renderCalls() : renderWatch());
   }
+  if (typed && $("lookIn")) { const li = $("lookIn"); li.value = typed[0]; li.focus(); try { li.setSelectionRange(typed[1], typed[1]); } catch (e) { /* ok */ } } // a refresh while typing keeps what you typed
   const al = store.get("alerts", false);
   $("alerts").textContent = al ? (store.get("push", false) ? "🔔 Phone alerts on" : "🔔 Alerts on") : "🔔 Alerts off";
   $("alerts").classList.toggle("on", al); $("alerts").setAttribute("aria-pressed", String(al));
@@ -694,7 +723,7 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-lookx],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.lal) {
     const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
@@ -704,6 +733,7 @@ document.addEventListener("click", (e) => {
   if (t.dataset.took) { took(t.dataset.took); render(); return; }
   if (t.dataset.jdel != null) { if (confirm("Remove this trade from your journal?")) { const j = jGet(); j.splice(Number(t.dataset.jdel), 1); jSet(j); render(); } return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
+  if (t.dataset.lookx) { looked = null; render(); return; }
   if (t.dataset.wch) { const k = t.dataset.wch; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].chart) { wcharts[k].shown = true; render(); } else loadWatchChart(k); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;
@@ -758,6 +788,7 @@ $("sizeF").addEventListener("submit", (e) => {
   render();
 });
 (() => { const a = store.get("acct", 0), p = store.get("riskP", 0); if (a) $("acct").value = a; if (p) $("riskP").value = p; })();
+document.addEventListener("submit", (e) => { if (e.target.id === "lookF") { e.preventDefault(); lookUp($("lookIn").value); } });
 $("add").addEventListener("submit", (e) => {
   e.preventDefault();
   let s = $("addIn").value.trim().toUpperCase();

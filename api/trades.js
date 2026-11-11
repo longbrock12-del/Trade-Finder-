@@ -46,10 +46,11 @@ async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
   const q = new URL(req.url, "http://x").searchParams.get("s");
   const list = q ? [...new Set(q.toUpperCase().split(",").map((x) => x.trim()).filter((x) => SYM.test(x)))].slice(0, MAX) : FUTURES;
-  const tfs = chartsFrom(req), watchCharts = new URL(req.url, "http://x").searchParams.get("wchart") === "1" && list.length === 1; // a watch-list chart, one stock
+  const sp = new URL(req.url, "http://x").searchParams, one = list.length === 1;
+  const tfs = chartsFrom(req), watchCharts = sp.get("wchart") === "1" && one, lookup = sp.get("look") === "1" && one; // one market: its watch-line charts / a look-up chart
   const markets = await Promise.all(list.map(async (sym) => {
     try {
-      return { ...scan(...(await both(sym)), { sym, tfs, watchCharts }), sym };
+      return { ...scan(...(await both(sym)), { sym, tfs, watchCharts, lookup }), sym };
     } catch (e) { return { sym, error: e.message || "failed" }; }
   }));
   const okCount = markets.filter((m) => !m.error).length;

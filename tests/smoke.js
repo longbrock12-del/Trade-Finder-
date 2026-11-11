@@ -17,6 +17,7 @@ const fx = (f) => path.join(FX, f);
 const load = (f) => JSON.parse(fs.readFileSync(fx(f)));
 const NOW = 1794264531;
 const AMZN_NOW = 1794340000;
+let lookBody = null; // AAPL looked up, for the page test
 let amzWChart = null; // AMZN with watch-line charts, for the page test
 const EARN = { earnings: { AMZN: { date: "2026-11-12", when: "after close" } } }; // AMZN reports the day after the saved data
 let NEWS = { events: [] }; // filled by the news check, then served to the page tests // the AMZN data was saved later (Nov 10 2026) // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
@@ -160,6 +161,9 @@ async function scannerTests() {
   const wc = amzW.watch[0] && amzW.watch[0].chart;
   ok(wc && wc.bars.length > 50 && wc.line && wc.line.t0 === amzW.watch[0].line.t0 && Array.isArray(wc.lines) && wc.lines.some((l) => l.action) && wc.zoom.length > 100 && wc.mid.bars.length > 50, "?wchart=1: a watch line gets the same chart a callout gets (its line thick, every line, zoom views)", amzW.watch.length);
   ok(amzN.watch.length && amzN.watch.every((w) => !w.chart && !w._ln), "no watch charts unless asked (the page stays small)");
+  const lk = (await call("api/trades.js", "/api/trades?s=AAPL&tf=4H&look=1", fakeYahoo((s) => (s === "AAPL" ? "AAPL" : null)))).body.markets[0];
+  ok(lk.look && lk.look.chart && lk.look.chart.bars.length > 50 && lk.look.chart.lines.length >= 2 && lk.look.chart.taps.length === lk.look.taps && lk.look.lineNow > 0 && amzN.look === undefined, "?look=1: any symbol gets a 4-hour chart around its nearest line, with every line and its taps", lk.look && JSON.stringify({ ...lk.look, chart: 0 }));
+  lookBody = lk;
   // Taps: every one the line's count includes is in the chart data (older ones too), and each is a real touch:
   // the candle's low (rising line) or high (falling line) within 0.3 ATR of the line.
   let tapN = 0, tapBad = 0, tapMis = 0;
@@ -396,6 +400,15 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=watch]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
   const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away · " + aw0.watch[0].dist + " ATR";
+  let lookAsk = "";
+  await page.route("**/api/trades**look=1**", (r) => { lookAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: { at: Date.now(), markets: [lookBody.markets ? lookBody.markets[0] : lookBody] } }); });
+  await page.fill("#lookIn", "aapl"); await page.press("#lookIn", "Enter");
+  await page.waitForSelector(".wc .sym:text('AAPL') >> xpath=ancestor::article//svg", { timeout: 5000 }).catch(() => {});
+  const lkCard = page.locator("article.wc", { has: page.locator("[data-lookx]") });
+  ok(/s=AAPL&tf=4H&look=1/.test(lookAsk) && (await lkCard.locator(".chart svg").count()) === 1 && /Nearest: (Rising|Falling) /.test(await lkCard.textContent()) && (await lkCard.locator(".lns .lnr").count()) >= 2, "Look up: any stock shows its chart, nearest line and every line", lookAsk);
+  await lkCard.locator("[data-lookx]").last().click();
+  ok((await page.locator("[data-lookx]").count()) === 0 && (await page.locator("#lookIn").count()) === 1, "Look up: Close removes it, the box stays");
+  await page.unroute("**/api/trades**look=1**");
   ok(/⚠ Earnings Thu, Nov 12 after close/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "stocks show an earnings warning (AMZN reports Thu after close)");
   ok(!/Earnings/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().textContent().catch(() => "")), "no earnings warning when none is coming");
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price and in ATR (AMZN)", awayTxt + " vs " + wantAway);
