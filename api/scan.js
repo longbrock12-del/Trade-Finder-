@@ -3,7 +3,7 @@
 // 1-hour charts with the same trendline rules as futures, and returns only ones with a callout or a line near price.
 // Cached 15 minutes at Vercel's edge, so Yahoo sees one scan per 15 minutes however many people look.
 const { scan } = require("./_trendlines.js");
-const { both } = require("./trades.js");
+const { both, chartsFrom } = require("./trades.js");
 
 const UNIVERSE = [
   // ETFs
@@ -33,13 +33,13 @@ function send(res, status, secs, obj) {
 
 async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
-  const found = [], failed = [], recs = [];
+  const found = [], failed = [], recs = [], tfs = chartsFrom(req);
   let next = 0;
   async function worker() {
     while (next < UNIVERSE.length) {
       const sym = UNIVERSE[next++];
       try {
-        const m = { ...scan(...(await both(sym)), { sym }), sym };
+        const m = { ...scan(...(await both(sym)), { sym, tfs }), sym };
         if (m.error) { failed.push(sym); continue; }
         if (m.record) recs.push({ sym, ...m.record });
         if (m.signals.length || m.watch.length) found.push(m);

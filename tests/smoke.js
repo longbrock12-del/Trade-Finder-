@@ -60,7 +60,7 @@ async function scannerTests() {
       (up ? "rising" : "falling") + " chain: starts at the " + (up ? "lowest" : "highest") + " point, each line " + (up ? "steeper" : "steeper down") + ", nothing pokes through (" + (c.length - 1) + " lines)");
   });
 
-  const api = await tradesApi("/api/trades?s=PL=F,CL=F,GC=F,YM=F,TEST,ZZZ,bad%20sym,MGC=F");
+  const api = await tradesApi("/api/trades?s=PL=F,CL=F,GC=F,YM=F,TEST,ZZZ,bad%20sym,MGC=F&tf=both");
   const M = api.body.markets;
   ok(api.status === 200 && M.length === 7, "API scans each valid symbol and drops junk ones", M.map((m) => m.sym).join(","));
   ok(M.find((m) => m.sym === "ZZZ").error === "unknown symbol", "unknown symbol comes back as an error, not a crash");
@@ -147,6 +147,11 @@ async function scannerTests() {
   good.forEach((m) => full[m.sym].signals.filter((x) => x.status === "open" && x.tp).forEach((x) => tps.push({ m: full[m.sym], s: x })));
   ok(tps.length >= 1 && tps.every(({ m, s }) => s.tp.touches >= 2 && s.tp.r > 0 && (s.dir === "long" ? s.tp.price > s.entry && s.tp.price > m.price : s.tp.price < s.entry && s.tp.price < m.price)), "optional take-profit sits past entry and price, at a level price turned at 2+ times", JSON.stringify(tps.map((x) => x.s.tp)));
   const def = await tradesApi("/api/trades");
+  // Chart setting: 4-hour by default; ?tf=1H or both changes it.
+  const d4 = def.body.markets[0], dB = (await tradesApi("/api/trades?tf=both")).body.markets[0], d1 = (await tradesApi("/api/trades?tf=1H")).body.markets[0];
+  const r4 = T.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", all: true, now: NOW, tfs: ["4H"] });
+  ok(d4.signals.every((x) => x.tf === "4H") && d4.watch.every((w) => w.tf === "4H") && r4.signals.every((x) => x.tf === "4H"), "by default everything comes from the 4-hour chart");
+  ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
   ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
   ok(JSON.stringify(M.find((m) => m.sym === "MGC=F").signals.map((x) => x.t)) === JSON.stringify(M.find((m) => m.sym === "GC=F").signals.map((x) => x.t)), "Micro Gold callouts match gold's chart");
@@ -159,14 +164,14 @@ async function scannerTests() {
 }
 
 function full_aapl_record() {
-  return require(path.join(ROOT, "api/_trendlines.js")).scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: AMZN_NOW }).record;
+  return require(path.join(ROOT, "api/_trendlines.js")).scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: AMZN_NOW, tfs: ["4H", "1H"] }).record;
 }
 
 async function scanTests() {
   console.log("Stock scan");
   const U = require(path.join(ROOT, "api/scan.js")).UNIVERSE;
   // Every stock gets AMZN's saved charts except two that fail, like a delisted ticker would.
-  const t0 = Date.now(), r = await call("api/scan.js", "/api/scan", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AMZN")), AMZN_NOW * 1000), ms = Date.now() - t0;
+  const t0 = Date.now(), r = await call("api/scan.js", "/api/scan?tf=both", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AMZN")), AMZN_NOW * 1000), ms = Date.now() - t0;
   const B = r.body;
   ok(U.length >= 100 && new Set(U).size === U.length, "scan list has 100+ different stocks and ETFs", U.length);
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
@@ -230,7 +235,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
   let scanJson = { at: Date.now(), scanned: 108, failed: ["NIO", "PDD"], markets: [] };
-  await page.route("**/api/scan", (r) => r.fulfill({ json: scanJson }));
+  await page.route("**/api/scan**", (r) => r.fulfill({ json: scanJson }));
   await page.clock.setFixedTime(NOW * 1000); // the browser's "now" = when the saved data was taken
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
@@ -284,7 +289,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
   ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
-  ok(asked.length && asked[0].includes("s=MGC=F,MCL=F"), "page asks for Micro Gold and Micro Crude", asked[0]);
+  ok(asked.length && asked[0].includes("s=MGC=F,MCL=F") && asked[0].includes("tf=4H"), "page asks for Micro Gold and Micro Crude on the 4-hour chart", asked[0]);
+  ok(/4-hour chart/.test(await page.locator(".trk").textContent()) && (await page.locator("#tfSw button.on").textContent()) === "4-hour", "track record and the Chart switch say 4-hour");
   const syms = await page.locator(".cl .sym").allTextContents();
   ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));
   ok(!/=F/.test(await page.textContent("#mkList")), "your-markets list shows MGC, MCL without =F");
@@ -363,6 +369,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
   ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Track record: stocks" }).count() + await page.locator(".gi.none", { hasText: "stocks" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
+  const nAsk = asked.length;
+  await page.click("#tfSw [data-tf='1H']"); await page.waitForTimeout(300);
+  ok(asked.length > nAsk && asked[asked.length - 1].includes("tf=1H") && (await page.locator("#tfSw button.on").textContent()) === "1-hour" && (await page.evaluate(() => localStorage.getItem("tl:tf"))) === '"1H"', "switching the Chart to 1-hour reloads with it and remembers the choice");
+  await page.click("#tfSw [data-tf='4H']"); await page.waitForTimeout(300);
   await page.fill("#addIn", "amd"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
   ok(asked.some((u) => u.includes("AMD")), "adding a symbol rescans with it");
   await page.fill("#addIn", "gc"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
@@ -437,7 +447,7 @@ async function polishTests(browser, body, scanBody) {
   let trades = 0, release;
   const scanGate = new Promise((r) => { release = r; });
   await page.route("**/api/trades**", (r) => { trades++; r.fulfill({ json: body }); });
-  await page.route("**/api/scan", async (r) => { await scanGate; r.fulfill({ json: scanBody }); }); // a slow stock scan
+  await page.route("**/api/scan**", async (r) => { await scanGate; r.fulfill({ json: scanBody }); }); // a slow stock scan
   await page.clock.setFixedTime(NOW * 1000);
   await page.goto("http://127.0.0.1:" + PORT + "/");
   ok((await page.locator("#out .sk").count()) >= 1 || (await page.locator(".trk").count()) >= 1, "grey placeholder boxes show while loading");

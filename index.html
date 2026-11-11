@@ -99,6 +99,9 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
   <div class="note" style="margin-top:2px">Futures: <b>Micro Gold (MGC)</b> and <b>Micro Crude (MCL)</b>, always the front-month contract. Stocks: about 110 of the biggest, most-traded stocks and ETFs are scanned automatically every 15 minutes, and only ones with a setup show up. Add any other symbol here, like <b>AMD</b> or <b>SOUN</b>, or a futures contract like <b>GC</b>.</div>
   <form class="bar" id="add"><input id="addIn" placeholder="Add symbol, e.g. AMD or MGC" maxlength="15" autocomplete="off" aria-label="Add symbol"><button class="btn">Add</button></form>
   <div class="mk" id="mkList"></div>
+  <div class="st" style="margin-top:14px">Chart</div>
+  <div class="note" style="margin-top:2px">Callouts, the watch list and the track record all use this chart. Her rule: pick one and stick to it.</div>
+  <div class="zsw" id="tfSw" style="margin-top:8px"><button class="btn" data-tf="4H">4-hour</button><button class="btn" data-tf="1H">1-hour</button><button class="btn" data-tf="both">Both</button></div>
   <div class="st" style="margin-top:14px">Position size</div>
   <div class="note" style="margin-top:2px">Her rule: risk 1–2% of your account on each trade. Enter yours and every callout shows how many contracts or shares to trade. Saved on this phone only.</div>
   <form class="bar" id="sizeF"><input id="acct" inputmode="decimal" placeholder="Account size, e.g. 10000" aria-label="Account size in dollars" style="text-transform:none"><input id="riskP" inputmode="decimal" placeholder="Risk %" aria-label="Risk percent per trade" style="max-width:90px;text-transform:none"><button class="btn">Save</button></form>
@@ -164,6 +167,8 @@ const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
 // Futures (and your added symbols) and the stock scan load separately: each shows as soon as it arrives,
 // so futures don't wait for the stock scan.
 let futPart = null, stockPart = null, scanning = false;
+const chartTF = () => (["4H", "1H", "both"].includes(store.get("tf", "4H")) ? store.get("tf", "4H") : "4H"); // 4-hour by default
+const TF_LABEL = { "4H": "4-hour chart", "1H": "1-hour chart", both: "4-hour + 1-hour charts" };
 function merge() {
   if (!futPart && !stockPart) return;
   const a = futPart || { markets: [] }, b = stockPart || {};
@@ -175,10 +180,10 @@ async function load() {
   if (loading) return;
   loading = true; scanning = true; render();
   const mine = symbols();
-  const fut = (mine.length ? fetch("/api/trades?s=" + encodeURIComponent(mine.join(",")), { cache: "no-store" }).then((r) => r.json()) : Promise.resolve({ markets: [], at: Date.now() }))
+  const fut = (mine.length ? fetch("/api/trades?s=" + encodeURIComponent(mine.join(",")) + "&tf=" + chartTF(), { cache: "no-store" }).then((r) => r.json()) : Promise.resolve({ markets: [], at: Date.now() }))
     .then((a) => { if (!a.markets) throw new Error(a.error || "no data"); futPart = a; lastErr = null; merge(); notifyNew(); render(); })
     .catch((e) => { if (!futPart) lastErr = e.message || "load failed"; render(); });
-  const stk = fetch("/api/scan").then((r) => r.json()).catch(() => ({ error: "scan failed" }))
+  const stk = fetch("/api/scan?tf=" + chartTF()).then((r) => r.json()).catch(() => ({ error: "scan failed" }))
     .then((b) => { stockPart = b; scanning = false; merge(); notifyNew(); render(); });
   await Promise.all([fut, stk]);
   scanning = false; loading = false; merge(); render();
@@ -447,7 +452,7 @@ function trackBox() {
     "<div>For every $1 lost, <b>$" + (add("winSum") / add("lossSum")).toFixed(2) + "</b> was made</div>" +
     "<div>Winners held " + days(add("winHrs") / nW) + ", losers " + days(add("lossHrs") / nL) + "</div>" +
     '<div class="note" style="margin-top:4px">R = your starting risk. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
-  return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
+  return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + " · " + TF_LABEL[chartTF()] + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div></div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
     (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. R is profit in multiples of your starting risk, so at 1% risk per trade, +1R = +1% of the account (at 2% risk, double it). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
@@ -521,7 +526,7 @@ function renderRules() {
     "<li><b>Exit</b>" + A + ": a candle <b>closes</b> through the safety line (a quick poke isn't enough), or the stop order is hit. Optional: take profit at a nearby support/resistance level price has turned at several times, set just before it. That's shown on live cards. Backtest which exit suits you.</li>" +
     "<li><b>Grade it</b>" + A + " (her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. A+ = all 4. Your filter: at least 3 of 4, always with 3+ taps, and at least 1 week of history (her playbook minimum).</li>" +
     "<li><b>Redraw daily</b>" + A + ": after price breaks a line, move point B to the new high or low so nothing pokes through. Trade Finder redraws every scan.</li>" +
-    "<li><b>Commit to one timeframe</b>" + Y + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder shows 4-hour and 1-hour callouts, so pick one and stick to it.</li>" +
+    "<li><b>Commit to one timeframe</b>" + A + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder uses the 4-hour chart unless you change it under Chart at the bottom of the Callouts tab.</li>" +
     "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. The Track record splits results by setup.</li>" +
     "<li><b>Practice first</b>" + Y + ": paper trade with a realistic account size until it's consistent.</li></ol>" +
     '</div>';
@@ -548,6 +553,7 @@ function render() {
     const wait = kind === "stocks" && data.scanning ? '<div class="note" style="margin:0 2px 8px">Scanning about 110 stocks… the first scan can take up to 30 seconds.</div>' : "";
     out.innerHTML = wait && !data.markets.some((m) => m.kind === "stocks") ? wait + SKELETON : wait + (tab === "calls" ? renderCalls() : renderWatch());
   }
+  document.querySelectorAll("#tfSw button").forEach((b) => b.classList.toggle("on", b.dataset.tf === chartTF()));
   const al = store.get("alerts", false);
   $("alerts").textContent = al ? "🔔 Alerts on" : "🔔 Alerts off";
   $("alerts").classList.toggle("on", al); $("alerts").setAttribute("aria-pressed", String(al));
@@ -557,8 +563,9 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],.op,.tvp,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-tvl],[data-copy],[data-zoom],[data-wall],[data-tf],.op,.tvp,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
+  if (t.dataset.tf) { if (t.dataset.tf !== chartTF()) { store.set("tf", t.dataset.tf); futPart = stockPart = data = null; loading = false; load(); } render(); return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;

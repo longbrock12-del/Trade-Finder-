@@ -36,13 +36,20 @@ async function both(sym) {
   return Promise.all([chart(sym), chart(sym, "1d", "10y")]);
 }
 
+// ?tf=4H (default), 1H or both: which chart callouts come from.
+function chartsFrom(req) {
+  const tf = new URL(req.url, "http://x").searchParams.get("tf");
+  return tf === "1H" ? ["1H"] : tf === "both" ? ["4H", "1H"] : ["4H"];
+}
+
 async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
   const q = new URL(req.url, "http://x").searchParams.get("s");
   const list = q ? [...new Set(q.toUpperCase().split(",").map((x) => x.trim()).filter((x) => SYM.test(x)))].slice(0, MAX) : FUTURES;
+  const tfs = chartsFrom(req);
   const markets = await Promise.all(list.map(async (sym) => {
     try {
-      return { ...scan(...(await both(sym)), { sym }), sym };
+      return { ...scan(...(await both(sym)), { sym, tfs }), sym };
     } catch (e) { return { sym, error: e.message || "failed" }; }
   }));
   const okCount = markets.filter((m) => !m.error).length;
@@ -53,3 +60,4 @@ module.exports = handler;
 module.exports.DEFAULTS = { FUTURES };
 module.exports.chart = chart;
 module.exports.both = both;
+module.exports.chartsFrom = chartsFrom;

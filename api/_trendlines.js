@@ -441,12 +441,15 @@ function scan(hChart, dChart, opts = {}) {
   const all = [], watch = [], S = {};
 
   const hist = []; // every callout over the whole window, for the track record
+  // opts.tfs: which charts to take callouts from (the site uses 4-hour by default). The 4-hour chart is always
+  // set up, since the 3-month chart view uses it.
   Object.keys(sets).forEach((tf) => {
-    const b = sets[tf];
-    if (b.length < 30) return;
+    const b = sets[tf], use = !opts.tfs || opts.tfs.includes(tf);
+    if (b.length < 30 || (!use && tf !== "4H")) return;
     const s = (S[tf] = setup(daily, b, isFuture, tf));
     const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
     s.last = last;
+    if (!use) return;
     const recentFrom = last - RECENT_DAYS * s.ppd + 1;
     events(s, opts.history === false ? recentFrom : WARMUP, last).forEach((e) => {
       const c = callout(s, e, last, live, px);
