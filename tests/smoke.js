@@ -211,7 +211,7 @@ async function optionsTests() {
   return a.body;
 }
 
-// Opens every collapsed list (Live, Skipped) on the Callouts tab.
+// Opens the collapsed "Trades to get into now" list on the Callouts tab, if it's closed.
 async function openFolds(page) {
   // Each click redraws the list, so click the first closed one until none are left.
   for (let n = 0; n < 5 && (await page.locator("[data-fold][aria-expanded=false]").count()); n++) await page.locator("[data-fold][aria-expanded=false]").first().click();
@@ -243,6 +243,9 @@ async function pageTests(browser, body, optBody, scanBody) {
     "Details shows average win and loss, how much bigger wins are, $ made per $1 lost, and time held", wlTxt);
   ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
   await page.click("[data-fold=track]");
+  const callTxt = await page.locator("#out").textContent();
+  ok((await page.locator("[data-fold=live]").textContent()).includes("Trades to get into now") && !/Live callouts|Waiting for a safety line|Skipped/.test(callTxt), "Callouts shows only \"Trades to get into now\": no Live callouts, Waiting or Skipped lists");
+  ok((await page.locator(".cl").count()) === (await page.locator(".cl .st", { hasText: "GET IN NOW" }).count()), "every card on Callouts is a trade you can get into now");
   ok((await page.locator("[data-fold=live][aria-expanded=true]").count()) === 1 && (await page.locator(".gi.row").count()) === 0, "Live callouts starts open, with no green get-in boxes");
   await page.click("[data-fold=live]");
   ok((await page.locator("[data-fold=live][aria-expanded=false]").count()) === 1 && (await page.evaluate(() => localStorage.getItem("tl:liveOpen"))) === "false", "its button closes it, and the choice is remembered");
@@ -267,7 +270,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl .gr", { hasText: "Stop order now (trailing)" }).count()) >= 1 && (await page.locator(".cl .note", { hasText: "just past the safety line" }).count()) >= 1, "live cards show the stop order to set, just past the safety line");
   const fut = await page.locator(".cl .st", { hasText: "GET IN NOW" }).allTextContents();
   ok(fut.length >= 1 && fut.every((x) => /GET IN NOW: (BUY|SELL) [A-Z]+ near/.test(x)), "futures cards say GET IN NOW: BUY or SELL (no calls or puts)", fut.join(","));
-  ok((await page.locator(".cl").count()) >= 2, "callout cards render", await page.locator(".cl").count());
+  ok((await page.locator(".cl").count()) >= 1, "callout cards render", await page.locator(".cl").count());
   ok((await page.locator(".cl .tag", { hasText: /^(A\+ · 4|B · 3)\/4$/ }).count()) === (await page.locator(".cl").count()), "every card shows how many checklist rules it passes (3/4 or 4/4)");
   ok((await page.locator(".cl .tag", { hasText: /^(4H|1H)$/ }).count()) === (await page.locator(".cl").count()), "every card says which chart it's on (4H or 1H)");
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");

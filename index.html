@@ -392,7 +392,7 @@ function getInBox(all) {
   const name = kind === "futures" ? "futures" : "stocks", go = all.filter(({ s }) => canEnter(s));
   if (!go.length) return '<div class="gi none"><h3>No ' + name + " entries right now</h3>" +
     '<div class="note" style="margin:0">Nothing has triggered that passes 3 of the 4 checklist rules (with 3+ taps) and is still near its entry price. Check the Watch list for lines price is close to.</div></div>';
-  return ""; // trades you can get into are the cards under Live callouts
+  return ""; // trades you can get into are the cards under "Trades to get into now"
 }
 
 // Track record: the same rules replayed over the last 6 months of prices (see record() in api/_trendlines.js).
@@ -438,20 +438,13 @@ function trackBox() {
 }
 
 function renderCalls() {
-  const all = callouts();
-  if (!all.length) return trackBox() + getInBox(all) + '<div class="c empty">No callouts in the last 5 trading days that pass 3 of the 4 checklist rules with 3+ taps.</div>';
-  const grp = { live: [], wait: [], done: [], skip: [] };
-  // Live trades you can no longer get into (over a day old, or already past 0.5R) aren't listed. They still count in the track record.
-  all.forEach((x) => { const st = x.s.status; if (st === "open" && !canEnter(x.s)) return; (st === "open" ? grp.live : st === "no-safety" ? grp.wait : st === "too-far" ? grp.skip : grp.done).push(x); });
-  const sec = (t, list, hint) => (list.length ? "<h2>" + t + " (" + list.length + ")</h2>" + (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "");
-  const fold = (id, t, list, hint) => (list.length ? '<h2><button class="btn" data-fold="' + id + '" aria-expanded="' + !!folds[id] + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' + (folds[id] ? "▾ " : "▸ ") + t + " (" + list.length + ")</button></h2>" +
-    (folds[id] ? (hint ? '<div class="note" style="margin:-4px 2px 8px">' + hint + "</div>" : "") + list.map(({ m, s }) => card(m, s)).join("") : "") : "");
-  // Live callouts: a bar you open and close; remembered per browser (open to start).
-  if (folds.live == null) folds.live = store.get("liveOpen", true);
-  return trackBox() + getInBox(all) +
-    fold("live", "Live callouts", grp.live, "Trades you can still get into: fired in the last day and still near the entry price. Only lines passing 3 of 4 checklist rules, always with 3+ taps.") +
-    sec("Waiting for a safety line", grp.wait, "The line broke but there's no opposing trendline to put a stop on yet. Her rule: wait for a clear swing.") +
-    fold("skip", "Skipped: too far from the safety line", grp.skip, "The break closed too far from the safety line, so the risk was too big to take.");
+  // Only trades you can take right now: live, fired in the last day, still near entry, with a safety line and stop.
+  // Everything else (older, already moved, closed, skipped, no safety line yet) only counts in the track record.
+  const live = callouts().filter(({ s }) => canEnter(s));
+  if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
+  const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
+    (folds.live ? "▾ " : "▸ ") + "Trades to get into now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
+  return trackBox() + getInBox(live) + bar;
 }
 
 // How far price is from a watch-list line: in price (stocks in $, futures in points plus $ per micro contract)
