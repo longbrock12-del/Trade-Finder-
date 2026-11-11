@@ -324,6 +324,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   const mgc = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
   await mgc.locator("[data-tvl]").click();
   const pine = await page.locator(".tvp textarea").first().inputValue(), mgcSig = body.markets.find((m) => m.sym === "MGC=F").signals[0];
+  ok(/\nif barstate\.islast\n/.test(pine) && /var line l0 = na/.test(pine) && /    line\.delete\(l0\)\n    l0 := line\.new\(/.test(pine), "Pine Script draws the lines on the latest bar (so TradingView shows them)", pine.slice(0, 300));
   ok(pine.startsWith("//@version=5") && pine.includes("line.new(" + mgcSig.chart.line.t0 * 1000 + ",") && pine.includes("extend=extend.right") && (await page.locator(".tvp .note", { hasText: "Action line" }).count()) === 1,
     "lines panel lists point A/B and a Pine Script with the exact action line", pine.slice(0, 200));
   ok((await mgc.getAttribute("aria-expanded")) === "true", "opening the lines panel keeps the box open");

@@ -136,9 +136,12 @@ const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "s
 // Her lines for TradingView: points to draw with the ray tool, and a Pine Script to paste into the Pine Editor.
 // lines: [{ t0, p0, t1, p1, up, dashed, name }] (t in seconds). Rays to the right, green rising, red falling.
 function pineScript(m, lines) {
-  const d = (m.digits || 2) + 1, row = (l) => "    line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
-    ", xloc=xloc.bar_time, extend=extend.right, color=" + (l.up ? "color.new(#1fa463, 0)" : "color.new(#d64545, 0)") + ", width=" + (l.dashed ? 1 : 2) + (l.dashed ? ", style=line.style_dashed" : "") + ") // " + l.name;
-  return ["//@version=5", 'indicator("Trade Finder lines: ' + show(m.sym) + '", overlay=true)', "var bool drawn = false", "if not drawn", "    drawn := true"].concat(lines.map(row)).join("\n");
+  // Drawn on the latest bar (re-made each update) so TradingView always shows them; old copies are deleted.
+  const d = (m.digits || 2) + 1;
+  const row = (l, i) => "    line.delete(l" + i + ")\n    l" + i + " := line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
+    ", xloc=xloc.bar_time, extend=extend.right, color=" + (l.up ? "#1fa463" : "#d64545") + ", width=" + (l.dashed ? 1 : 2) + (l.dashed ? ", style=line.style_dashed" : "") + ") // " + l.name;
+  return ["//@version=5", 'indicator("Trade Finder lines: ' + show(m.sym) + '", overlay=true, max_lines_count=50)']
+    .concat(lines.map((l, i) => "var line l" + i + " = na"), ["if barstate.islast"], lines.map(row)).join("\n");
 }
 function tvBlock(m, lines, tf, key, small) {
   const dt = (t) => new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
