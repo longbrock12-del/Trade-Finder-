@@ -166,7 +166,35 @@ const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(2) + "R";
 
 // Futures (and your added symbols) and the stock scan load separately: each shows as soon as it arrives,
 // so futures don't wait for the stock scan.
-let futPart = null, stockPart = null, scanning = false;
+let futPart = null, stockPart = null, scanning = false, newsEvents = [];
+
+// Market hours (New York time; holidays aren't counted). Futures: Sunday 6 PM to Friday 5 PM, with a
+// 5-6 PM break each weekday. Stocks: 9:30 AM to 4 PM, Monday to Friday. Returns "" when open.
+const nyFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+function closedUntil(kind, d = new Date()) {
+  const p = {}; nyFmt.formatToParts(d).forEach((x) => { p[x.type] = x.value; });
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday), mins = (Number(p.hour) % 24) * 60 + Number(p.minute);
+  if (kind === "futures") {
+    if (wd === 6 || (wd === 0 && mins < 18 * 60) || (wd === 5 && mins >= 17 * 60)) return "Sun 6:00 PM";
+    if (mins >= 17 * 60 && mins < 18 * 60) return "6:00 PM";
+    return "";
+  }
+  if (wd >= 1 && wd <= 5 && mins >= 570 && mins < 960) return "";
+  if (wd >= 1 && wd <= 5 && mins < 570) return "9:30 AM";
+  if (wd >= 1 && wd <= 4) return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][wd + 1] + " 9:30 AM";
+  return "Mon 9:30 AM";
+}
+// One short line: market closed (and when it opens) and/or big news in the next 24 hours.
+function infoLine(m) {
+  const parts = [], c = closedUntil(m.kind), now = Date.now() / 1000, crude = /^M?CL=F$/.test(m.sym);
+  if (c) parts.push('<span title="Market closed. New York time.">Opens ' + c + "</span>");
+  const ev = newsEvents.filter((e) => e.t >= now - 1800 && e.t <= now + 86400 && (!e.crude || crude));
+  if (ev.length) {
+    const at = ev[0].t <= now ? "just out" : new Date(ev[0].t * 1000).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
+    parts.push('<span class="warn" title="Big news can blow through trendlines">⚠ ' + esc(at) + ": " + esc(ev[0].title) + (ev.length > 1 ? " +" + (ev.length - 1) : "") + "</span>");
+  }
+  return parts.length ? '<div class="note mini">' + parts.join(" · ") + "</div>" : "";
+}
 const chartTF = () => (["4H", "1H", "both"].includes(store.get("tf", "4H")) ? store.get("tf", "4H") : "4H"); // 4-hour by default
 const TF_LABEL = { "4H": "4-hour chart", "1H": "1-hour chart", both: "4-hour + 1-hour charts" };
 function merge() {
@@ -185,7 +213,8 @@ async function load() {
     .catch((e) => { if (!futPart) lastErr = e.message || "load failed"; render(); });
   const stk = fetch("/api/scan?tf=" + chartTF()).then((r) => r.json()).catch(() => ({ error: "scan failed" }))
     .then((b) => { stockPart = b; scanning = false; merge(); notifyNew(); render(); });
-  await Promise.all([fut, stk]);
+  const nws = fetch("/api/news").then((r) => r.json()).then((n) => { newsEvents = n.events || []; render(); }).catch(() => {});
+  await Promise.all([fut, stk, nws]);
   scanning = false; loading = false; merge(); render();
 }
 
@@ -387,14 +416,14 @@ function card(m, s) {
   if (!big) return '<article class="c cl sm" tabindex="0" data-k="' + esc(k) + '" aria-expanded="false">' +
     '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + '</span><span class="tag">' + esc(s.tf) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") + "</div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + ' · <span class="tog">Details ▾</span></div></div>' +
-    status.replace('style="font-size:15px"', "") +
+    status.replace('style="font-size:15px"', "") + infoLine(m) +
     '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s, true) + "</article>";
   return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '" aria-expanded="true">' + head +
     '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop order now (trailing)" : "Stop order") + "</small>" + num(s.stop, d) + "</div>" +
     "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
     (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" : "—") + "</div></div>" +
     (pv && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: starting risk <b>' + perC(s.risk) + "</b>" + (res != null ? " · " + (open ? "now " : "result ") + '<b class="' + (res >= 0 ? "ok" : "bad") + '">' + (res >= 0 ? "+" : "−") + perC(res * s.risk) + "</b>" : "") + " ($" + pv + " per 1.00 move)</div>" : "") +
-    status + sizeLine(m, s) +
+    status + infoLine(m) + sizeLine(m, s) +
     (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
     (open ? '<div class="note">Set your stop order at <b>' + num(s.stop, d) + "</b>, just past the safety line, and trail it as the line moves. Get out early if a " + TFNAME[s.tf] + " candle closes through the safety line (now at " + num(s.line, d) + ").</div>" : "") +
     (open && s.tp ? '<div class="note">Optional take-profit, her quick-win exit: <b>' + num(s.tp.price, d) + "</b> (" + signR(s.tp.r) + "), just before a level price turned at " + s.tp.touches + " times. Trailing usually lets winners run further; the track record uses trailing.</div>" : "") +
@@ -494,7 +523,7 @@ function watchCard(m, w) {
   return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" +
     (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
-    '<div class="wl3">' + esc(plan) + "</div>" + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
+    '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
     (w.line ? tvBlock(m, [{ ...w.line, name: (up ? "Rising" : "Falling") + " " + w.lineTF + " line" }], w.tf, "w" + m.sym + w.tf + w.key, true) : "") + "</article>";
 }
 

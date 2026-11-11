@@ -6,6 +6,7 @@ const path = require("path");
 const trades = require("./api/trades.js");
 const options = require("./api/options.js");
 const scanStocks = require("./api/scan.js");
+const news = require("./api/news.js");
 
 const PORT = Number(process.env.PORT) || 3000;
 // Home-screen app files.
@@ -30,6 +31,7 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/trades") return trades(req, res);
   if (pathname === "/api/options") return options(req, res);
   if (pathname === "/api/scan") return scanStocks(req, res);
+  if (pathname === "/api/news") return news(req, res);
   res.writeHead(404, { "Content-Type": "text/plain" });
   res.end("Not found");
 });

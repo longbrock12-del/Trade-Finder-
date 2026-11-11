@@ -16,7 +16,8 @@ const ok = (cond, what, extra) => { console.log((cond ? "  pass  " : "  FAIL  ")
 const fx = (f) => path.join(FX, f);
 const load = (f) => JSON.parse(fs.readFileSync(fx(f)));
 const NOW = 1794264531;
-const AMZN_NOW = 1794340000; // the AMZN data was saved later (Nov 10 2026) // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
+const AMZN_NOW = 1794340000;
+let NEWS = { events: [] }; // filled by the news check, then served to the page tests // the AMZN data was saved later (Nov 10 2026) // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
 
 const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", AAPL: "AAPL", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
 // A fake Yahoo: hourly or daily saved bars for the symbols above, 404 for anything else.
@@ -177,6 +178,13 @@ async function scanTests() {
   ok(r.status === 200 && B.scanned === U.length - 2 && B.failed.sort().join() === "NIO,PDD", "scan counts what it scanned and names what failed", B.scanned + " " + B.failed);
   ok(B.markets.length === U.length - 2 && B.markets.every((m) => m.kind === "stocks" && U.includes(m.sym) && m.signals.length + m.watch.length > 0 && m.signals.length <= 1), "scan returns only stocks with a setup, one callout each, under their own symbols");
   ok(ms < 30000, "full scan runs in under 30 seconds of work", ms + "ms");
+  // News: big US events (High impact) plus the crude oil inventory report; other countries and holidays left out.
+  const cal = load("ff_calendar.json"), nr = await call("api/news.js", "/api/news", async () => ({ ok: true, status: 200, json: async () => cal }));
+  ok(nr.status === 200 && nr.body.events.map((e) => e.title).join("|") === "Core CPI m/m|CPI m/m|Crude Oil Inventories|PPI m/m" && nr.body.events.find((e) => e.crude).title === "Crude Oil Inventories",
+    "news keeps big US releases and the crude oil inventory report (marked crude-only)", nr.body.events.map((e) => e.title).join("|"));
+  const nf = await call("api/news.js", "/api/news", async () => ({ ok: false, status: 500 }));
+  ok(nf.status === 200 && nf.body.events.length === 0, "if the calendar is down, the site just shows no news warnings");
+  NEWS = nr.body;
   const ar = full_aapl_record();
   ok(B.record && B.record.stocks === U.length - 2 && B.record.trades === ar.trades * (U.length - 2) && Math.abs(B.record.totalR - ar.totalR * (U.length - 2)) < 0.01 && B.record.best.length === 5 && B.record.worst.length === 5 && Math.abs(B.record.winSum - ar.winSum * (U.length - 2)) < 0.05 && B.record.nWin === ar.nWin * (U.length - 2),
     "stock track record adds up every scanned stock (with best and worst 5)", JSON.stringify({ stocks: B.record.stocks, trades: B.record.trades, totalR: B.record.totalR }));
@@ -236,6 +244,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
   let scanJson = { at: Date.now(), scanned: 108, failed: ["NIO", "PDD"], markets: [] };
   await page.route("**/api/scan**", (r) => r.fulfill({ json: scanJson }));
+  await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
   await page.clock.setFixedTime(NOW * 1000); // the browser's "now" = when the saved data was taken
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
@@ -273,7 +282,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl[aria-expanded=false]").count()) === (await page.locator(".cl").count()) && (await page.locator(".cl .gr").count()) === 0 && (await page.locator(".cl .mini", { hasText: "Stop order" }).count()) >= 1,
     "callout boxes start collapsed, showing entry, stop order and result in one line");
   const cbH = await page.locator(".cl.sm").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
-  ok(cbH.length >= 1 && cbH.every((h) => h < 130), "collapsed callout boxes are compact (under 130px on a phone)", cbH.map(Math.round).join(","));
+  ok(cbH.length >= 1 && cbH.every((h) => h < 145), "collapsed callout boxes are compact (under 145px on a phone, with a news/market line)", cbH.map(Math.round).join(","));
   ok((await page.locator(".cl.sm .nm").count()) === 0 && (await page.locator(".cl.sm .tag", { hasText: /^(bounce|3-touch break|2-touch break|break & retest)$/ }).count()) === 0, "collapsed boxes leave the setup name and market line for the opened view");
   const mgcBox = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
   const shut = await mgcBox.evaluate((e) => e.getBoundingClientRect().height);
@@ -281,6 +290,14 @@ async function pageTests(browser, body, optBody, scanBody) {
   const opened = await mgcBox.evaluate((e) => e.getBoundingClientRect().height);
   ok((await mgcBox.getAttribute("aria-expanded")) === "true" && opened > shut * 2 && (await mgcBox.locator("svg").count()) >= 1, "tapping a box opens the full details and chart", Math.round(shut) + " → " + Math.round(opened) + "px");
   ok((await page.locator(".cl .gr", { hasText: "Stop order now (trailing)" }).count()) >= 1 && (await page.locator(".cl .note", { hasText: "just past the safety line" }).count()) >= 1, "live cards show the stop order to set, just past the safety line");
+  const mgcTxt = await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent();
+  ok(mgcTxt.includes("Opens 6:00 PM"), "Monday 5:48 PM: futures card says the market is in its daily break", mgcTxt.slice(0, 300));
+  ok(/⚠ Tue 8:30 AM: Core CPI m\/m \+1/.test(mgcTxt) && !/Crude Oil Inventories/.test(mgcTxt), "news warning for CPI tomorrow morning (crude report not shown on gold)");
+  const hrs = await page.evaluate(() => [
+    ["Sat noon", new Date("2026-11-14T17:00:00Z")], ["Wed 10 AM", new Date("2026-11-11T15:00:00Z")], ["Wed 5:30 PM", new Date("2026-11-11T22:30:00Z")],
+    ["Fri 5:30 PM", new Date("2026-11-13T22:30:00Z")], ["Tue 8 AM", new Date("2026-11-10T13:00:00Z")]].map(([n, d]) => n + ": " + (closedUntil("futures", d) || "open") + " / " + (closedUntil("stocks", d) || "open")));
+  ok(hrs.join("; ") === "Sat noon: Sun 6:00 PM / Mon 9:30 AM; Wed 10 AM: open / open; Wed 5:30 PM: 6:00 PM / Thu 9:30 AM; Fri 5:30 PM: Sun 6:00 PM / Mon 9:30 AM; Tue 8 AM: open / 9:30 AM",
+    "market hours: futures Sun 6 PM - Fri 5 PM with a 5-6 PM break; stocks 9:30 AM - 4 PM weekdays", hrs.join("; "));
   const fut = await page.locator(".cl .st", { hasText: "GET IN NOW" }).allTextContents();
   ok(fut.length >= 1 && fut.every((x) => /GET IN NOW: (BUY|SELL) [A-Z]+ near/.test(x)), "futures cards say GET IN NOW: BUY or SELL (no calls or puts)", fut.join(","));
   ok((await page.locator(".cl").count()) >= 1, "callout cards render", await page.locator(".cl").count());
@@ -343,7 +360,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const hs = await page.locator("#out article.wc").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
-  ok(hs.length === 5 && hs.every((h) => h < 140), "watch-list boxes are compact (under 140px tall on a phone)", hs.map(Math.round).join(","));
+  ok(hs.length === 5 && hs.every((h) => h < 150), "watch-list boxes are compact (under 150px tall on a phone, with a news/market line)", hs.map(Math.round).join(","));
   ok((await page.locator("#out article.wc .wl3.warn").count()) === 0 && (await page.locator("#out article.wc .ck").count()) === 0, "A+ watch boxes show no \"Missing\" note and no long checklist");
   ok((await page.locator("#out article.c").count()) === 5 && (await page.locator("[data-wall]").textContent()) === "Show all 8", "stocks watch list shows the top 5 with a \"Show all 8\" button");
   await page.click("[data-wall]");
@@ -448,6 +465,7 @@ async function polishTests(browser, body, scanBody) {
   const scanGate = new Promise((r) => { release = r; });
   await page.route("**/api/trades**", (r) => { trades++; r.fulfill({ json: body }); });
   await page.route("**/api/scan**", async (r) => { await scanGate; r.fulfill({ json: scanBody }); }); // a slow stock scan
+  await page.route("**/api/news**", (r) => r.fulfill({ json: NEWS }));
   await page.clock.setFixedTime(NOW * 1000);
   await page.goto("http://127.0.0.1:" + PORT + "/");
   ok((await page.locator("#out .sk").count()) >= 1 || (await page.locator(".trk").count()) >= 1, "grey placeholder boxes show while loading");
