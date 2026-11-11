@@ -138,9 +138,9 @@ const dateOf = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "s
 function pineScript(m, lines) {
   // Drawn on the latest bar (re-made each update) so TradingView always shows them; old copies are deleted.
   const d = (m.digits || 2) + 1;
-  // Anchored on two recent candles of the same line (l.tv) when the site sends them: old swing points may be
-  // further back than TradingView has loaded, which puts the line in the wrong place.
-  const row = (l0, i) => { const l = l0.tv || l0; return "    line.delete(l" + i + ")\n    l" + i + " := line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
+  // From point A (the first swing point) to the same line on the newest candle (l.tv), then on to the right,
+  // so it reads like a hand-drawn line and lands at today's level.
+  const row = (l0, i) => { const l = l0.tv ? { t0: l0.t0, p0: l0.p0, t1: l0.tv.t1, p1: l0.tv.p1 } : l0; return "    line.delete(l" + i + ")\n    l" + i + " := line.new(" + l.t0 * 1000 + ", " + Number(l.p0).toFixed(d) + ", " + l.t1 * 1000 + ", " + Number(l.p1).toFixed(d) +
     ", xloc=xloc.bar_time, extend=extend.right, color=" + (l0.up ? "#1fa463" : "#d64545") + ", width=" + (l0.dashed ? 1 : 2) + (l0.dashed ? ", style=line.style_dashed" : "") + ") // " + l0.name; };
   return ["//@version=5", 'indicator("Trade Finder lines: ' + show(m.sym) + '", overlay=true, max_lines_count=50)']
     .concat(lines.map((l, i) => "var line l" + i + " = na"), ["if barstate.islast"], lines.map(row)).join("\n");

@@ -328,7 +328,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(tvl.tv && tvl.tv.t1 === mgcSig.chart.bars[mgcSig.chart.bars.length - 1][0] || tvl.tv.t1 === mgcSig.chart.bars[mgcSig.chart.bars.length - 2][0], "TradingView anchors: the newest candle", JSON.stringify(tvl.tv));
   ok(Math.abs(tvAt(tvl.tv.t0) - tvl.tv.p0) < 0.2 && Math.abs(tvAt(tvl.tv.t1) - tvl.tv.p1) < 0.2 && tvl.tv.t1 - tvl.tv.t0 <= 61 * 4 * 3600 * 2, "TradingView anchors sit on the same line, on recent candles (so TradingView has them loaded)", JSON.stringify(tvl.tv));
   ok(/\nif barstate\.islast\n/.test(pine) && /var line l0 = na/.test(pine) && /    line\.delete\(l0\)\n    l0 := line\.new\(/.test(pine), "Pine Script draws the lines on the latest bar (so TradingView shows them)", pine.slice(0, 300));
-  ok(pine.startsWith("//@version=5") && pine.includes("line.new(" + mgcSig.chart.line.tv.t0 * 1000 + ",") && pine.includes("extend=extend.right") && (await page.locator(".tvp .note", { hasText: "Action line" }).count()) === 1,
+  ok(pine.startsWith("//@version=5") && pine.includes("line.new(" + mgcSig.chart.line.t0 * 1000 + ",") && pine.includes(", " + mgcSig.chart.line.tv.t1 * 1000 + ", ") && pine.includes("extend=extend.right") && (await page.locator(".tvp .note", { hasText: "Action line" }).count()) === 1,
     "lines panel lists point A/B and a Pine Script with the exact action line", pine.slice(0, 200));
   ok((await mgc.getAttribute("aria-expanded")) === "true", "opening the lines panel keeps the box open");
   await mgc.locator("[data-tvl]").click();
