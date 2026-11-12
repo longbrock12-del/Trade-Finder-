@@ -166,8 +166,8 @@ function closedUntil(kind, d = new Date()) {
 function infoLine(m, noTrend) { // noTrend: callout cards (a callout always goes with the trend)
   const parts = [], c = closedUntil(m.kind), now = Date.now() / 1000, crude = /^M?CL=F$/.test(m.sym);
   // Her top-down trend: only trades in this direction are called out; none when there's no clear trend.
-  if (m.trend && !noTrend) parts.push(m.trend.dir ? '<span class="' + (m.trend.dir === "up" ? "ok" : "bad") + '" title="Her top-down trend (Weekly, or Daily if the Weekly is unclear). Only trades this way are called out.">Trend ' + (m.trend.dir === "up" ? "↑ up" : "↓ down") + " (" + m.trend.from + ")" + "</span>"
-    : '<span class="warn" title="No clear trend on the Weekly or Daily: no callouts until one forms">No clear trend: no trades</span>');
+  if (m.trend && !noTrend) parts.push(m.trend.dir ? '<span class="' + (m.trend.dir === "up" ? "ok" : "bad") + '" title="Her top-down trend (Weekly, or Daily if the Weekly is unclear). Bounces only trade this way; breaks catch reversals.">Trend ' + (m.trend.dir === "up" ? "↑ up" : "↓ down") + " (" + m.trend.from + ")" + "</span>"
+    : '<span class="warn" title="No clear trend on the Weekly or Daily: no bounce trades until one forms">No clear trend: no bounces</span>');
   if (c) parts.push('<span title="Market closed. New York time.">Opens ' + c + "</span>");
   const ev = newsEvents.filter((e) => e.t >= now - 1800 && e.t <= now + 86400 && (!e.crude || crude));
   if (ev.length) {
@@ -565,7 +565,8 @@ function watchCard(m, w) {
   if (!c.angle) miss.push(w.angle + "° (under 45°)");
   if (!c.history) miss.push("3+ weeks (" + w.days + " days)");
   const soon = soonAplus(w), up = w.kind.startsWith("rising");
-  const plan = up ? "Close below = short · tag and hold = long" : "Close above = long · tag and reject = short";
+  // Stocks trade breaks only; futures trade breaks and, with the trend, bounces.
+  const plan = m.kind === "stocks" ? (up ? "Close below = short (break)" : "Close above = long (break)") : up ? "Close below = short · tag and hold = long (with the trend)" : "Close above = long · tag and reject = short (with the trend)";
   return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" +
     (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
@@ -684,13 +685,14 @@ function renderRules() {
   return '<div class="c rules"><div class="st">Her system, step by step</div><ol>' +
     "<li><b>Top-down analysis</b>" + A + ". Start on the <b>monthly</b> chart. The first rising line starts at the <b>lowest point</b>, angled up, never flat. Each next line starts where the last one ended (\"previous point B is new point A\"), catches as many touches as possible, and price can't have poked through it, wicks included. Falling lines start the same way from the <b>highest point</b>. Then step down through weekly, daily, 4-hour and 1-hour, nudging lines and adding steeper ones near price. Green = rising, red = falling.</li>" +
     "<li><b>Wait for price to come to you</b>" + Y + ". She sets an alert on her lines and walks away. Use the Watch list levels for your alerts. Trade Finder's alerts tell you when a callout fires.</li>" +
-    "<li><b>Trade with the trend</b>" + A + ": her top-down look at the Weekly chart (or the Daily if the Weekly is unclear) sets the direction. Higher highs and higher lows = uptrend: only long breaks and long bounces. Lower highs and lower lows = downtrend: only shorts. No clear trend (choppy, ranging) = no trades; ranging markets give few valid setups. Each card shows the trend.</li>" +
+    "<li><b>Top-down trend</b>" + A + ": her look at the Weekly chart (or the Daily if the Weekly is unclear) sets the main direction. Higher highs and higher lows = uptrend, lower highs and lower lows = downtrend, anything else = no clear trend (ranging markets give few valid setups). Bounces only trade with the trend: long bounces in an uptrend, short bounces in a downtrend, none when it's unclear. Breaks don't need it: a break signals a trend reversal. Watch boxes show the trend.</li>" +
+    "<li><b>Futures and stocks</b>" + A + ": futures (what she trades) use her full strategy, all three setups. Stocks use her strategy with breaks only: on 112 stocks over 6 months breaks won 34% of the time, break &amp; retest 20% and bounces 16%.</li>" +
     "<li><b>Pick the setup</b>" + A + " (she calls them playbooks):<br><b>Trend line break</b>, her core setup: a candle <i>closes</i> through the newest line, and you trade the direction of the break. Breaking a rising line = short, breaking a falling line = long.<br><b>Break &amp; retest</b>: price breaks the line, pulls back and touches it from the other side, and that candle closes still respecting it. Then enter.<br><b>Bounce</b>: price tags the line and holds. That line is both the action and safety line.</li>" +
     "<li><b>Safety line and stop</b>" + A + ": the safety line is the newest line of the other color. The stop order goes <b>just past</b> it, never on it. If the safety line is far away, it's a high-risk setup: skip it.</li>" +
     "<li><b>Position size</b>" + A + " once you enter your account size below: risk <b>1–2%</b> of your account per trade. Use micros if a mini is too big.</li>" +
     "<li><b>Manage the trade</b>" + A + ": trail the stop along the safety line each time price makes a new swing. Some brokers do this for you, others need it done by hand.</li>" +
     "<li><b>Exit</b>" + A + ": a candle <b>closes</b> through the safety line (a quick poke isn't enough), or the stop order is hit. Optional: take profit at a nearby support/resistance level price has turned at several times, set just before it. That's shown on live cards. Backtest which exit suits you.</li>" +
-    "<li><b>Grade it</b>" + A + " (her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. A+ = all 4. Your filter: at least 3 of 4, always with 3+ taps, and at least 1 week of history (her playbook minimum). One attempt per trendline: once a line's break has been traded, it doesn't trade again.</li>" +
+    "<li><b>Grade it</b>" + A + " (her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. A+ = all 4. Your filter: at least 3 of 4, always with 3+ taps, and at least 1 week of history (her playbook minimum).</li>" +
     "<li><b>Redraw daily</b>" + A + ": after price breaks a line, move point B to the new high or low so nothing pokes through. Trade Finder redraws every scan.</li>" +
     "<li><b>Commit to one timeframe</b>" + A + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder uses the 4-hour chart.</li>" +
     "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. Tap <b>I took this trade</b> on a callout and it goes in the Journal tab, split by setup.</li>" +

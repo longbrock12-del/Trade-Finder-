@@ -427,6 +427,9 @@ function record(hist) {
   };
 }
 
+const FUTURE_RULES = { trend: "bounce", once: false, setups: null };
+const STOCK_RULES = { trend: "bounce", once: false, setups: ["break"] };
+
 // Her top-down trend (her playbook: "a top-down look at bigger timeframes, like the daily or weekly, helps
 // confirm the main trend direction"; "ranging markets provide few valid opportunities"). Clean structure:
 // the last two swing highs AND the last two swing lows both rising = uptrend, both falling = downtrend,
@@ -484,9 +487,15 @@ function scanCore(hChart, dChart, opts = {}) {
   const all = [], watch = [], S = {};
 
   const hist = []; // every callout over the whole window, for the track record
-  // Her filters on top of the setups (opts.rules.trend === false / .once === false turn them off, for tests):
-  // only trade with the top-down trend (none when it's choppy), and one attempt per trendline for breaks.
-  const trendAt = trendSeries(daily), useTrend = !(opts.rules && opts.rules.trend === false), trendMode = opts.rules && opts.rules.trend, useOnce = !(opts.rules && opts.rules.once === false);
+  // Which setups and filters each kind of market uses (opts.rules overrides any of them, for tests):
+  //   futures: exactly her strategy: all three setups; bounces go with her top-down trend ("price is in an uptrend"),
+  //            breaks don't need it (her playbook: a break "indicates a trend reversal").
+  //   stocks:  her strategy, but only the setup with the best win rate on stocks: breaks (34% on 112 stocks
+  //            over 6 months, vs 20% break & retest and 16% bounces).
+  //   trend: true = every setup goes with the trend, "bounce" = bounces only, false = off.
+  //   once: one attempt per trendline for breaks (FX Replay's added rule, not hers: off by default).
+  const R = { ...(isFuture ? FUTURE_RULES : STOCK_RULES), ...(opts.rules || {}) };
+  const trendAt = trendSeries(daily), useTrend = R.trend !== false, trendMode = R.trend, useOnce = R.once === true, setupsOk = R.setups;
   // opts.tfs: which charts to take callouts from (the site uses 4-hour by default). The 4-hour chart is always
   // set up, since the 3-month chart view uses it.
   Object.keys(sets).forEach((tf) => {
@@ -499,6 +508,7 @@ function scanCore(hChart, dChart, opts = {}) {
     const recentFrom = last - RECENT_DAYS * s.ppd + 1;
     const tried = new Set(); // trendlines whose break has already been traded (one attempt per line)
     events(s, opts.history === false ? recentFrom : WARMUP, last).forEach((e) => {
+      if (setupsOk && !setupsOk.includes(e.kind)) return; // stocks: breaks only
       // against the trend, or choppy (rules.trend === "bounce": only bounces need the trend; breaks are reversals)
       if (useTrend && (trendMode !== "bounce" || e.kind === "bounce")) { const tr = trendAt(b[e.at].t); if (tr.dir !== (e.long ? "up" : "down")) return; }
       const c = callout(s, e, last, live, px);

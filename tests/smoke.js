@@ -14,7 +14,7 @@ try { ({ chromium } = require("playwright")); } catch (e) { console.error("Playw
 // Most checks below test the line and setup mechanics on specific past trades, so they run without her two
 // filters (top-down trend, one attempt per line). The "Her filters" checks run with them on, like the live site.
 const TLM = require(path.join(ROOT, "api/_trendlines.js")), scanLive = TLM.scan;
-TLM.scan = (h, d, o = {}) => scanLive(h, d, { ...o, rules: { trend: false, once: false, ...(o.rules || {}) } });
+TLM.scan = (h, d, o = {}) => scanLive(h, d, { ...o, rules: { trend: false, once: false, setups: null, ...(o.rules || {}) } });
 
 let failed = 0;
 const ok = (cond, what, extra) => { console.log((cond ? "  pass  " : "  FAIL  ") + what + (extra != null && !cond ? "  (" + extra + ")" : "")); if (!cond) failed++; };
@@ -230,23 +230,22 @@ async function scanTests() {
   const flT = TLM.trendSeries(mkDaily((i) => 100 + 6 * Math.sin(i / 4) + (i % 50 < 25 ? 3 : -3) * Math.sin(i / 9)))(1700000000 + 399 * DAYs);
   ok(upT.dir === "up" && dnT.dir === "down" && upT.from === "Weekly", "trend: higher highs + higher lows = up, lower highs + lower lows = down (Weekly first)", JSON.stringify([upT, dnT]));
   ok(TLM.trendSeries(mkDaily(() => 100))(1700000000 + 399 * DAYs).dir === null, "trend: no swings, no clear trend (no trades)", JSON.stringify(flT));
-  let against = 0, dupes = 0, fN = 0;
+  let against = 0, fN = 0, bounces = 0, stockNonBreak = 0, futKinds = new Set();
   [["MGC=F", "GC", NOW], ["MCL=F", "CL", NOW], ["PL=F", "PL", NOW], ["AAPL", "AAPL", NOW], ["AMZN", "AMZN", AMZN_NOW]].forEach(([sym, f, now]) => {
     const tAt = TLM.trendSeries(TLM.hourly(load("yahoo_daily_" + f + ".json")).bars), mk = scanLive(load("yahoo_" + f + ".json"), load("yahoo_daily_" + f + ".json"), { sym, now, tfs: ["4H"], all: true });
-    const seen = new Set();
     mk.signals.forEach((x) => {
       fN++;
-      if (tAt(x.t).dir !== (x.dir === "long" ? "up" : "down")) against++;
-      if (x.setup !== "bounce" && x.passed >= 3 && x.checks.taps && x.days >= 7) { const k = x.lineFrom + ":" + x.dir + ":" + x.line; if (seen.has(x.lineFrom + x.dir)) dupes++; seen.add(x.lineFrom + x.dir); }
+      if (x.setup === "bounce") { bounces++; if (tAt(x.t).dir !== (x.dir === "long" ? "up" : "down")) against++; }
+      if (/=F$/.test(sym)) futKinds.add(x.setup === "bounce" ? "bounce" : x.setup === "break & retest" ? "retest" : "break");
+      else if (!/break$/.test(x.setup) || x.setup === "break & retest") stockNonBreak++;
     });
     ok(mk.trend && "dir" in mk.trend, sym + ": the market says its trend now (" + (mk.trend.dir || "none") + (mk.trend.from ? ", " + mk.trend.from : "") + ")");
   });
-  ok(fN > 0 && !against, "every callout goes with the top-down trend (none when it's choppy)", fN + " callouts, " + against + " against");
-  ok(!dupes, "one attempt per trendline: a line's break is traded once", dupes + " repeats");
-  const offR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { trend: false, once: false } }).record, onR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
-  ok(onR.trades < offR.trades, "her filters take fewer, cleaner trades (gold: " + offR.trades + " → " + onR.trades + ")");
-  const bR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { trend: "bounce" } }).record, liveAfter = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
-  ok(bR.trades >= onR.trades && liveAfter.trades === onR.trades, "?trend=bounce (trend only for bounces) is a test setting; the live scan is unchanged", onR.trades + " / " + bR.trades);
+  ok(fN > 0 && bounces > 0 && !against, "futures: every bounce goes with her top-down trend (none when it's choppy)", bounces + " bounces, " + against + " against");
+  ok(futKinds.has("break") && futKinds.has("bounce"), "futures: all of her setups trade (breaks need no trend: they're reversals)", [...futKinds].join());
+  ok(!stockNonBreak, "stocks: breaks only (her setup with the best win rate on stocks)", stockNonBreak + " other setups");
+  const once1 = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { once: true } }).record, live1 = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
+  ok(once1.trades <= live1.trades && scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === live1.trades, "one attempt per trendline (not hers) is a test setting only", live1.trades + " / " + once1.trades);
   const must = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { short: 0.05 } }).record;
   ok(must.trades < base.trades && TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === base.trades, "?short=0.05 (taps must actually touch) is a test setting only: fewer trades, normal scan unchanged", base.trades + " → " + must.trades);
   const rk = require(path.join(ROOT, "api/scan.js")).ranks;
