@@ -486,7 +486,7 @@ function scanCore(hChart, dChart, opts = {}) {
   const hist = []; // every callout over the whole window, for the track record
   // Her filters on top of the setups (opts.rules.trend === false / .once === false turn them off, for tests):
   // only trade with the top-down trend (none when it's choppy), and one attempt per trendline for breaks.
-  const trendAt = trendSeries(daily), useTrend = !(opts.rules && opts.rules.trend === false), useOnce = !(opts.rules && opts.rules.once === false);
+  const trendAt = trendSeries(daily), useTrend = !(opts.rules && opts.rules.trend === false), trendMode = opts.rules && opts.rules.trend, useOnce = !(opts.rules && opts.rules.once === false);
   // opts.tfs: which charts to take callouts from (the site uses 4-hour by default). The 4-hour chart is always
   // set up, since the 3-month chart view uses it.
   Object.keys(sets).forEach((tf) => {
@@ -499,7 +499,8 @@ function scanCore(hChart, dChart, opts = {}) {
     const recentFrom = last - RECENT_DAYS * s.ppd + 1;
     const tried = new Set(); // trendlines whose break has already been traded (one attempt per line)
     events(s, opts.history === false ? recentFrom : WARMUP, last).forEach((e) => {
-      if (useTrend) { const tr = trendAt(b[e.at].t); if (tr.dir !== (e.long ? "up" : "down")) return; } // against the trend, or choppy
+      // against the trend, or choppy (rules.trend === "bounce": only bounces need the trend; breaks are reversals)
+      if (useTrend && (trendMode !== "bounce" || e.kind === "bounce")) { const tr = trendAt(b[e.at].t); if (tr.dir !== (e.long ? "up" : "down")) return; }
       const c = callout(s, e, last, live, px);
       if (useOnce && e.kind !== "bounce" && qualifies(c)) {
         const k = e.action.a.t + ":" + e.action.b.t;

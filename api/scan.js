@@ -38,9 +38,9 @@ async function handler(req, res) {
   // Answers with just the 6-month record of all scanned stocks; live callouts and alerts never use these.
   const sp = new URL(req.url, "http://x").searchParams, num = (k, lo, hi) => { const v = sp.get(k); if (v == null || v === "") return null; const n = Number(v); return n >= lo && n <= hi ? n : NaN; };
   // ?short=0.3: how far short of the line a wick may stop and still count (0.05 = must actually touch; the site uses 0.3).
-  // ?trend=0 / ?once=0: without her trend filter / one attempt per trendline (to compare).
-  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1), trendOff = sp.get("trend") === "0", onceOff = sp.get("once") === "0";
-  const rules = touch != null || gap != null || short != null || trendOff || onceOff ? { touch, gap: gap == null ? null : Math.round(gap), short, trend: !trendOff, once: !onceOff } : null;
+  // ?trend=0 / ?once=0: without her trend filter / one attempt per trendline (to compare); ?trend=bounce: trend only for bounces.
+  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1), trendOff = sp.get("trend") === "0", trendB = sp.get("trend") === "bounce", onceOff = sp.get("once") === "0";
+  const rules = touch != null || gap != null || short != null || trendOff || trendB || onceOff ? { touch, gap: gap == null ? null : Math.round(gap), short, trend: trendB ? "bounce" : !trendOff, once: !onceOff } : null;
   if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR)" });
   let next = 0;
   async function worker() {

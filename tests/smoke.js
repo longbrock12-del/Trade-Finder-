@@ -245,6 +245,8 @@ async function scanTests() {
   ok(!dupes, "one attempt per trendline: a line's break is traded once", dupes + " repeats");
   const offR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { trend: false, once: false } }).record, onR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
   ok(onR.trades < offR.trades, "her filters take fewer, cleaner trades (gold: " + offR.trades + " → " + onR.trades + ")");
+  const bR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { trend: "bounce" } }).record, liveAfter = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
+  ok(bR.trades >= onR.trades && liveAfter.trades === onR.trades, "?trend=bounce (trend only for bounces) is a test setting; the live scan is unchanged", onR.trades + " / " + bR.trades);
   const must = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { short: 0.05 } }).record;
   ok(must.trades < base.trades && TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === base.trades, "?short=0.05 (taps must actually touch) is a test setting only: fewer trades, normal scan unchanged", base.trades + " → " + must.trades);
   const rk = require(path.join(ROOT, "api/scan.js")).ranks;
