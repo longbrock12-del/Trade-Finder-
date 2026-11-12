@@ -166,6 +166,8 @@ async function scannerTests() {
   const wc = amzW.watch[0] && amzW.watch[0].chart;
   ok(wc && wc.bars.length > 50 && wc.line && wc.line.t0 === amzW.watch[0].line.t0 && Array.isArray(wc.lines) && wc.lines.some((l) => l.action) && wc.zoom.length > 100 && wc.mid.bars.length > 50, "?wchart=1: a watch line gets the same chart a callout gets (its line thick, every line, zoom views)", amzW.watch.length);
   ok(amzN.watch.length && amzN.watch.every((w) => !w.chart && !w._ln), "no watch charts unless asked (the page stays small)");
+  const futM = (await tradesApi("/api/trades?tf=4H")).body.markets;
+  ok(futM.every((m) => m.look && m.look.lineNow > 0 && m.look.chart === null) && amzN.look === undefined, "futures always carry their nearest line (no chart: small); stocks don't");
   const lk = (await call("api/trades.js", "/api/trades?s=AAPL&tf=4H&look=1", fakeYahoo((s) => (s === "AAPL" ? "AAPL" : null)))).body.markets[0];
   ok(lk.look && lk.look.chart && lk.look.chart.bars.length > 50 && lk.look.chart.lines.length >= 2 && lk.look.chart.taps.length === lk.look.taps && lk.look.lineNow > 0 && amzN.look === undefined, "?look=1: any symbol gets a 4-hour chart around its nearest line, with every line and its taps", lk.look && JSON.stringify({ ...lk.look, chart: 0 }));
   lookBody = lk;
@@ -483,6 +485,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("#out article.c").count()) === 5, "back to 5");
   await page.click("[data-k=futures]");
   ok((await page.locator("[data-wall]").count()) === 0, "futures watch list has no show-all button");
+  const futSyms = await page.locator("#out article.wc .sym").allTextContents();
+  const wantFut = body.markets.filter((m) => m.kind === "futures" && !m.error).map((m) => m.sym.replace(/=F$/, ""));
+  ok(wantFut.length >= 2 && wantFut.every((x) => futSyms.includes(x)), "futures watch list always shows every futures market (MGC and MCL on the site)", futSyms.join() + " vs " + wantFut.join());
+  const nb = page.locator("#out article.wc", { has: page.locator("[data-nch]") });
+  if (await nb.count()) {
+    ok(/(Rising|Falling) .* line/.test(await nb.first().textContent()) && /away/.test(await nb.first().textContent()) && /(Passes her checklist|Doesn't pass her checklist)/.test(await nb.first().textContent()), "a future without a near line shows its nearest line, distance and why it isn't listed");
+  }
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");

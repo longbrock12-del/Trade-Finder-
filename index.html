@@ -633,12 +633,47 @@ function watchList() {
   const usd = ({ m, w }) => Math.abs(m.price - w.lineNow) * (m.pointValue || 1);
   rows.sort((a, b) => usd(a) - usd(b));
   const top = kind === "stocks" ? rankBox() : ""; // stocks that respect trendlines, before anything is a callout
-  if (!rows.length) return top + '<div class="c empty">No callout-quality trendlines near price right now.</div>';
+  // Futures: MGC and MCL always show. Any without a callout-quality line near price get a box with their nearest line.
+  const nearOnes = kind === "futures" ? data.markets.filter((m) => !m.error && m.kind === "futures" && m.look && !(m.watch || []).length) : [];
+  const nearHtml = nearOnes.length ? '<h2>Nearest line (not near enough yet)</h2>' + nearOnes.map(nearCard).join("") : "";
+  if (!rows.length) return top + (nearHtml || '<div class="c empty">No callout-quality trendlines near price right now.</div>');
   // Stocks: show the top 5, with a button to see the rest. Futures always show everything.
   const cut = kind === "stocks" && rows.length > WATCH_SHOW, all = !!store.get("watchAll", false), shown = cut && !all ? rows.slice(0, WATCH_SHOW) : rows;
   const more = cut ? '<button class="btn" data-wall="1" aria-expanded="' + all + '" style="width:100%;margin-bottom:12px">' + (all ? "Show only the top " + WATCH_SHOW : "Show all " + rows.length) + "</button>" : "";
   return top + '<h2>Price is near a trendline (' + rows.length + ')</h2><div class="note" style="margin:-4px 2px 8px">Lines that would make a real callout if price breaks or bounces off them. Set alerts on these.</div>' +
-    shown.map(({ m, w }) => watchCard(m, w)).join("") + more;
+    shown.map(({ m, w }) => watchCard(m, w)).join("") + more + nearHtml;
+}
+
+// A futures market's nearest line when it isn't on the watch list: where it is, its grade, and why it isn't listed.
+function nearCard(m) {
+  const L = m.look, k = "N" + m.sym, c = wcharts[k], up = L.up, d = m.digits, ck = L.checks || {}, miss = [];
+  if (!ck.taps) miss.push(L.taps + " taps (3+)");
+  if (!ck.angle) miss.push(L.angle + "° (under 45°)");
+  if (!ck.history) miss.push("3+ weeks (" + L.days + " days)");
+  const ok = L.passed >= 3 && ck.taps && L.days >= 7;
+  const why = ok ? "Passes her checklist, just not close to price yet." : "Doesn't pass her checklist yet, so it wouldn't make a callout.";
+  const plan = up ? "Close below = short · tag and hold = long (with the trend)" : "Close above = long · tag and reject = short (with the trend)";
+  let h = '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">4H</span><span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" +
+    '</div><b class="wp">' + num(L.lineNow, d) + "</b></div>" +
+    '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(L.lineTF) + " line</span><span>" + away(m, L) + "</span></div>" +
+    '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
+    '<div class="note mini">' + why + "</div>" +
+    '<div class="tv sm"><button class="btn" data-nch="' + esc(m.sym) + '" aria-expanded="' + !!(c && c.shown) + '">' + (c && c.shown ? "Hide chart" : "📈 Show chart") + "</button></div>";
+  if (c && c.shown) {
+    if (c.loading) h += '<div class="note"><span class="sp"></span> Loading chart…</div>';
+    else if (c.error) h += '<div class="note bad">' + esc(c.error) + "</div>";
+    else { const sv = { tf: "4H", chart: c.chart, status: "watch", entry: null, stop: null }; h += (zoomed[k] ? lineView(c.m, sv, zoomed[k]) : chart(c.m, sv)) + linesBlock(c.m, sv, k); }
+  }
+  return h + "</article>";
+}
+async function loadNearChart(sym) {
+  const k = "N" + sym;
+  wcharts[k] = { shown: true, loading: true }; render();
+  try {
+    const m = ((await (await fetch("/api/trades?s=" + encodeURIComponent(sym) + "&tf=4H&look=1")).json()).markets || [])[0];
+    wcharts[k] = m && m.look && m.look.chart ? { shown: true, m, chart: m.look.chart } : { shown: true, error: "The chart didn't load. Try again in a minute." };
+  } catch (e) { wcharts[k] = { shown: true, error: "The chart didn't load. Try again in a minute." }; }
+  render();
 }
 
 // Journal (her rule: journal every trade), saved on this phone. Each entry: the callout as you took it, and
@@ -734,7 +769,7 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-lookx],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-nch],[data-lookx],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.lal) {
     const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
@@ -745,6 +780,7 @@ document.addEventListener("click", (e) => {
   if (t.dataset.jdel != null) { if (confirm("Remove this trade from your journal?")) { const j = jGet(); j.splice(Number(t.dataset.jdel), 1); jSet(j); render(); } return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.lookx) { looked = null; render(); return; }
+  if (t.dataset.nch) { const k = "N" + t.dataset.nch; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].chart) { wcharts[k].shown = true; render(); } else loadNearChart(t.dataset.nch); return; }
   if (t.dataset.wch) { const k = t.dataset.wch; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].chart) { wcharts[k].shown = true; render(); } else loadWatchChart(k); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }
   if (t.classList.contains("lns")) return;
