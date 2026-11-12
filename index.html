@@ -4,7 +4,7 @@
 <title>Trade Finder</title>
 <meta name="description" content="Live 4-hour trendline break and bounce callouts for futures and stocks, using Tori Trades' trendline strategy.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.json">
@@ -12,14 +12,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Trade Finder">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0a0907">
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--tx:#14181f;--mu:#6a7280;--bd:#dde1e7;--ac:#1b6ef3;--gd:#13894a;--bad:#c93b3b;--warn:#b86e00;--soft:#eef1f6;--line:#1b6ef3;--safe:#d9822b}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1116;--card:#171b22;--tx:#e8ebf0;--mu:#8b93a1;--bd:#2a303a;--ac:#5b9bff;--gd:#3ecf7d;--bad:#ff6b6b;--warn:#f0a63a;--soft:#1f242d;--line:#5b9bff;--safe:#f0a63a}}
-:root[data-theme="dark"]{--bg:#0e1116;--card:#171b22;--tx:#e8ebf0;--mu:#8b93a1;--bd:#2a303a;--ac:#5b9bff;--gd:#3ecf7d;--bad:#ff6b6b;--warn:#f0a63a;--soft:#1f242d;--line:#5b9bff;--safe:#f0a63a}
+:root{color-scheme:dark;--bg:#0a0907;--card:#15130f;--tx:#f5efe2;--mu:#a69d8a;--bd:#2c271d;--ac:#e8b84a;--gd:#7ee08f;--bad:#ef6a5a;--warn:#e8b84a;--soft:#1e1b15;--line:#e8b84a;--safe:#e8b84a}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 Inter,-apple-system,system-ui,Segoe UI,Roboto,sans-serif;font-feature-settings:"tnum" 1;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+body{margin:0;background:linear-gradient(180deg,#14110b 0%,var(--bg) 420px) var(--bg);color:var(--tx);font:15px/1.45 Outfit,Inter,-apple-system,system-ui,Segoe UI,Roboto,sans-serif;font-feature-settings:"tnum" 1;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
 button,input{font-family:inherit;font-size:inherit;color:inherit}button{cursor:pointer;touch-action:manipulation}
 .w{max-width:760px;margin:0 auto;padding:14px 16px 40px}
 header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
@@ -78,6 +75,16 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .sp{display:inline-block;width:10px;height:10px;border:2px solid var(--mu);border-top-color:transparent;border-radius:50%;animation:r 1s linear infinite;vertical-align:-1px}
 @keyframes r{to{transform:rotate(360deg)}}
 @media (max-width:480px){.gr{grid-template-columns:repeat(2,1fr)}}
+
+/* Gold look: black and gold */
+h1{font-size:23px;letter-spacing:.02em;background:linear-gradient(90deg,#f7d98b,#c8922a);-webkit-background-clip:text;background-clip:text;color:transparent}
+.c,.gi{border-radius:16px;background:linear-gradient(180deg,#191610,#13110d);box-shadow:0 1px 0 rgba(232,184,74,.08) inset,0 10px 24px rgba(0,0,0,.4)}
+.tabs button.on,.btn.on{background:linear-gradient(135deg,#f7d98b,#c8922a);border-color:transparent;color:#1a1305}
+.new{background:#e8b84a;color:#1a1305}
+.trk .big{font-size:30px}
+.gi{border-color:#e8b84a}.gi.none{border-color:var(--bd)}
+.ap{background:rgba(232,184,74,.15);color:#e8b84a}
+input::placeholder{color:#6f6758}
 </style></head>
 <body><div class="w">
 <header>
