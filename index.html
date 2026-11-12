@@ -163,8 +163,11 @@ function closedUntil(kind, d = new Date()) {
   return "Mon 9:30 AM";
 }
 // One short line: market closed (and when it opens) and/or big news in the next 24 hours.
-function infoLine(m) {
+function infoLine(m, noTrend) { // noTrend: callout cards (a callout always goes with the trend)
   const parts = [], c = closedUntil(m.kind), now = Date.now() / 1000, crude = /^M?CL=F$/.test(m.sym);
+  // Her top-down trend: only trades in this direction are called out; none when there's no clear trend.
+  if (m.trend && !noTrend) parts.push(m.trend.dir ? '<span class="' + (m.trend.dir === "up" ? "ok" : "bad") + '" title="Her top-down trend (Weekly, or Daily if the Weekly is unclear). Only trades this way are called out.">Trend ' + (m.trend.dir === "up" ? "↑ up" : "↓ down") + " (" + m.trend.from + ")" + "</span>"
+    : '<span class="warn" title="No clear trend on the Weekly or Daily: no callouts until one forms">No clear trend: no trades</span>');
   if (c) parts.push('<span title="Market closed. New York time.">Opens ' + c + "</span>");
   const ev = newsEvents.filter((e) => e.t >= now - 1800 && e.t <= now + 86400 && (!e.crude || crude));
   if (ev.length) {
@@ -434,14 +437,14 @@ function card(m, s) {
   if (!big) return '<article class="c cl sm" tabindex="0" data-k="' + esc(k) + '" aria-expanded="false">' +
     '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + '</span><span class="tag">' + esc(s.tf) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") + "</div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + ' · <span class="tog">Details ▾</span></div></div>' +
-    status.replace('style="font-size:15px"', "") + infoLine(m) +
+    status.replace('style="font-size:15px"', "") + infoLine(m, true) +
     '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s, true) + "</article>";
   return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '" aria-expanded="true">' + head +
     '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop order now (trailing)" : "Stop order") + "</small>" + num(s.stop, d) + "</div>" +
     "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
     (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" : "—") + "</div></div>" +
     (pv && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: starting risk <b>' + perC(s.risk) + "</b>" + (res != null ? " · " + (open ? "now " : "result ") + '<b class="' + (res >= 0 ? "ok" : "bad") + '">' + (res >= 0 ? "+" : "−") + perC(res * s.risk) + "</b>" : "") + " ($" + pv + " per 1.00 move)</div>" : "") +
-    status + infoLine(m) + sizeLine(m, s) +
+    status + infoLine(m, true) + sizeLine(m, s) +
     (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
     (open ? '<div class="note">Set your stop order at <b>' + num(s.stop, d) + "</b>, just past the safety line, and trail it as the line moves. Get out early if a " + TFNAME[s.tf] + " candle closes through the safety line (now at " + num(s.line, d) + ").</div>" : "") +
     (open && s.tp ? '<div class="note">Optional take-profit, her quick-win exit: <b>' + num(s.tp.price, d) + "</b> (" + signR(s.tp.r) + "), just before a level price turned at " + s.tp.touches + " times. Trailing usually lets winners run further; the track record uses trailing.</div>" : "") +
@@ -681,14 +684,15 @@ function renderRules() {
   return '<div class="c rules"><div class="st">Her system, step by step</div><ol>' +
     "<li><b>Top-down analysis</b>" + A + ". Start on the <b>monthly</b> chart. The first rising line starts at the <b>lowest point</b>, angled up, never flat. Each next line starts where the last one ended (\"previous point B is new point A\"), catches as many touches as possible, and price can't have poked through it, wicks included. Falling lines start the same way from the <b>highest point</b>. Then step down through weekly, daily, 4-hour and 1-hour, nudging lines and adding steeper ones near price. Green = rising, red = falling.</li>" +
     "<li><b>Wait for price to come to you</b>" + Y + ". She sets an alert on her lines and walks away. Use the Watch list levels for your alerts. Trade Finder's alerts tell you when a callout fires.</li>" +
+    "<li><b>Trade with the trend</b>" + A + ": her top-down look at the Weekly chart (or the Daily if the Weekly is unclear) sets the direction. Higher highs and higher lows = uptrend: only long breaks and long bounces. Lower highs and lower lows = downtrend: only shorts. No clear trend (choppy, ranging) = no trades; ranging markets give few valid setups. Each card shows the trend.</li>" +
     "<li><b>Pick the setup</b>" + A + " (she calls them playbooks):<br><b>Trend line break</b>, her core setup: a candle <i>closes</i> through the newest line, and you trade the direction of the break. Breaking a rising line = short, breaking a falling line = long.<br><b>Break &amp; retest</b>: price breaks the line, pulls back and touches it from the other side, and that candle closes still respecting it. Then enter.<br><b>Bounce</b>: price tags the line and holds. That line is both the action and safety line.</li>" +
     "<li><b>Safety line and stop</b>" + A + ": the safety line is the newest line of the other color. The stop order goes <b>just past</b> it, never on it. If the safety line is far away, it's a high-risk setup: skip it.</li>" +
     "<li><b>Position size</b>" + A + " once you enter your account size below: risk <b>1–2%</b> of your account per trade. Use micros if a mini is too big.</li>" +
     "<li><b>Manage the trade</b>" + A + ": trail the stop along the safety line each time price makes a new swing. Some brokers do this for you, others need it done by hand.</li>" +
     "<li><b>Exit</b>" + A + ": a candle <b>closes</b> through the safety line (a quick poke isn't enough), or the stop order is hit. Optional: take profit at a nearby support/resistance level price has turned at several times, set just before it. That's shown on live cards. Backtest which exit suits you.</li>" +
-    "<li><b>Grade it</b>" + A + " (her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. A+ = all 4. Your filter: at least 3 of 4, always with 3+ taps, and at least 1 week of history (her playbook minimum).</li>" +
+    "<li><b>Grade it</b>" + A + " (her checklist): 3+ taps, 6+ candles apart, under 45° with 3 months on screen, 3+ weeks from first tap to the break. A+ = all 4. Your filter: at least 3 of 4, always with 3+ taps, and at least 1 week of history (her playbook minimum). One attempt per trendline: once a line's break has been traded, it doesn't trade again.</li>" +
     "<li><b>Redraw daily</b>" + A + ": after price breaks a line, move point B to the new high or low so nothing pokes through. Trade Finder redraws every scan.</li>" +
-    "<li><b>Commit to one timeframe</b>" + A + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder uses the 4-hour chart unless you change it under Chart at the bottom of the Callouts tab.</li>" +
+    "<li><b>Commit to one timeframe</b>" + A + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder uses the 4-hour chart.</li>" +
     "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. Tap <b>I took this trade</b> on a callout and it goes in the Journal tab, split by setup.</li>" +
     "<li><b>Practice first</b>" + Y + ": paper trade with a realistic account size until it's consistent.</li></ol>" +
     '</div>';

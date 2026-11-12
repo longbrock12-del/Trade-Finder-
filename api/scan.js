@@ -38,8 +38,9 @@ async function handler(req, res) {
   // Answers with just the 6-month record of all scanned stocks; live callouts and alerts never use these.
   const sp = new URL(req.url, "http://x").searchParams, num = (k, lo, hi) => { const v = sp.get(k); if (v == null || v === "") return null; const n = Number(v); return n >= lo && n <= hi ? n : NaN; };
   // ?short=0.3: how far short of the line a wick may stop and still count (0.05 = must actually touch; the site uses 0.3).
-  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1);
-  const rules = touch != null || gap != null || short != null ? { touch, gap: gap == null ? null : Math.round(gap), short } : null;
+  // ?trend=0 / ?once=0: without her trend filter / one attempt per trendline (to compare).
+  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1), trendOff = sp.get("trend") === "0", onceOff = sp.get("once") === "0";
+  const rules = touch != null || gap != null || short != null || trendOff || onceOff ? { touch, gap: gap == null ? null : Math.round(gap), short, trend: !trendOff, once: !onceOff } : null;
   if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR)" });
   let next = 0;
   async function worker() {
@@ -56,7 +57,7 @@ async function handler(req, res) {
   await Promise.all(Array.from({ length: POOL }, worker));
   const scanned = UNIVERSE.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
-  if (rules) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), test: { touch: rules.touch == null ? 0.3 : rules.touch, gap: rules.gap == null ? 6 : rules.gap, short: rules.short == null ? 0.3 : rules.short }, scanned, record: combine(recs) });
+  if (rules) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), test: { touch: rules.touch == null ? 0.3 : rules.touch, gap: rules.gap == null ? 6 : rules.gap, short: rules.short == null ? 0.3 : rules.short, trend: rules.trend, once: rules.once }, scanned, record: combine(recs) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 

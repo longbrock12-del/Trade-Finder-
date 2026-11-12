@@ -427,6 +427,45 @@ function record(hist) {
   };
 }
 
+// Her top-down trend (her playbook: "a top-down look at bigger timeframes, like the daily or weekly, helps
+// confirm the main trend direction"; "ranging markets provide few valid opportunities"). Clean structure:
+// the last two swing highs AND the last two swing lows both rising = uptrend, both falling = downtrend,
+// anything else = no clear trend. Weekly chart first; if it has no clear trend, the Daily. Only finished
+// candles count (a swing needs 2 finished candles after it), so the replay never looks ahead.
+// Returns trendAt(t) -> { dir: "up" | "down" | null, from: "Weekly" | "Daily" | null }.
+function trendSeries(daily) {
+  const DAY_S = 86400;
+  const weeks = [];
+  daily.forEach((d) => {
+    const wk = Math.floor((Math.floor(d.t / DAY_S) + 3) / 7); // Monday-based weeks
+    const w = weeks[weeks.length - 1];
+    if (w && w.wk === wk) { w.h = Math.max(w.h, d.h); w.l = Math.min(w.l, d.l); w.end = d.t; }
+    else weeks.push({ wk, t: d.t, end: d.t, h: d.h, l: d.l });
+  });
+  const series = (bars) => {
+    const out = [], hi = [], lo = [];
+    for (let j = 0; j < bars.length; j++) {
+      const i = j - 2; // a swing at i is confirmed once candle i+2 has finished
+      if (i >= 2) {
+        const b = bars[i];
+        if (bars[i - 1].h < b.h && bars[i - 2].h < b.h && bars[i + 1].h <= b.h && bars[i + 2].h <= b.h) hi.push(b.h);
+        if (bars[i - 1].l > b.l && bars[i - 2].l > b.l && bars[i + 1].l >= b.l && bars[i + 2].l >= b.l) lo.push(b.l);
+      }
+      let dir = null;
+      if (hi.length >= 2 && lo.length >= 2) {
+        const hh = hi[hi.length - 1] > hi[hi.length - 2], hl = lo[lo.length - 1] > lo[lo.length - 2];
+        const lh = hi[hi.length - 1] < hi[hi.length - 2], ll = lo[lo.length - 1] < lo[lo.length - 2];
+        dir = hh && hl ? "up" : lh && ll ? "down" : null;
+      }
+      out.push({ known: (bars[j].end || bars[j].t) + DAY_S, dir }); // usable from the day after the candle closes
+    }
+    return out;
+  };
+  const W = series(weeks), D = series(daily);
+  const at = (arr, t) => { let lo = 0, hi = arr.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m].known <= t) { k = m; lo = m + 1; } else hi = m - 1; } return k < 0 ? null : arr[k].dir; };
+  return (t) => { const w = at(W, t); if (w) return { dir: w, from: "Weekly" }; const d = at(D, t); return d ? { dir: d, from: "Daily" } : { dir: null, from: null }; };
+}
+
 // hChart: Yahoo hourly bars (6 months). dChart: Yahoo daily bars (10 years).
 function scanCore(hChart, dChart, opts = {}) {
   const now = opts.now || Date.now() / 1000;
@@ -445,6 +484,9 @@ function scanCore(hChart, dChart, opts = {}) {
   const all = [], watch = [], S = {};
 
   const hist = []; // every callout over the whole window, for the track record
+  // Her filters on top of the setups (opts.rules.trend === false / .once === false turn them off, for tests):
+  // only trade with the top-down trend (none when it's choppy), and one attempt per trendline for breaks.
+  const trendAt = trendSeries(daily), useTrend = !(opts.rules && opts.rules.trend === false), useOnce = !(opts.rules && opts.rules.once === false);
   // opts.tfs: which charts to take callouts from (the site uses 4-hour by default). The 4-hour chart is always
   // set up, since the 3-month chart view uses it.
   Object.keys(sets).forEach((tf) => {
@@ -455,8 +497,15 @@ function scanCore(hChart, dChart, opts = {}) {
     s.last = last;
     if (!use) return;
     const recentFrom = last - RECENT_DAYS * s.ppd + 1;
+    const tried = new Set(); // trendlines whose break has already been traded (one attempt per line)
     events(s, opts.history === false ? recentFrom : WARMUP, last).forEach((e) => {
+      if (useTrend) { const tr = trendAt(b[e.at].t); if (tr.dir !== (e.long ? "up" : "down")) return; } // against the trend, or choppy
       const c = callout(s, e, last, live, px);
+      if (useOnce && e.kind !== "bounce" && qualifies(c)) {
+        const k = e.action.a.t + ":" + e.action.b.t;
+        if (tried.has(k)) return;
+        tried.add(k);
+      }
       hist.push(c);
       if (e.at >= recentFrom) all.push(c);
     });
@@ -564,7 +613,7 @@ function scanCore(hChart, dChart, opts = {}) {
   return {
     sym, name: meta.shortName || meta.longName || sym, kind: isFuture ? "futures" : "stocks",
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
-    dailyBars: daily.length, signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), record: opts.history === false ? null : record(hist),
+    dailyBars: daily.length, trend: trendAt(now), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), record: opts.history === false ? null : record(hist),
   };
 }
 
@@ -581,4 +630,4 @@ function scan(hChart, dChart, opts = {}) {
   } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR] = saved; }
 }
 
-module.exports = { scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
+module.exports = { trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

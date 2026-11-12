@@ -11,6 +11,11 @@ const ROOT = path.join(__dirname, ".."), FX = path.join(__dirname, "fixtures"), 
 let chromium;
 try { ({ chromium } = require("playwright")); } catch (e) { console.error("Playwright is not installed: npm i -g playwright && npx playwright install chromium"); process.exit(2); }
 
+// Most checks below test the line and setup mechanics on specific past trades, so they run without her two
+// filters (top-down trend, one attempt per line). The "Her filters" checks run with them on, like the live site.
+const TLM = require(path.join(ROOT, "api/_trendlines.js")), scanLive = TLM.scan;
+TLM.scan = (h, d, o = {}) => scanLive(h, d, { ...o, rules: { trend: false, once: false, ...(o.rules || {}) } });
+
 let failed = 0;
 const ok = (cond, what, extra) => { console.log((cond ? "  pass  " : "  FAIL  ") + what + (extra != null && !cond ? "  (" + extra + ")" : "")); if (!cond) failed++; };
 const fx = (f) => path.join(FX, f);
@@ -218,6 +223,28 @@ async function scanTests() {
   const rt = await call("api/scan.js", "/api/scan?touch=0.15&gap=5", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AMZN")), AMZN_NOW * 1000);
   ok(rt.status === 200 && rt.body.test.touch === 0.15 && rt.body.test.gap === 5 && rt.body.record && !rt.body.markets && rt.body.scanned === U.length - 2, "/api/scan?touch=&gap= answers with just the test record of every stock", JSON.stringify(rt.body.test));
   ok((await call("api/scan.js", "/api/scan?touch=5", fakeYahoo(() => "AMZN"), AMZN_NOW * 1000)).status === 400, "out-of-range test settings are refused");
+  console.log("Her filters (on, like the live site)");
+  const DAYs = 86400, mkDaily = (f) => Array.from({ length: 400 }, (_, i) => { const t = 1700000000 + i * DAYs, m = f(i); return { t, o: m, h: m + 1, l: m - 1, c: m }; });
+  const upT = TLM.trendSeries(mkDaily((i) => 100 + i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);
+  const dnT = TLM.trendSeries(mkDaily((i) => 300 - i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);
+  const flT = TLM.trendSeries(mkDaily((i) => 100 + 6 * Math.sin(i / 4) + (i % 50 < 25 ? 3 : -3) * Math.sin(i / 9)))(1700000000 + 399 * DAYs);
+  ok(upT.dir === "up" && dnT.dir === "down" && upT.from === "Weekly", "trend: higher highs + higher lows = up, lower highs + lower lows = down (Weekly first)", JSON.stringify([upT, dnT]));
+  ok(TLM.trendSeries(mkDaily(() => 100))(1700000000 + 399 * DAYs).dir === null, "trend: no swings, no clear trend (no trades)", JSON.stringify(flT));
+  let against = 0, dupes = 0, fN = 0;
+  [["MGC=F", "GC", NOW], ["MCL=F", "CL", NOW], ["PL=F", "PL", NOW], ["AAPL", "AAPL", NOW], ["AMZN", "AMZN", AMZN_NOW]].forEach(([sym, f, now]) => {
+    const tAt = TLM.trendSeries(TLM.hourly(load("yahoo_daily_" + f + ".json")).bars), mk = scanLive(load("yahoo_" + f + ".json"), load("yahoo_daily_" + f + ".json"), { sym, now, tfs: ["4H"], all: true });
+    const seen = new Set();
+    mk.signals.forEach((x) => {
+      fN++;
+      if (tAt(x.t).dir !== (x.dir === "long" ? "up" : "down")) against++;
+      if (x.setup !== "bounce" && x.passed >= 3 && x.checks.taps && x.days >= 7) { const k = x.lineFrom + ":" + x.dir + ":" + x.line; if (seen.has(x.lineFrom + x.dir)) dupes++; seen.add(x.lineFrom + x.dir); }
+    });
+    ok(mk.trend && "dir" in mk.trend, sym + ": the market says its trend now (" + (mk.trend.dir || "none") + (mk.trend.from ? ", " + mk.trend.from : "") + ")");
+  });
+  ok(fN > 0 && !against, "every callout goes with the top-down trend (none when it's choppy)", fN + " callouts, " + against + " against");
+  ok(!dupes, "one attempt per trendline: a line's break is traded once", dupes + " repeats");
+  const offR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { trend: false, once: false } }).record, onR = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
+  ok(onR.trades < offR.trades, "her filters take fewer, cleaner trades (gold: " + offR.trades + " → " + onR.trades + ")");
   const must = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { short: 0.05 } }).record;
   ok(must.trades < base.trades && TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === base.trades, "?short=0.05 (taps must actually touch) is a test setting only: fewer trades, normal scan unchanged", base.trades + " → " + must.trades);
   const rk = require(path.join(ROOT, "api/scan.js")).ranks;
@@ -422,6 +449,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   await lkCard.locator("[data-lookx]").last().click();
   ok((await page.locator("[data-lookx]").count()) === 0 && (await page.locator("#lookIn").count()) === 1, "Look up: Close removes it, the box stays");
   await page.unroute("**/api/trades**look=1**");
+  const amzT = body.markets.find((m) => m.sym === "AMZN").trend;
+  ok(new RegExp(amzT && amzT.dir ? "Trend (↑ up|↓ down) \\((Weekly|Daily)\\)" : "No clear trend: no trades").test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "watch boxes show her top-down trend");
   ok(/⚠ Earnings Thu, Nov 12 after close/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "stocks show an earnings warning (AMZN reports Thu after close)");
   ok(!/Earnings/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().textContent().catch(() => "")), "no earnings warning when none is coming");
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price only (AMZN)", awayTxt + " vs " + wantAway);
