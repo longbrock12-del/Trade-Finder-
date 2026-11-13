@@ -275,7 +275,13 @@ function grade(S, ln, i, up) {
   const tp = taps(S, ln, i, up), days = (S.bars[i].t - ln.a.t) / DAY, angle = angleOf(ln.slope, S, i);
   const checks = { taps: tp.length >= 3, spacing: true, angle: angle < MAX_ANGLE, history: days >= 21 };
   const passed = Object.values(checks).filter(Boolean).length; // out of 4
-  return { grade: passed === 4 ? "A+" : "B", passed, checks, taps: tp.length, tapX: tp, days: Math.round(days), angle: Math.round(angle) };
+  return { grade: passed === 4 ? "A+" : "B", passed, checks, taps: tp.length, real: tp.filter((x) => !nearMiss(S, ln, x)).length, tapX: tp, days: Math.round(days), angle: Math.round(angle) };
+}
+// A near miss: the wick came within the tap distance but stopped more than NEAR_ATR short of the line (it never
+// reached it). Everything else is a real touch. x is in merged candle space (daily candles before x0).
+function nearMiss(S, ln, x) {
+  const d = x < S.x0, k = d ? Math.round(x / S.ppd) : x - S.x0, c = d ? S.D[k] : S.bars[k], a = d ? S.dA[k] : S.A[k], v = val(ln, x);
+  return (ln.slope > 0 ? c.l - v : v - c.h) > NEAR_ATR * a;
 }
 
 // Walk a trade forward. Her exits: the stop order sits just past the safety line ("never on the safety line,
@@ -343,7 +349,7 @@ function callout(s, e, last, live, px) {
   const g = grade(s, e.action, e.brk != null ? e.brk : e.at, e.kind === "bounce" ? e.long : !e.long); // graded at the break; rising line under lows?
   const entry = b[e.at].c;
   const c = { tf, setup: e.kind === "bounce" ? "bounce" : e.kind === "retest" ? "break & retest" : g.taps >= 3 ? "3-touch break" : "2-touch break", dir: e.long ? "long" : "short",
-    at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
+    at: e.at, t: b[e.at].t, entry: px(entry), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, real: g.real, days: g.days, angle: g.angle,
     lineTF: tfOfLine(e.action, tf), lineFrom: e.action.a.t, action: e.action, tapX: g.tapX };
   let sl = e.safety, from = e.at;
   if (!sl) {
@@ -527,7 +533,7 @@ function scanCore(hChart, dChart, opts = {}) {
       if (d > WATCH_ATR) return;
       const g = grade(s, ln, last + 1 > b.length - 1 ? b.length - 1 : last + 1, up);
       if (!qualifies(g)) return; // only lines that would make a real callout if price breaks or bounces off them
-      watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle, lineTF: tfOfLine(ln, tf), key: ln.a.t + ":" + ln.b.t,
+      watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, real: g.real, days: g.days, angle: g.angle, lineTF: tfOfLine(ln, tf), key: ln.a.t + ":" + ln.b.t,
         line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up },
         _ln: ln, _safety: up ? s.act[last + 1].dn : s.act[last + 1].up, _tapX: g.tapX,
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),
@@ -582,8 +588,7 @@ function scanCore(hChart, dChart, opts = {}) {
       // miss, shown hollow); otherwise it reached or crossed the line (a real touch, shown solid).
       taps: x.action ? x.tapX.map((q) => {
         const d = q < s.x0, k = d ? Math.round(q / s.ppd) : q - s.x0, c = d ? s.D[k] : s.bars[k], a = d ? s.dA[k] : s.A[k], v = val(x.action, q), up = x.action.slope > 0;
-        const gap = up ? c.l - v : v - c.h; // > 0: the wick stopped short of the line
-        return { t: c.t, p: px(v), X: q / s.ppd - zoff, near: gap > NEAR_ATR * a };
+        return { t: c.t, p: px(v), X: q / s.ppd - zoff, near: nearMiss(s, x.action, q) };
       }) : [],
       at: x.at - off, from: x.from == null ? null : x.from - off, closedAt: x.closedAt == null ? null : x.closedAt - off,
       chains: edges(ch.up, true).concat(edges(ch.dn, false)),
@@ -612,7 +617,7 @@ function scanCore(hChart, dChart, opts = {}) {
     if (ends.length) {
       const [ln, up] = ends.sort((p, q) => Math.abs(val(p[0], s.x0 + i) - live) - Math.abs(val(q[0], s.x0 + i) - live))[0];
       const other = up ? s.act[i].dn : s.act[i].up, g = grade(s, ln, Math.min(i, s.bars.length - 1), up), v = val(ln, s.x0 + i);
-      look = { tf: "4H", lineTF: tfOfLine(ln, "4H"), up, lineNow: px(v), dist: r2(Math.abs(live - v) / s.A[s.last], 1), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, days: g.days, angle: g.angle,
+      look = { tf: "4H", lineTF: tfOfLine(ln, "4H"), up, lineNow: px(v), dist: r2(Math.abs(live - v) / s.A[s.last], 1), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, real: g.real, days: g.days, angle: g.angle,
         chart: opts.lookup ? chartFor({ tf: "4H", action: ln, safety: other || null, tapX: g.tapX, at: s.last, from: null, closedAt: null }) : null };
     }
   }

@@ -191,6 +191,8 @@ async function scannerTests() {
     });
   });
   ok(tapN > 30 && !tapBad && !tapMis, "every tap counted is in the chart (older ones too) and really touches the line", tapN + " taps, " + tapBad + " off, " + tapMis + " count mismatches");
+  const gcAll = T.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, all: true, tfs: ["4H"] });
+  ok(gcAll.signals.length && gcAll.signals.every((x) => x.real != null && x.real <= x.taps && x.real === x.chart.taps.filter((q) => !q.near).length), "each line carries its real touches (wicks that reached the line), matching the chart's solid dots");
   ok(!tapNearBad && tapNear > 0 && tapNear < tapN, "taps are marked near miss only when the wick stopped more than 0.1 ATR short of the line", tapNear + " near of " + tapN + ", " + tapNearBad + " wrong");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
@@ -611,6 +613,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   const ebox = await page.locator(".oc").first().textContent();
   ok(/Estimated price now: ~\$[\d,.]+ \(~\$[\d,]+ per contract\) \+\$[\d,.]+ since the quote, stock \$/.test(ebox), "the contract shows an estimated price now when the stock has moved since the quote", ebox.slice(0, 200));
   await page.click("[data-opt]");
+  const badges = await page.evaluate(() => [touchBadge({ taps: 3, real: 3 }), touchBadge({ taps: 3, real: 2 }), touchBadge({ taps: 4, real: 1 })]);
+  ok(/3 real touches ✓/.test(badges[0]) && /tok/.test(badges[0]) && /2 touches \+ 1 near/.test(badges[1]) && /tnear/.test(badges[1]) && /1 touch \+ 3 near/.test(badges[2]), "badge: green \"3 real touches ✓\", amber \"2 touches + 1 near\"", badges.join(" "));
+  ok((await page.locator("#out .tag.tok, #out .tag.tnear").count()) > 0, "the real-touch badge shows on the cards");
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }

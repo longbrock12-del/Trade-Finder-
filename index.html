@@ -97,6 +97,7 @@ h1::before{content:"▍";color:var(--ac);margin-right:4px}
 h2{color:var(--ac);font-family:"JetBrains Mono",monospace}
 .ap{background:rgba(224,162,42,.14);color:var(--ac)}.new{background:var(--ac);color:#120c00}
 input::placeholder{color:#55665c}
+.tag.tok{background:rgba(47,212,122,.14);color:var(--gd)}.tag.tnear{background:rgba(224,162,42,.14);color:var(--warn)}
 </style></head>
 <body><div class="w">
 <header>
@@ -365,7 +366,7 @@ function linesBlock(m, s, k) {
 function checks(s) {
   const c = s.checks || {};
   const it = (ok, t) => '<span class="' + (ok ? "ok" : "warn") + '">' + (ok ? "✓" : "✗") + " " + t + "</span>";
-  return '<div class="ck">' + it(c.taps, s.taps + " taps (3+)") + it(true, "6+ candles apart") + it(c.angle, s.angle + "° (under 45°)") + it(c.history, s.days + " days (3+ weeks)") + "</div>";
+  return '<div class="ck">' + (s.real != null ? touchBadge(s) : "") + it(c.taps, s.taps + " taps (3+)") + it(true, "6+ candles apart") + it(c.angle, s.angle + "° (under 45°)") + it(c.history, s.days + " days (3+ weeks)") + "</div>";
 }
 
 // Option contracts for live stock callouts (calls for longs, puts for shorts). Loaded when asked.
@@ -440,6 +441,15 @@ function sizeLine(m, s, short) {
   return '<div class="note">Size: <b>' + n + " " + unit + (n > 1 ? "s" : "") + "</b>, risking about $" + num(n * per, 0) + " (" + pct + "% of $" + num(acct, 0) + " = $" + num(budget, 0) + ")" + (m.kind === "stocks" ? ". With options, use the dollar risk, not the share count." : "") + "</div>";
 }
 
+// Real touches badge: green when 3+ wicks actually reached the line (lines she'd count), amber when some taps
+// were only near misses. x: a callout, watch line or look-up line with taps and real.
+function touchBadge(x, short) {
+  if (x.real == null || !x.taps) return "";
+  const near = x.taps - x.real;
+  if (short) return x.real >= 3 ? '<span class="tag tok" title="3+ wicks actually reached the line">' + x.real + " real ✓</span>" : '<span class="tag tnear" title="Some taps only came close to the line">' + x.real + " real</span>";
+  return x.real >= 3 ? '<span class="tag tok" title="3+ wicks actually reached the line">' + x.real + " real touches ✓</span>"
+    : '<span class="tag tnear" title="Some taps only came close to the line">' + x.real + " touch" + (x.real === 1 ? "" : "es") + (near ? " + " + near + " near" : "") + "</span>";
+}
 function card(m, s) {
   const k = keyOf(m, s), st = STATUS[s.status] || [s.status, "mu"], d = m.digits, isNew = window._fresh && window._fresh.has(k);
   const open = s.status === "open", res = open ? s.nowR : s.status === "closed" ? s.exitR : null, big = !!openCharts[k];
@@ -454,7 +464,7 @@ function card(m, s) {
       : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) + (s.exitHow ? " (" + esc(s.exitHow) + ")" : "") : "") + "</div>";
   // Collapsed: a compact summary like the watch list. Tap the box for everything.
   if (!big) return '<article class="c cl sm" tabindex="0" data-k="' + esc(k) + '" aria-expanded="false">' +
-    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + '</span><span class="tag">' + esc(s.tf) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + (isNew ? '<span class="tag new">NEW</span>' : "") + "</div>" +
+    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + '</span><span class="tag">' + esc(s.tf) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + touchBadge(s, true) + (isNew ? '<span class="tag new">NEW</span>' : "") + "</div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + ' · <span class="tog">Details ▾</span></div></div>' +
     status.replace('style="font-size:15px"', "") + infoLine(m, true) +
     '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s, true) + "</article>";
@@ -586,7 +596,7 @@ function watchCard(m, w) {
   const soon = soonAplus(w), up = w.kind.startsWith("rising");
   // Stocks trade breaks only; futures trade breaks and, with the trend, bounces.
   const plan = m.kind === "stocks" ? (up ? "Close below = short (break)" : "Close above = long (break)") : up ? "Close below = short · tag and hold = long (with the trend)" : "Close above = long · tag and reject = short (with the trend)";
-  return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" +
+  return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" + touchBadge(w) +
     (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
@@ -623,7 +633,7 @@ function lookBox() {
   if (looked.loading) return h + '<article class="c wc"><div class="note"><span class="sp"></span> Loading ' + esc(show(looked.sym)) + "…</div></article>";
   if (looked.error) return h + '<article class="c wc"><div class="note bad">' + esc(looked.error) + '</div><button class="btn" data-lookx="1">Close</button></article>';
   const m = looked.m, L = m.look, s = { tf: "4H", chart: L.chart, status: "watch", entry: null, stop: null, checks: L.checks, taps: L.taps, angle: L.angle, days: L.days }, k = "L" + m.sym;
-  return h + '<article class="c wc">' + top + '<span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + '/4</span></div><b class="wp">' + num(m.price, m.digits) + "</b></div>" +
+  return h + '<article class="c wc">' + top + '<span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" + touchBadge(L) + '</div><b class="wp">' + num(m.price, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (L.up ? "#1fa463" : "#d64545") + '"></i>Nearest: ' + (L.up ? "Rising " : "Falling ") + esc(L.lineTF) + " line at " + num(L.lineNow, m.digits) + "</span><span>" + away(m, L) + "</span></div>" +
     infoLine(m) + checks(s) + chart(m, s) + linesBlock(m, s, k) +
     '<button class="btn" data-lookx="1" style="width:100%;margin-top:8px">Close</button></article>';
@@ -672,7 +682,7 @@ function nearCard(m) {
   const ok = L.passed >= 3 && ck.taps && L.days >= 7;
   const why = ok ? "Passes her checklist, just not close to price yet." : "Doesn't pass her checklist yet, so it wouldn't make a callout.";
   const plan = up ? "Close below = short · tag and hold = long (with the trend)" : "Close above = long · tag and reject = short (with the trend)";
-  let h = '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">4H</span><span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" +
+  let h = '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">4H</span><span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" + touchBadge(L) +
     '</div><b class="wp">' + num(L.lineNow, d) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(L.lineTF) + " line</span><span>" + away(m, L) + "</span></div>" +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
