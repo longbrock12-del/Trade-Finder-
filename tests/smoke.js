@@ -27,7 +27,7 @@ let amzWChart = null; // AMZN with watch-line charts, for the page test
 const EARN = { earnings: { AMZN: { date: "2026-11-12", when: "after close" } } }; // AMZN reports the day after the saved data
 let NEWS = { events: [] }; // filled by the news check, then served to the page tests // the AMZN data was saved later (Nov 10 2026) // when the saved data was taken (Nov 9 2026, 5:48 PM New York), so the forming candle stays forming
 
-const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", AAPL: "AAPL", "MGC=F": "GC", "MCL=F": "CL" }; // micros trade at the full-size price
+const YF = { "PL=F": "PL", "CL=F": "CL", "GC=F": "GC", "YM=F": "YM", TEST: "TEST", AAPL: "AAPL", "MGC=F": "GC", "MCL=F": "CL", "SI=F": "PL", "HG=F": "YM" }; // no silver/copper data saved: platinum and Dow stand in (the micros fall back to these full-size names) // micros trade at the full-size price
 // A fake Yahoo: hourly or daily saved bars for the symbols above, 404 for anything else.
 function fakeYahoo(map) {
   return async (u) => {
@@ -204,8 +204,8 @@ async function scannerTests() {
   ok(holdN > 10 && !holdBad, "a tap only counts if the next 2 candles hold the line (crude 4-hour: " + noHold + " trades without the rule, " + withHold + " with)", holdN + " taps, " + holdBad + " broke right after");
   ok(!tapNearBad && tapNear > 0 && tapNear < tapN, "taps are marked near miss only when the wick stopped more than 0.1 ATR short of the line", tapNear + " near of " + tapN + ", " + tapNearBad + " wrong");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
-  ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());
-  ok(def.body.markets[0].pointValue === 10 && def.body.markets[1].pointValue === 100, "micro contract values: gold $10, crude $100 per 1.00");
+  ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F,SIL=F,MHG=F" && def.body.markets.every((m) => m.kind === "futures" && !m.error), "default futures are Micro Gold, Crude, Silver and Copper (falling back to the full-size prices if Yahoo has no micro data)", def.body.markets.map((m) => m.sym + (m.error ? " " + m.error : "")).join());
+  ok(def.body.markets.map((m) => m.pointValue).join() === "10,100,1000,2500", "micro contract values: gold $10, crude $100, silver $1,000, copper $2,500 per 1.00", def.body.markets.map((m) => m.pointValue).join());
   ok(JSON.stringify(M.find((m) => m.sym === "MGC=F").signals.map((x) => x.t)) === JSON.stringify(M.find((m) => m.sym === "GC=F").signals.map((x) => x.t)), "Micro Gold callouts match gold's chart");
   const t0 = Date.now(), a1 = scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }), ms = Date.now() - t0;
   ok(JSON.stringify(a1.signals) === JSON.stringify(scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }).signals), "same data gives the same callouts");
@@ -412,7 +412,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
   ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
-  ok(asked.length && asked[0].includes("s=MGC=F,MCL=F") && asked[0].includes("tf=4H"), "page asks for Micro Gold and Micro Crude on the 4-hour chart", asked[0]);
+  ok(asked.length && asked[0].includes("s=MGC=F,MCL=F,SIL=F,MHG=F") && asked[0].includes("tf=4H"), "page asks for Micro Gold, Crude, Silver and Copper on the 4-hour chart", asked[0]);
   ok((await page.locator("#tfSw").count()) === 0 && !/1-hour|Both/.test(await page.textContent("#mine")) && !/4-hour chart/.test(await page.locator(".trk").textContent()), "no chart switch: the 4-hour chart is just the standard (not shown)");
   const syms = await page.locator(".cl .sym").allTextContents();
   ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));

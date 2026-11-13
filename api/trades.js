@@ -1,9 +1,11 @@
-// Trade Finder - GET /api/trades?s=MGC=F,MCL=F,AMD   (no s: the two micro futures)
+// Trade Finder - GET /api/trades?s=MGC=F,MCL=F,AMD   (no s: the micro futures below)
 // Pulls 6 months of hourly and 10 years of daily bars per symbol from Yahoo Finance and runs the top-down
 // Tori Trades trendline scanner (api/_trendlines.js). Cached 5 minutes at Vercel's edge.
 const { scan } = require("./_trendlines.js");
 
-const FUTURES = ["MGC=F", "MCL=F"]; // Micro Gold and Micro Crude only. Stocks come from api/scan.js.
+const FUTURES = ["MGC=F", "MCL=F", "SIL=F", "MHG=F"]; // Micro Gold, Crude, Silver and Copper. Stocks come from api/scan.js.
+// A micro trades at the same price as its full-size contract, so if Yahoo has no data for the micro, use the full one.
+const FULL = { "MGC=F": "GC=F", "MCL=F": "CL=F", "SIL=F": "SI=F", "MHG=F": "HG=F" };
 const MAX = 24;
 const SYM = /^[A-Z0-9^][A-Z0-9.=^-]{0,14}$/;
 
@@ -34,8 +36,11 @@ async function chart(sym, interval = "60m", range = "6mo") {
 // (the monthly, weekly and daily lines).
 // hourRange (tests only): a longer replay, e.g. "2y" (Yahoo keeps about 730 days of hourly candles).
 async function both(sym, hourRange = "6mo") {
-  const hourly = hourRange === "6mo" ? chart(sym) : chart(sym, "60m", hourRange).catch(() => chart(sym, "60m", "729d"));
-  return Promise.all([hourly, chart(sym, "1d", "10y")]);
+  const get = (x) => {
+    const hourly = hourRange === "6mo" ? chart(x) : chart(x, "60m", hourRange).catch(() => chart(x, "60m", "729d"));
+    return Promise.all([hourly, chart(x, "1d", "10y")]);
+  };
+  try { return await get(sym); } catch (e) { if (FULL[sym]) return get(FULL[sym]); throw e; }
 }
 
 // ?tf=4H (default), 1H or both: which chart callouts come from.

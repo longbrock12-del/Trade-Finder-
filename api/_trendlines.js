@@ -51,7 +51,8 @@ const ZOOM = 500;         // daily candles (about 2 years) for the zoomed-out ch
 // Candles per trading day, for each chart: futures trade ~23 hours, stocks 6.5.
 const PER_DAY = { futures: { "4H": 6, "1H": 23 }, stocks: { "4H": 2, "1H": 7 } };
 // Dollars per 1.00 move for one contract, so callouts can show risk per contract.
-const POINT_VALUE = { "MGC=F": 10, "MCL=F": 100, "GC=F": 100, "CL=F": 1000 };
+// $ per 1.00 move, per contract. Micros: gold 10 oz, crude 100 bbl, silver 1,000 oz, copper 2,500 lb.
+const POINT_VALUE = { "MGC=F": 10, "MCL=F": 100, "SIL=F": 1000, "MHG=F": 2500, "GC=F": 100, "CL=F": 1000, "SI=F": 5000, "HG=F": 25000 };
 
 const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" });
 function et(ts) {
@@ -625,7 +626,7 @@ function scanCore(hChart, dChart, opts = {}) {
   });
   // Look up (/api/trades?look=1, one market): the 4-hour chart around whichever of the two newest lines is nearer
   // to price, with every line and its taps, whether or not it's on the watch list.
-  // Futures always get this too (without the chart): the watch list always shows MGC and MCL with their nearest line.
+  // Futures always get this too (without the chart): the watch list always shows every futures market with its nearest line.
   let look = null;
   if ((opts.lookup || isFuture) && S["4H"]) {
     const s = S["4H"], i = s.last + 1, ends = [[s.act[i].up, true], [s.act[i].dn, false]].filter(([ln]) => ln);

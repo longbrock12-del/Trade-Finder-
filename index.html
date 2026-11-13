@@ -125,7 +125,7 @@ input::placeholder{color:#55665c}
 </div>
 <script>
 "use strict";
-const DEF = { futures: ["MGC=F", "MCL=F"], stocks: [] }; // stocks: the server scans ~110 big names (api/scan.js)
+const DEF = { futures: ["MGC=F", "MCL=F", "SIL=F", "MHG=F"], stocks: [] }; // stocks: the server scans ~110 big names (api/scan.js)
 const REFRESH = 5 * 60 * 1000;
 const store = {
   get(k, d) { try { const v = localStorage.getItem("tl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -136,7 +136,7 @@ let extra = store.get("extra", []), removed = store.get("removed", []);
 const $ = (id) => document.getElementById(id);
 // Yahoo marks futures with "=F" (MGC=F). Show them the way brokers do (MGC); requests keep the Yahoo name.
 const show = (sym) => String(sym).replace(/=F$/, "");
-const FUT_ROOTS = ["MGC", "MCL", "GC", "CL", "SI", "SIL", "HG", "PL", "NG", "ES", "MES", "NQ", "MNQ", "YM", "MYM", "RTY", "M2K", "ZB", "ZN", "ZC", "ZS", "ZW"];
+const FUT_ROOTS = ["MGC", "MCL", "GC", "CL", "SI", "SIL", "HG", "MHG", "PL", "NG", "ES", "MES", "NQ", "MNQ", "YM", "MYM", "RTY", "M2K", "ZB", "ZN", "ZC", "ZS", "ZW"];
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const etFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const when = (t) => etFmt.format(new Date(t * 1000)) + " ET";
@@ -666,7 +666,7 @@ function watchList() {
   const usd = ({ m, w }) => Math.abs(m.price - w.lineNow) * (m.pointValue || 1);
   rows.sort((a, b) => usd(a) - usd(b));
   const top = kind === "stocks" ? rankBox() : ""; // stocks that respect trendlines, before anything is a callout
-  // Futures: MGC and MCL always show. Any without a callout-quality line near price get a box with their nearest line.
+  // Futures: every futures market (MGC, MCL, SIL, MHG) always shows. Any without a callout-quality line near price get a box with their nearest line.
   const nearOnes = kind === "futures" ? data.markets.filter((m) => !m.error && m.kind === "futures" && m.look && !(m.watch || []).length) : [];
   const nearHtml = nearOnes.length ? '<h2>Nearest line (not near enough yet)</h2>' + nearOnes.map(nearCard).join("") : "";
   if (!rows.length) return top + (nearHtml || '<div class="c empty">No callout-quality trendlines near price right now.</div>');
@@ -714,7 +714,7 @@ function renderRules() {
   const A = ' <span class="tag ok">automatic</span>', Y = ' <span class="tag">you</span>';
   return '<div class="c rules"><div class="st">Her system, step by step</div><ol>' +
     "<li><b>Top-down analysis</b>" + A + ". Start on the <b>monthly</b> chart. The first rising line starts at the <b>lowest point</b>, angled up, never flat. Each next line starts where the last one ended (\"previous point B is new point A\"), catches as many touches as possible, and price can't have poked through it, wicks included. Falling lines start the same way from the <b>highest point</b>. Then step down through weekly, daily and 4-hour, adding steeper lines near price. Green = rising, red = falling. Tap <b>📈 Show chart</b> on a watch box, or type any symbol in <b>Look up</b>, to see every line and its taps.</li>" +
-    "<li><b>Wait for price to come to you</b>" + Y + ". She sets an alert on her lines and walks away. Turn on <b>🔔 Alerts</b> and tap <b>Alert me at this line</b> on a watch box to get a heads-up when price reaches it. The Watch list always shows MGC and MCL with their nearest line, and the stocks closest to a line (fewest dollars away first).</li>" +
+    "<li><b>Wait for price to come to you</b>" + Y + ". She sets an alert on her lines and walks away. Turn on <b>🔔 Alerts</b> and tap <b>Alert me at this line</b> on a watch box to get a heads-up when price reaches it. The Watch list always shows the futures (Micro Gold, Crude, Silver and Copper) with their nearest line, and the stocks closest to a line (fewest dollars away first).</li>" +
     "<li><b>Top-down trend</b>" + A + ": her look at the Weekly chart (or the Daily if the Weekly is unclear) sets the main direction. Higher highs and higher lows = uptrend, lower highs and lower lows = downtrend, anything else = no clear trend (ranging markets give few valid setups). Bounces only trade with the trend: long bounces in an uptrend, short bounces in a downtrend, none when it's unclear. Breaks don't need it: a break signals a trend reversal. Watch boxes show the trend.</li>" +
     "<li><b>Futures and stocks</b>" + A + ": futures (what she trades) use her full strategy, all three setups. Stocks use her strategy with breaks only: on 112 stocks over 6 months breaks won 34% of the time, break &amp; retest 20% and bounces 16%.</li>" +
     "<li><b>Pick the setup</b>" + A + " (she calls them playbooks):<br><b>Trend line break</b>, her core setup: a candle <i>closes</i> through the newest line, and you trade the direction of the break. Breaking a rising line = short, breaking a falling line = long.<br><b>Break &amp; retest</b>: price breaks the line, pulls back and touches it from the other side, and that candle closes still respecting it. Then enter.<br><b>Bounce</b>: price tags the line and holds. That line is both the action and safety line.<br><b>Entry, every setup</b>: only on a 4-hour candle <b>close</b>, never on a wick. A break closes through the line; a retest or bounce closes back on the right side of it. That close is the last check before Trade Finder sends the alert to get in.</li>" +
