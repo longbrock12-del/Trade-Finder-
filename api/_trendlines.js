@@ -482,9 +482,11 @@ function scanCore(hChart, dChart, opts = {}) {
   const sym = opts.sym || meta.symbol;
   const isFuture = (meta.instrumentType || "").toUpperCase() === "FUTURE" || /=F$/.test(sym || "");
   const daily = hourly(dChart).bars;
+  // The 1-hour chart is only built when asked for (?tf=1H|both): the site runs on the 4-hour chart, and
+  // building it was about a quarter of every scan's work.
   const sets = {
     "4H": fourHour(hb, isFuture, now),
-    "1H": oneHour(hb, isFuture, now),
+    "1H": !opts.tfs || opts.tfs.includes("1H") ? oneHour(hb, isFuture, now) : [],
   };
   if (sets["4H"].length < 60) return { sym, error: "not enough price history" };
   const live = hb[hb.length - 1].c, ref = sets["4H"][sets["4H"].length - 1].c;
