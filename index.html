@@ -108,7 +108,6 @@ input::placeholder{color:#55665c}
 <div class="stick" id="stick"><div class="tabs" role="tablist">
   <button class="on" data-tab="calls" role="tab">Callouts</button>
   <button data-tab="watch" role="tab">Watch list</button>
-  <button data-tab="journal" role="tab">Journal</button>
   <button data-tab="rules" role="tab">Rules</button>
 </div>
 <div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button></div></div>
@@ -487,7 +486,7 @@ function card(m, s) {
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
     (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k)) +
-    journalBtn(m, s, k) + optionsBlock(m, s, k) + "</article>";
+    optionsBlock(m, s, k) + "</article>";
 }
 
 // The box at the top of Callouts: what to get into right now, for the chosen market type.
@@ -710,44 +709,6 @@ async function loadNearChart(sym) {
   render();
 }
 
-// Journal (her rule: journal every trade), saved on this phone. Each entry: the callout as you took it, and
-// your exit when you close it.
-const jGet = () => store.get("journal", []), jSet = (j) => store.set("journal", j);
-const SETUP_KIND = (setup) => (setup === "bounce" ? "Bounces" : setup === "break & retest" ? "Break & retest" : "Breaks");
-function journalBtn(m, s, k) {
-  const inJ = jGet().some((x) => x.key === k);
-  return '<div class="ob"><button class="btn' + (inJ ? " on" : "") + '" data-took="' + esc(k) + '"' + (inJ ? " disabled" : "") + ">" + (inJ ? "In your journal ✓" : "I took this trade") + "</button></div>";
-}
-function took(k) {
-  if (!data) return;
-  data.markets.forEach((m) => (m.signals || []).forEach((s) => {
-    if (keyOf(m, s) !== k || jGet().some((x) => x.key === k)) return;
-    const j = jGet();
-    j.unshift({ key: k, sym: m.sym, kind: m.kind, digits: m.digits, pv: m.pointValue || null, dir: s.dir, tf: s.tf, setup: s.setup, grade: s.grade,
-      entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), size: null, exit: null, closedAt: null });
-    jSet(j);
-  }));
-}
-function renderJournal() {
-  const j = jGet(), R = (x) => (x.exit == null ? null : ((x.dir === "long" ? 1 : -1) * (x.exit - x.entry)) / x.risk);
-  if (!j.length) return '<div class="c empty">No trades yet. Open a callout and tap <b>I took this trade</b> to start your journal.</div>';
-  const done = j.filter((x) => x.exit != null), rs = done.map(R), tot = rs.reduce((a, r) => a + r, 0);
-  const by = {};
-  done.forEach((x, i) => { const k = SETUP_KIND(x.setup), b = (by[k] = by[k] || { n: 0, w: 0, r: 0 }); b.n++; if (rs[i] > 0) b.w++; b.r += rs[i]; });
-  const head = '<div class="c trk"><div class="st">Your journal</div>' + (done.length
-    ? '<div class="big ' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + '%</div><div class="note" style="margin-top:0">' + done.length + " closed trade" + (done.length > 1 ? "s" : "") + " · " + Math.round((100 * rs.filter((r) => r > 0).length) / done.length) + "% wins · " + (j.length - done.length) + " open</div>" +
-      '<div class="wl" style="margin-top:8px"><div class="st">By setup</div>' + Object.keys(by).map((k) => "<div>" + k + ": " + by[k].n + " · " + Math.round((100 * by[k].w) / by[k].n) + '% wins · <b class="' + (by[k].r >= 0 ? "ok" : "bad") + '">' + (by[k].r >= 0 ? "+" : "−") + Math.abs(by[k].r).toFixed(1) + "%</b></div>").join("") + "</div>"
-    : '<div class="note">' + j.length + " open trade" + (j.length > 1 ? "s" : "") + ". Enter your exit price when you close one.</div>") + "</div>";
-  return head + j.map((x, i) => {
-    const r = R(x), d = x.digits || 2, money = x.pv && r != null ? " · " + (r >= 0 ? "+" : "−") + "$" + num(Math.abs(r * x.risk * x.pv), 0) + " per contract" : "";
-    return '<article class="c wc"><div class="top"><div><span class="sym">' + esc(show(x.sym)) + '</span> <span class="tag ' + x.dir + '">' + x.dir.toUpperCase() + '</span><span class="tag">' + esc(x.tf) + '</span><span class="tag">' + esc(x.setup) + '</span><span class="tag">' + esc(x.grade) + "</span></div>" +
-      (r != null ? '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r >= 0 ? "+" : "") + r.toFixed(1) + "%</b>" : '<span class="tag">open</span>') + "</div>" +
-      '<div class="wl2"><span>Entry ' + num(x.entry, d) + " · stop " + num(x.stop, d) + "</span><span>" + new Date(x.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + "</span></div>" +
-      (x.exit != null ? '<div class="wl3">Exit ' + num(x.exit, d) + money + "</div>"
-        : '<form class="bar jx" data-ji="' + i + '"><input inputmode="decimal" placeholder="Exit price" aria-label="Exit price" style="text-transform:none"><button class="btn">Close trade</button></form>') +
-      '<button class="btn jdel" data-jdel="' + i + '" style="border:0;background:none;padding:2px 0;font-size:12px;color:var(--mu)">Remove</button></article>';
-  }).join("");
-}
 
 function renderRules() {
   const A = ' <span class="tag ok">automatic</span>', Y = ' <span class="tag">you</span>';
@@ -765,7 +726,7 @@ function renderRules() {
     "<li><b>Check the cautions</b>" + Y + " before you get in. Cards show what's coming, on one line, and how much it usually moves the market: <b>⚠ Big</b> (CPI, the Fed, jobs, a stock's earnings, the crude oil report on crude) or <b>⚠ Moderate</b> (smaller US releases). Big news can blow straight through a trendline, so think twice about entering right before it.</li>" +
     "<li><b>Redraw daily</b>" + A + ": after price breaks a line, move point B to the new high or low so nothing pokes through. Trade Finder redraws every scan.</li>" +
     "<li><b>Commit to one timeframe</b>" + A + ": she picks one chart for entries and exits and doesn't jump between them. Trade Finder uses the 4-hour chart.</li>" +
-    "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. Tap <b>I took this trade</b> on a callout and it goes in the Journal tab, split by setup.</li>" +
+    "<li><b>Journal every trade</b>" + Y + " and tag the setup: break, break &amp; retest, or bounce. Compare them after 30–50 trades. Only size up when your numbers show you're consistent. Use any journal you like (her playbook is on TradeZella, or a simple spreadsheet), and note whether each line had 3 real touches.</li>" +
     "<li><b>Practice first</b>" + Y + ": paper trade with a realistic account size until it's consistent.</li></ol>" +
     '</div>';
 }
@@ -785,9 +746,8 @@ function render() {
       (bad.length ? ' · <span class="warn">no data for ' + esc(bad.map((m) => show(m.sym)).join(", ")) + "</span>" : "") + (lastErr ? ' · <span class="bad">refresh failed</span>' : "");
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
   const out = $("out"), typing = document.activeElement && document.activeElement.id === "lookIn" ? document.activeElement : null, typed = typing ? [typing.value, typing.selectionStart] : null;
-  $("kinds").style.display = tab === "rules" || tab === "journal" ? "none" : "";
+  $("kinds").style.display = tab === "rules" ? "none" : "";
   if (tab === "rules") out.innerHTML = renderRules();
-  else if (tab === "journal") out.innerHTML = renderJournal();
   else if (!data) out.innerHTML = lastErr ? '<div class="c err empty">Prices didn\'t load. <button class="btn" id="retry">Try again</button></div>' : SKELETON;
   else {
     // While the stock scan runs: a note on the Stocks tab, and placeholders if no stocks are showing yet.
@@ -804,15 +764,13 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-nch],[data-lookx],[data-wall],[data-took],[data-jdel],[data-lal],.op,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-nch],[data-lookx],[data-wall],[data-lal],.op,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.lal) {
     const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
     data.markets.forEach((m) => { if (m.sym === sym) (m.watch || []).forEach((w) => { if (w.tf === tf2 && w.key === key) lineAlert(m, w); }); });
     return;
   }
-  if (t.dataset.took) { took(t.dataset.took); render(); return; }
-  if (t.dataset.jdel != null) { if (confirm("Remove this trade from your journal?")) { const j = jGet(); j.splice(Number(t.dataset.jdel), 1); jSet(j); render(); } return; }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.lookx) { looked = null; render(); return; }
   if (t.dataset.nch) { const k = "N" + t.dataset.nch; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].chart) { wcharts[k].shown = true; render(); } else loadNearChart(t.dataset.nch); return; }
@@ -853,15 +811,6 @@ document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key ==
     y0 = null; dy = 0;
   });
 })();
-document.addEventListener("submit", (e) => {
-  const f = e.target.closest(".jx");
-  if (!f) return;
-  e.preventDefault();
-  const v = parseFloat(String(f.querySelector("input").value).replace(/[$,]/g, ""));
-  if (!(v > 0)) return;
-  const j = jGet(), x = j[Number(f.dataset.ji)];
-  if (x) { x.exit = v; x.closedAt = Date.now(); jSet(j); render(); }
-});
 $("sizeF").addEventListener("submit", (e) => {
   e.preventDefault();
   const a = parseFloat(String($("acct").value).replace(/[$,]/g, "")), p = parseFloat($("riskP").value);
@@ -940,6 +889,7 @@ fetch("/api/push").then((r) => r.json()).then((j) => {
   // Phones that picked 1-hour or Both before: back to the 4-hour chart, alerts included.
   if (store.get("tf", "4H") !== "4H") { store.set("tf", "4H"); if (store.get("push", false)) pushSub().then((sub) => sub && post({ action: "subscribe", sub: sub.toJSON(), prefs: { tf: "4H" } })).catch(() => {}); }
 }).catch(() => {});
+try { localStorage.removeItem("tl:journal"); } catch (e) { /* the old journal is gone */ }
 render(); load();
 </script>
 </body></html>

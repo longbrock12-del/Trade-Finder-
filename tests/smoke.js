@@ -407,21 +407,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("a[href*='tradingview.com']").count()) === 0, "no TradingView links on the cards");
   const mgc = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
   ok((await page.locator("[data-tvl], .tvp, textarea").count()) === 0 && !/Lines for TradingView/.test(await page.textContent("#out")), "no Lines for TradingView panel on the cards");
-  // Journal: take this trade, close it with an exit price, see the result and stats, remove it.
-  await mgc.locator("[data-took]").click();
-  ok((await mgc.locator("[data-took]").textContent()) === "In your journal ✓", "\"I took this trade\" adds it to the journal");
-  await page.click("[data-tab=journal]");
-  ok((await page.locator("#out article.wc").count()) === 1 && (await page.locator("#kinds").isHidden()) && /1 open trade/.test(await page.locator("#out").textContent()), "Journal tab lists the open trade (no Futures/Stocks chips there)");
-  const mgcSig = body.markets.find((m) => m.sym === "MGC=F").signals[0];
-  const jEntry = mgcSig.entry, jRisk = mgcSig.risk, jExit = mgcSig.dir === "long" ? jEntry + 2 * jRisk : jEntry - 2 * jRisk;
-  await page.fill("#out .jx input", String(jExit)); await page.click("#out .jx button");
-  const jTxt = await page.locator("#out").textContent();
-  ok(/\+2\.0%/.test(jTxt) && /1 closed trade · 100% wins · 0 open/.test(jTxt) && /Bounces: 1 · 100% wins · \+2\.0%|Breaks: 1 · 100% wins · \+2\.0%|Break & retest: 1 · 100% wins · \+2\.0%/.test(jTxt) && /per contract/.test(jTxt),
-    "closing it with an exit price shows +2%, win rate, results by setup and $ per micro contract", jTxt.slice(0, 260));
-  ok((await page.evaluate(() => JSON.parse(localStorage.getItem("tl:journal")).length)) === 1, "journal is saved on the phone");
-  page.once("dialog", (dg) => dg.accept());
-  await page.click("#out [data-jdel]");
-  ok(/No trades yet/.test(await page.locator("#out").textContent()), "a journal entry can be removed");
+  ok((await page.locator("[data-tab=journal], [data-took]").count()) === 0, "no Journal tab or \"I took this trade\" button");
   await page.click("[data-tab=calls]");
   await mgc.locator(".chart svg").click();
   ok((await mgc.getAttribute("aria-expanded")) === "true", "tapping the chart doesn't close the box");
@@ -441,11 +427,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   ok(!(await page.locator("#onlyGood").count()), "no stocks filter checkbox (the Respects trendlines list replaces it)");
   await page.click("[data-k=futures]");
-  await page.click("[data-k=stocks]"); await page.click("[data-tab=journal]");
-  ok(!(await page.locator("#mine").isVisible()), "the journal has no add-symbol/settings box at the bottom");
   await page.click("[data-tab=rules]");
   ok(!(await page.locator("#mine").isVisible()), "the rules tab has no add-symbol/settings box at the bottom");
-  await page.click("[data-tab=watch]");
+  await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const awayTxt = await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().locator(".wl2 span", { hasText: "away" }).first().textContent();
   const aw0 = body.markets.find((m) => m.sym === "AMZN"), wantAway = "$" + Math.abs(aw0.price - aw0.watch[0].lineNow).toFixed(2) + " away";
   let lookAsk = "";
