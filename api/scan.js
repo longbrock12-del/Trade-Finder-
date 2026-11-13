@@ -22,6 +22,9 @@ const UNIVERSE = [
   "BA", "CAT", "DE", "GE", "LMT", "RTX", "XOM", "CVX", "OXY", "SLB", "FDX", "UPS", "F", "GM", "RIVN", "T", "VZ", "CMCSA",
   "BABA", "PDD", "NIO",
 ];
+// Futures for the test (?market=futures): the metals, energy, index and bond futures traders like Tori watch.
+// Full-size contracts (the micros trade at the same prices, so testing both would count every trade twice).
+const FUT_TEST = ["GC=F", "SI=F", "HG=F", "PL=F", "CL=F", "NG=F", "ES=F", "NQ=F", "YM=F", "RTY=F", "ZB=F", "ZN=F"];
 const POOL = 6; // stocks at a time (2 Yahoo requests each)
 
 function send(res, status, secs, obj) {
@@ -43,23 +46,29 @@ async function handler(req, res) {
   // ?setups=break,retest,bounce (or all): which of her setups stocks take (the site: break).
   const st = sp.get("setups"), setups = st == null ? undefined : st === "all" ? null : st.split(",").filter((x) => ["break", "retest", "bounce"].includes(x));
   const rules = touch != null || gap != null || short != null || hold != null || trendOff || trendAll || onceOn || setups !== undefined ? { touch, gap: gap == null ? null : Math.round(gap), short, hold: hold == null ? null : Math.round(hold), ...(trendOff ? { trend: false } : trendAll ? { trend: true } : {}), ...(onceOn ? { once: true } : {}), ...(setups !== undefined ? { setups } : {}) } : null;
+  // Test mode replays 2 years by default (?years=0.5 / 1 / 2); ?market=futures tests a basket of futures instead of the stocks.
+  const yr = sp.get("years"), years = yr == null ? 2 : Number(yr), range = { 0.5: "6mo", 1: "1y", 2: "2y" }[years];
+  const futTest = sp.get("market") === "futures";
+  if ((rules || yr != null || futTest) && !range) return send(res, 400, 0, { error: "years must be 0.5, 1 or 2" });
+  const testMode = !!(rules || yr != null || futTest), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? range : "6mo";
   if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles)" });
   let next = 0;
   async function worker() {
-    while (next < UNIVERSE.length) {
-      const sym = UNIVERSE[next++];
+    while (next < list.length) {
+      const sym = list[next++];
       try {
-        const m = { ...scan(...(await both(sym)), { sym, tfs, rules }), sym };
+        const m = { ...scan(...(await both(sym, hourRange)), { sym, tfs, rules: rules || undefined }), sym };
         if (m.error) { failed.push(sym); continue; }
         if (m.record) recs.push({ sym, ...m.record });
         if (m.signals.length || m.watch.length) found.push(m);
       } catch (e) { failed.push(sym); }
     }
   }
-  await Promise.all(Array.from({ length: POOL }, worker));
-  const scanned = UNIVERSE.length - failed.length;
+  await Promise.all(Array.from({ length: testMode ? 10 : POOL }, worker));
+  const scanned = list.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
-  if (rules) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), test: { touch: rules.touch == null ? 0.3 : rules.touch, gap: rules.gap == null ? 6 : rules.gap, short: rules.short == null ? 0.3 : rules.short, hold: rules.hold == null ? 2 : rules.hold, trend: rules.trend === undefined ? "bounce" : rules.trend, once: !!rules.once, setups: rules.setups === undefined ? ["break"] : rules.setups || "all" }, scanned, record: combine(recs) });
+  const R = rules || {};
+  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["break"]) : R.setups || "all" }, scanned, record: combine(recs) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 

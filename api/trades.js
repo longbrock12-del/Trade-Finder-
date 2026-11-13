@@ -32,8 +32,10 @@ async function chart(sym, interval = "60m", range = "6mo") {
 
 // Top-down needs both: 6 months of hourly candles (4-hour and 1-hour charts) and 10 years of daily ones
 // (the monthly, weekly and daily lines).
-async function both(sym) {
-  return Promise.all([chart(sym), chart(sym, "1d", "10y")]);
+// hourRange (tests only): a longer replay, e.g. "2y" (Yahoo keeps about 730 days of hourly candles).
+async function both(sym, hourRange = "6mo") {
+  const hourly = hourRange === "6mo" ? chart(sym) : chart(sym, "60m", hourRange).catch(() => chart(sym, "60m", "729d"));
+  return Promise.all([hourly, chart(sym, "1d", "10y")]);
 }
 
 // ?tf=4H (default), 1H or both: which chart callouts come from.

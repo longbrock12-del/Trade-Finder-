@@ -236,6 +236,12 @@ async function scanTests() {
   const rt = await call("api/scan.js", "/api/scan?touch=0.15&gap=5", fakeYahoo((s) => (["NIO", "PDD"].includes(s) ? null : "AMZN")), AMZN_NOW * 1000);
   ok(rt.status === 200 && rt.body.test.touch === 0.15 && rt.body.test.gap === 5 && rt.body.record && !rt.body.markets && rt.body.scanned === U.length - 2, "/api/scan?touch=&gap= answers with just the test record of every stock", JSON.stringify(rt.body.test));
   ok((await call("api/scan.js", "/api/scan?touch=5", fakeYahoo(() => "AMZN"), AMZN_NOW * 1000)).status === 400, "out-of-range test settings are refused");
+  const asked2 = [], fy = fakeYahoo(() => "AMZN"), spy = async (u) => { asked2.push(decodeURIComponent(String(u))); return fy(u); };
+  const r2y = await call("api/scan.js", "/api/scan?years=2", spy, AMZN_NOW * 1000);
+  ok(r2y.status === 200 && r2y.body.years === 2 && r2y.body.market === "stocks" && asked2.some((u) => /interval=60m&range=2y/.test(u)) && r2y.body.record && !r2y.body.markets, "the test replays 2 years of hourly candles (?years=2, the default in test mode)", asked2.find((u) => /60m/.test(u)));
+  const rF = await call("api/scan.js", "/api/scan?market=futures", fakeYahoo(() => "GC"), NOW * 1000);
+  ok(rF.status === 200 && rF.body.market === "futures" && rF.body.scanned === 12 && rF.body.test.setups === "all", "?market=futures tests a basket of 12 futures with her full strategy", JSON.stringify({ s: rF.body.scanned, t: rF.body.test }));
+  ok((await call("api/scan.js", "/api/scan?years=3", fy, AMZN_NOW * 1000)).status === 400, "only 0.5, 1 or 2 years");
   console.log("Her filters (on, like the live site)");
   const DAYs = 86400, mkDaily = (f) => Array.from({ length: 400 }, (_, i) => { const t = 1700000000 + i * DAYs, m = f(i); return { t, o: m, h: m + 1, l: m - 1, c: m }; });
   const upT = TLM.trendSeries(mkDaily((i) => 100 + i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);

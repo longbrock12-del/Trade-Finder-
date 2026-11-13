@@ -2,7 +2,7 @@
   "framework": null,
   "functions": {
     "api/scan.js": {
-      "maxDuration": 60
+      "maxDuration": 120
     },
     "api/notify.js": {
       "maxDuration": 120
