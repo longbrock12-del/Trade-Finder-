@@ -267,8 +267,9 @@ async function scanTests() {
   ok(ep.length === 3 && ep.find((x) => x.sym === "CSCO").when === "after close" && ep.find((x) => x.sym === "BN").when === "before open" && ep.find((x) => x.sym === "BNT").when === "" && ep.every((x) => x.date === "2026-11-12"), "earnings calendar: only our stocks, with before open / after close", JSON.stringify(ep));
   ok(E.days(Date.UTC(2026, 10, 14, 15)).every((d) => ![0, 6].includes(new Date(d + "T12:00:00Z").getUTCDay())) && E.days(Date.UTC(2026, 10, 14, 15))[0] === "2026-11-16", "earnings: looks ahead 2 weeks of weekdays (New York dates)");
   ok(E.pick({}, "2026-11-12", new Set(["CSCO"])).length === 0, "earnings: a bad calendar day gives no rows (no crash)");
-  ok(nr.status === 200 && nr.body.events.map((e) => e.title).join("|") === "Core CPI m/m|CPI m/m|Crude Oil Inventories|PPI m/m" && nr.body.events.find((e) => e.crude).title === "Crude Oil Inventories",
-    "news keeps big US releases and the crude oil inventory report (marked crude-only)", nr.body.events.map((e) => e.title).join("|"));
+  ok(nr.status === 200 && nr.body.events.map((e) => e.title).join("|") === "Core CPI m/m|CPI m/m|Unemployment Claims|Crude Oil Inventories|PPI m/m" && nr.body.events.find((e) => e.crude).title === "Crude Oil Inventories" &&
+    nr.body.events.find((e) => e.title === "CPI m/m").level === "big" && nr.body.events.find((e) => e.title === "Unemployment Claims").level === "moderate" && nr.body.events.find((e) => e.crude).level === "big",
+    "news keeps big and moderate US releases (rated Big / Moderate) and the crude oil inventory report (crude-only, Big)", nr.body.events.map((e) => e.title).join("|"));
   const nf = await call("api/news.js", "/api/news", async () => ({ ok: false, status: 500 }));
   ok(nf.status === 200 && nf.body.events.length === 0, "if the calendar is down, the site just shows no news warnings");
   NEWS = nr.body;
@@ -380,7 +381,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl .gr", { hasText: "Stop order now (trailing)" }).count()) >= 1 && (await page.locator(".cl .note", { hasText: "just past the safety line" }).count()) >= 1, "live cards show the stop order to set, just past the safety line");
   const mgcTxt = await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent();
   ok(mgcTxt.includes("Opens 6:00 PM"), "Monday 5:48 PM: futures card says the market is in its daily break", mgcTxt.slice(0, 300));
-  ok(/⚠ Tue 8:30 AM: Core CPI m\/m \+1/.test(mgcTxt) && !/Crude Oil Inventories/.test(mgcTxt), "news warning for CPI tomorrow morning (crude report not shown on gold)");
+  ok(/⚠ Big: Tue 8:30 AM Core CPI m\/m \+1/.test(mgcTxt) && !/Crude Oil Inventories/.test(mgcTxt), "caution line: Big: CPI tomorrow morning, how many more, and no crude report on gold", mgcTxt.slice(0, 400));
+  const cauH = await page.locator(".cl .cau").first().evaluate((e) => [e.getBoundingClientRect().height, getComputedStyle(e).whiteSpace]);
+  ok(cauH[0] < 22 && cauH[1] === "nowrap", "the caution and the news are all on one line", cauH.join());
   const hrs = await page.evaluate(() => [
     ["Sat noon", new Date("2026-11-14T17:00:00Z")], ["Wed 10 AM", new Date("2026-11-11T15:00:00Z")], ["Wed 5:30 PM", new Date("2026-11-11T22:30:00Z")],
     ["Fri 5:30 PM", new Date("2026-11-13T22:30:00Z")], ["Tue 8 AM", new Date("2026-11-10T13:00:00Z")]].map(([n, d]) => n + ": " + (closedUntil("futures", d) || "open") + " / " + (closedUntil("stocks", d) || "open")));
@@ -456,7 +459,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.unroute("**/api/trades**look=1**");
   const amzT = body.markets.find((m) => m.sym === "AMZN").trend;
   ok(new RegExp(amzT && amzT.dir ? "Trend (↑ up|↓ down) \\((Weekly|Daily)\\)" : "No clear trend: no trades").test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "watch boxes show her top-down trend");
-  ok(/⚠ Earnings Thu, Nov 12 after close/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "stocks show an earnings warning (AMZN reports Thu after close)");
+  ok(/⚠ Big: Earnings Thu, Nov 12 after close/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AMZN$/ }) }).first().textContent()), "stocks show an earnings warning (AMZN reports Thu after close)");
   ok(!/Earnings/.test(await page.locator(".c", { has: page.locator(".sym", { hasText: /^AAPL$/ }) }).first().textContent().catch(() => "")), "no earnings warning when none is coming");
   ok(awayTxt.trim() === wantAway, "watch list shows the distance in price only (AMZN)", awayTxt + " vs " + wantAway);
   // Lines about to become A+ get a tag and sort right after A+ lines.

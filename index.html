@@ -98,6 +98,7 @@ h2{color:var(--ac);font-family:"JetBrains Mono",monospace}
 .ap{background:rgba(224,162,42,.14);color:var(--ac)}.new{background:var(--ac);color:#120c00}
 input::placeholder{color:#55665c}
 .tag.tok{background:rgba(47,212,122,.14);color:var(--gd)}.tag.tnear{background:rgba(224,162,42,.14);color:var(--warn)}
+.cau{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style></head>
 <body><div class="w">
 <header>
@@ -189,19 +190,23 @@ function infoLine(m, noTrend) { // noTrend: callout cards (a callout always goes
   if (m.trend && !noTrend) parts.push(m.trend.dir ? '<span class="' + (m.trend.dir === "up" ? "ok" : "bad") + '" title="Her top-down trend (Weekly, or Daily if the Weekly is unclear). Bounces only trade this way; breaks catch reversals.">Trend ' + (m.trend.dir === "up" ? "↑ up" : "↓ down") + " (" + m.trend.from + ")" + "</span>"
     : '<span class="warn" title="No clear trend on the Weekly or Daily: no bounce trades until one forms">No clear trend: no bounces</span>');
   if (c) parts.push('<span title="Market closed. New York time.">Opens ' + c + "</span>");
-  const ev = newsEvents.filter((e) => e.t >= now - 1800 && e.t <= now + 86400 && (!e.crude || crude));
-  if (ev.length) {
-    const at = ev[0].t <= now ? "just out" : new Date(ev[0].t * 1000).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
-    parts.push('<span class="warn" title="Big news can blow through trendlines">⚠ ' + esc(at) + ": " + esc(ev[0].title) + (ev.length > 1 ? " +" + (ev.length - 1) : "") + "</span>");
-  }
-  // Stocks: earnings in the next 2 weeks (a gap can jump the trendline; option prices drop right after).
+  // Cautions, all in one line: what's coming and how much it usually moves the market (Big / Moderate).
+  // News: the next 24 hours. Stocks: earnings in the next 2 weeks (always Big: a gap can jump the trendline,
+  // and option prices drop right after).
+  const cau = [], when = (t) => (t <= now ? "just out" : new Date(t * 1000).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }));
+  newsEvents.filter((e) => e.t >= now - 1800 && e.t <= now + 86400 && (!e.crude || crude)).forEach((e) => cau.push({ level: e.level || "big", t: e.t, text: when(e.t) + " " + e.title }));
   const er = m.kind === "stocks" && earnings[m.sym];
   if (er) {
-    const d = new Date(er.date + "T12:00:00-05:00"), days = Math.round((Date.parse(er.date + "T00:00:00-05:00") - Date.now()) / 86400000);
-    const lab = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" }) + (er.when ? " " + er.when : "");
-    parts.push('<span class="' + (days <= 3 ? "bad" : "warn") + '" title="Earnings can gap the stock through a trendline, and option prices drop right after">⚠ Earnings ' + esc(lab) + "</span>");
+    const d = new Date(er.date + "T12:00:00-05:00"), t = Date.parse(er.date + "T09:30:00-05:00") / 1000;
+    cau.push({ level: "big", t, own: true, text: "Earnings " + d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" }) + (er.when ? " " + er.when : "") });
   }
-  return parts.length ? '<div class="note mini">' + parts.join(" · ") + "</div>" : "";
+  cau.sort((a, b) => (a.level === b.level ? 0 : a.level === "big" ? -1 : 1) || (b.own ? 1 : 0) - (a.own ? 1 : 0) || a.t - b.t); // Big first, the stock's own earnings first
+  const LV = { big: ["Big", "bad"], moderate: ["Moderate", "warn"], small: ["Small", "mu"] };
+  const cauTxt = cau.length ? '⚠ <b class="' + LV[cau[0].level][1] + '">' + LV[cau[0].level][0] + ":</b> " + esc(cau[0].text) + (cau.length > 1 ? ' <span class="mu">+' + (cau.length - 1) + "</span>" : "") : "";
+  const tip = esc(cau.map((x) => LV[x.level][0] + ": " + x.text).join(" · "));
+  // Callout cards: market hours and the caution share one line (keeps the box small); watch boxes: trend on its own line.
+  if (noTrend && cau.length) return '<div class="note mini cau" title="' + tip + '">' + (parts.length ? parts.join(" · ") + " · " : "") + cauTxt + "</div>";
+  return (parts.length ? '<div class="note mini">' + parts.join(" · ") + "</div>" : "") + (cau.length ? '<div class="note mini cau" title="' + tip + '">' + cauTxt + "</div>" : "");
 }
 const chartTF = () => "4H"; // everything runs on the 4-hour chart (the server still supports ?tf=1H|both, unused)
 function merge() {
