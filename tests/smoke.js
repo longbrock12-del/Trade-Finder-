@@ -528,6 +528,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=rules]");
   ok((await page.locator("text=Top-down analysis").count()) >= 1 && (await page.locator("text=previous point B is new point A").count()) >= 1, "rules tab explains her top-down steps");
   const rulesTxt = await page.locator(".rules").textContent();
+  ok(["4-hour candle close", "real touches", "Check the cautions", "Big", "Look up", "Move stop", "% of your account"].every((x) => rulesTxt.includes(x)), "rules tab covers the entry close, real touches, cautions, look up, phone alerts and % results");
   ok(["Break & retest", "Bounce", "just past", "1–2%", "Commit to one timeframe", "Journal every trade", "Practice first", "Redraw daily"].every((x) => rulesTxt.includes(x)), "rules tab covers her whole system: setups, stop past the line, sizing, one timeframe, journaling, practice, upkeep");
   ok((await page.locator(".rules .tag", { hasText: "automatic" }).count()) >= 7 && (await page.locator(".rules .tag", { hasText: /^you$/ }).count()) >= 3, "each step says whether it's automatic or yours");
   ok(!/Sources:/.test(await page.locator(".rules").textContent()) && (await page.locator(".rules li").last().textContent()).startsWith("Practice first"), "rules end with step 12 (no text under it)");
