@@ -29,6 +29,7 @@ const MAX_ANGLE = 45;     // her rule: under 45 degrees with 3 months on the cha
 const ASPECT = 1.8;       // my number: chart width / height of a normal screen, used to turn slope into degrees
 const NEAR_ATR = 0.1;     // display only: a tap whose wick stops more than 0.1 ATR short of the line is drawn as a near miss
 let TOUCH_ATR = 0.3;      // my number: how far a wick may poke THROUGH the line (closing back) and still be a tap
+let HOLD = 2;            // a tap counts only if the next 2 candles don't close through the line (it held)
 let SHORT_ATR = 0.3;      // how far SHORT of the line a wick may stop and still be a tap (0.05 = must actually touch; test with ?short=)
 // Does a wick touch the line? under: a line under the lows (wick = the low); otherwise over the highs (wick = the high).
 const touches = (w, v, a, under) => { const short = under ? w - v : v - w; return short <= SHORT_ATR * a && -short <= TOUCH_ATR * a; };
@@ -243,8 +244,20 @@ function setup(daily, bars, isFuture, tf) {
 // the line, the extreme of their neighbors, 6+ candles apart. Daily history counts each day as one tap spot.
 function taps(S, ln, upto, up) {
   const key = up ? "l" : "h", out = [];
+  // Candles in order (daily ones before the intraday ones), so a tap can be checked against the candles after it.
+  const seq = S.D.map((d, k) => ({ x: k * S.ppd, c: d.c })).concat(S.bars.slice(0, upto).map((b, i) => ({ x: S.x0 + i, c: b.c })));
+  const pos = new Map(seq.map((q, n) => [q.x, n]));
+  // A tap has to hold: the next HOLD candles don't close through the line (price touched it and turned away).
+  // A touch the break starts from right away is part of the break, not a tap.
+  const held = (x) => {
+    if (!HOLD) return true;
+    const n = pos.get(x);
+    if (n == null || n + HOLD >= seq.length) return false;
+    for (let j = n + 1; j <= n + HOLD; j++) { const v = val(ln, seq[j].x); if (up ? seq[j].c < v : seq[j].c > v) return false; }
+    return true;
+  };
   const consider = (x, p, tol, ext) => {
-    if (x < ln.a.x - 0.01 || !ext || !touches(p, val(ln, x), tol, up)) return;
+    if (x < ln.a.x - 0.01 || !ext || !touches(p, val(ln, x), tol, up) || !held(x)) return;
     if (out.length && x - out[out.length - 1] < MIN_GAP) return;
     out.push(x);
   };
@@ -640,13 +653,14 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
     if (opts.rules.short != null) SHORT_ATR = opts.rules.short;
+    if (opts.rules.hold != null) HOLD = opts.rules.hold;
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD] = saved; }
 }
 
 module.exports = { trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

@@ -146,7 +146,7 @@ async function scannerTests() {
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced"].includes(x.how))), "trades end on the safety line or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 32 && clr.totalR === 45.54, "crude's 6 months: 32 trades, +45.54R", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 31 && clr.totalR === 44.89, "crude's 6 months: 31 trades, +44.89R (taps must hold)", clr.trades + " / " + clr.totalR);
   ok(recs.every((r) => Object.values(r.bySetup).reduce((a, b) => a + b.trades, 0) === r.trades) && recs.some((r) => r.bySetup.retest), "track record splits trades by setup (break, break & retest, bounce)");
   // Break & retest: found after a break, same line, entered later on a candle that touched the line from the other side.
   const rt = sigs.filter(({ s }) => s.setup === "break & retest");
@@ -193,6 +193,15 @@ async function scannerTests() {
   ok(tapN > 30 && !tapBad && !tapMis, "every tap counted is in the chart (older ones too) and really touches the line", tapN + " taps, " + tapBad + " off, " + tapMis + " count mismatches");
   const gcAll = T.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, all: true, tfs: ["4H"] });
   ok(gcAll.signals.length && gcAll.signals.every((x) => x.real != null && x.real <= x.taps && x.real === x.chart.taps.filter((q) => !q.near).length), "each line carries its real touches (wicks that reached the line), matching the chart's solid dots");
+  // Taps must hold: the 2 candles after a tap don't close through the line (a touch the break starts from isn't a tap).
+  let holdBad = 0, holdN = 0;
+  gcAll.signals.concat(T.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, all: true, tfs: ["4H"] }).signals).forEach((x) => {
+    const c = x.chart, L0 = c.line, up = L0.slope > 0, lv = (i) => L0.p0 + L0.slope * (i - L0.i0);
+    c.tapIdx.forEach((i) => { if (i + 2 >= c.bars.length) return; holdN++; for (let j = i + 1; j <= i + 2; j++) if (up ? c.bars[j][4] < lv(j) - 1e-6 : c.bars[j][4] > lv(j) + 1e-6) holdBad++; });
+  });
+  const noHold = T.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], rules: { hold: 0 } }).record.trades;
+  const withHold = T.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"] }).record.trades;
+  ok(holdN > 10 && !holdBad, "a tap only counts if the next 2 candles hold the line (crude 4-hour: " + noHold + " trades without the rule, " + withHold + " with)", holdN + " taps, " + holdBad + " broke right after");
   ok(!tapNearBad && tapNear > 0 && tapNear < tapN, "taps are marked near miss only when the wick stopped more than 0.1 ATR short of the line", tapNear + " near of " + tapN + ", " + tapNearBad + " wrong");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F" && def.body.markets.every((m) => m.kind === "futures"), "default futures are Micro Gold and Micro Crude only", def.body.markets.map((m) => m.sym).join());

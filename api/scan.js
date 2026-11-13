@@ -39,11 +39,11 @@ async function handler(req, res) {
   const sp = new URL(req.url, "http://x").searchParams, num = (k, lo, hi) => { const v = sp.get(k); if (v == null || v === "") return null; const n = Number(v); return n >= lo && n <= hi ? n : NaN; };
   // ?short=0.3: how far short of the line a wick may stop and still count (0.05 = must actually touch; the site uses 0.3).
   // ?trend=0 (no trend filter) / ?trend=1 (trend for every setup) / ?once=1 (one attempt per trendline), to compare.
-  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1), trendOff = sp.get("trend") === "0", trendAll = sp.get("trend") === "1", onceOn = sp.get("once") === "1";
+  const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1), hold = num("hold", 0, 6), trendOff = sp.get("trend") === "0", trendAll = sp.get("trend") === "1", onceOn = sp.get("once") === "1";
   // ?setups=break,retest,bounce (or all): which of her setups stocks take (the site: break).
   const st = sp.get("setups"), setups = st == null ? undefined : st === "all" ? null : st.split(",").filter((x) => ["break", "retest", "bounce"].includes(x));
-  const rules = touch != null || gap != null || short != null || trendOff || trendAll || onceOn || setups !== undefined ? { touch, gap: gap == null ? null : Math.round(gap), short, ...(trendOff ? { trend: false } : trendAll ? { trend: true } : {}), ...(onceOn ? { once: true } : {}), ...(setups !== undefined ? { setups } : {}) } : null;
-  if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR)" });
+  const rules = touch != null || gap != null || short != null || hold != null || trendOff || trendAll || onceOn || setups !== undefined ? { touch, gap: gap == null ? null : Math.round(gap), short, hold: hold == null ? null : Math.round(hold), ...(trendOff ? { trend: false } : trendAll ? { trend: true } : {}), ...(onceOn ? { once: true } : {}), ...(setups !== undefined ? { setups } : {}) } : null;
+  if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles)" });
   let next = 0;
   async function worker() {
     while (next < UNIVERSE.length) {
@@ -59,7 +59,7 @@ async function handler(req, res) {
   await Promise.all(Array.from({ length: POOL }, worker));
   const scanned = UNIVERSE.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
-  if (rules) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), test: { touch: rules.touch == null ? 0.3 : rules.touch, gap: rules.gap == null ? 6 : rules.gap, short: rules.short == null ? 0.3 : rules.short, trend: rules.trend === undefined ? "bounce" : rules.trend, once: !!rules.once, setups: rules.setups === undefined ? ["break"] : rules.setups || "all" }, scanned, record: combine(recs) });
+  if (rules) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), test: { touch: rules.touch == null ? 0.3 : rules.touch, gap: rules.gap == null ? 6 : rules.gap, short: rules.short == null ? 0.3 : rules.short, hold: rules.hold == null ? 2 : rules.hold, trend: rules.trend === undefined ? "bounce" : rules.trend, once: !!rules.once, setups: rules.setups === undefined ? ["break"] : rules.setups || "all" }, scanned, record: combine(recs) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 
