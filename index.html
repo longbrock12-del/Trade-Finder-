@@ -594,7 +594,25 @@ function renderCalls() {
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
     (folds.live ? "▾ " : "▸ ") + "Trades to get into now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
-  return marketStrip() + trackBox() + getInBox(live) + bar;
+  return marketStrip() + trackBox() + openTrades() + getInBox(live) + bar;
+}
+
+// Callouts the site sent that are still open (from the live record), in a small bar that stays closed until
+// tapped: how each is doing right now, using the price on the page (or the last 15-minute check).
+function openTrades() {
+  const ot = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "open" && x.kind === kind && (x.view || "4H") === chartTF());
+  if (!ot.length) return "";
+  const rows = ot.map((x) => {
+    const m = data.markets.find((q) => q.sym === x.sym && !q.error), sign = x.dir === "long" ? 1 : -1, d = (m && m.digits) || 2;
+    const r = m && x.risk ? (sign * (m.price - x.entry)) / x.risk : x.nowR;
+    const stop = x.stopNow != null ? x.stopNow : x.stop, act = x.kind === "stocks" ? (x.dir === "long" ? "BUY CALL" : "BUY PUT") : x.dir === "long" ? "BUY" : "SELL";
+    return { r, html: '<div class="trr"><span><b>' + act + " " + esc(show(x.sym)) + '</b> <span class="note">' + esc(x.setup || "") + " · entry " + num(x.entry, d) + (stop != null ? " · stop " + num(stop, d) : "") + "</span></span>" +
+      '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" };
+  });
+  const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
+  return '<h2><button class="btn" data-fold="openLive" aria-expanded="' + open + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
+    (open ? "▾ " : "▸ ") + "Open callouts (" + ot.length + ') · <span class="' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + "%</span> now</button></h2>" +
+    (open ? '<div class="c" style="padding:8px 12px">' + rows.map((x) => x.html).join("") + '<div class="note mini">Callouts the site sent that are still open, at 1% risk each. Updates with the prices on the page; your phone gets Move stop and Exit alerts.</div></div>' : "");
 }
 
 // Stocks that respect trendlines: every scanned stock ranked by its 6-month record on this chart (3+ trades, positive).
