@@ -534,7 +534,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator("text=How the computer does it").count()) === 0 && (await page.locator("#out >> text=Option contracts").count()) === 0, "rules tab has no computer or options sections");
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
-  ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Track record: stocks" }).count() + await page.locator(".gi.none", { hasText: "stocks" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
+  ok((await page.locator(".gi.none").count()) === 0 || (await page.locator(".gi.none").textContent()) === "No Valid Entries Yet", "empty Callouts box just says No Valid Entries Yet");
+  ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Track record: stocks" }).count() + await page.locator(".gi.none", { hasText: "No Valid Entries Yet" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
   await page.evaluate(() => localStorage.setItem("tl:tf", '"1H"')); await page.reload(); await page.waitForTimeout(500);
   ok(asked[asked.length - 1].includes("tf=4H"), "an old 1-hour choice on the phone is ignored: still the 4-hour chart");
   await page.fill("#addIn", "amd"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);

@@ -498,9 +498,8 @@ function card(m, s) {
 
 // The box at the top of Callouts: what to get into right now, for the chosen market type.
 function getInBox(all) {
-  const name = kind === "futures" ? "futures" : "stocks", go = all.filter(({ s }) => canEnter(s));
-  if (!go.length) return '<div class="gi none"><h3>No ' + name + " entries right now</h3>" +
-    '<div class="note" style="margin:0">Nothing has triggered that passes 3 of the 4 checklist rules (with 3+ taps) and is still near its entry price. Check the Watch list for lines price is close to.</div></div>';
+  const go = all.filter(({ s }) => canEnter(s));
+  if (!go.length) return '<div class="gi none"><h3 style="margin:0">No Valid Entries Yet</h3></div>';
   return ""; // trades you can get into are the cards under "Trades to get into now"
 }
 
