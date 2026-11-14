@@ -104,6 +104,7 @@ input::placeholder{color:#55665c}
 .mtop{display:flex;justify-content:space-between;font-size:12px;font-family:"JetBrains Mono",monospace}.mpx{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mbot{display:flex;flex-direction:column;gap:2px;font-size:11px;margin-top:1px}.mbot svg{width:100%;height:20px}
 .nbar{height:4px;border-radius:3px;background:var(--soft);margin:5px 0 2px;overflow:hidden}.nbar i{display:block;height:100%;border-radius:3px}
+.lchart{margin-top:6px}.lchart svg{width:100%;height:64px;display:block}
 </style></head>
 <body><div class="w">
 <header>
@@ -504,6 +505,23 @@ function getInBox(all) {
 
 // Track record: the same rules replayed over the last 6 months of prices (see record() in api/_trendlines.js).
 // % return = total R x 1%, i.e. risking 1% of the account per trade (her beginner rule).
+// Growth of the callouts the site actually sent (the live record): starts at 0% when alerts began, each closed
+// callout adds its result (% of the account at 1% risk); an open one shows as a dashed tail to where it is now.
+function liveChart(lv) {
+  const done = lv.filter((x) => x.status === "closed" && x.exitR != null).sort((a, b) => (a.closedAt || a.at || 0) - (b.closedAt || b.at || 0));
+  const open = lv.filter((x) => x.status === "open" && x.nowR != null).reduce((a, x) => a + x.nowR, 0), anyOpen = lv.some((x) => x.status === "open");
+  if (!done.length) return '<div class="note mini">Live callouts chart: starts when the first callout closes.</div>';
+  const pts = [0];
+  done.forEach((x) => pts.push(pts[pts.length - 1] + x.exitR));
+  const end = pts[pts.length - 1], tail = anyOpen ? end + open : null, all = pts.concat(tail == null ? [] : [tail]);
+  const lo = Math.min(0, ...all), hi = Math.max(0, ...all), W = 300, H = 64, n = all.length - 1 || 1;
+  const X = (i) => 4 + (i / n) * (W - 8), Y = (v) => 6 + ((hi - v) / (hi - lo || 1)) * (H - 12), col = end >= 0 ? "var(--gd)" : "var(--bad)";
+  let g = '<line x1="0" x2="' + W + '" y1="' + Y(0) + '" y2="' + Y(0) + '" stroke="var(--bd)" stroke-dasharray="3 3"/>';
+  g += '<polyline fill="none" stroke="' + col + '" stroke-width="2" stroke-linejoin="round" points="' + pts.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ") + '"/>';
+  pts.forEach((v, i) => { if (i) g += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="2.5" fill="' + (v >= pts[i - 1] ? "var(--gd)" : "var(--bad)") + '"/>'; });
+  if (tail != null) g += '<line x1="' + X(pts.length - 1) + '" y1="' + Y(end) + '" x2="' + X(pts.length) + '" y2="' + Y(tail) + '" stroke="' + col + '" stroke-width="2" stroke-dasharray="4 3"/>';
+  return '<div class="lchart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Growth of the live callouts">' + g + '</svg><div class="note mini">Live callouts: ' + done.length + " closed" + (anyOpen ? ", dashed = open now" : "") + "</div></div>";
+}
 function trackBox() {
   const pct = (r) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%", Rs = (r, d = 1) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(d) + "%";
   const since = (t) => (t ? new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
@@ -529,6 +547,7 @@ function trackBox() {
   const lvDone = lv.filter((x) => x.status === "closed" && x.exitR != null), lvR = lvDone.reduce((a, x) => a + x.exitR, 0);
   const liveLine = lv.length ? '<div class="note" style="margin-top:4px"><b>Live record</b> since ' + since(Math.min(...lv.map((x) => x.t))) + ": " + lvDone.length + " closed · " +
     (lvDone.length ? Math.round((100 * lvDone.filter((x) => x.exitR > 0).length) / lvDone.length) + '% wins · <b class="' + (lvR >= 0 ? "ok" : "bad") + '">' + (lvR >= 0 ? "+" : "−") + Math.abs(lvR).toFixed(1) + "%</b> · " : "") + (lv.length - lvDone.length) + " open</div>" : "";
+  const liveGraph = lv.length ? liveChart(lv) : "";
   // Wins vs losses, in plain words. Sums across the futures markets (or all scanned stocks).
   const parts = kind === "futures" ? data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record) : [data.stockRecord];
   const add = (k) => parts.reduce((a, r) => a + (r[k] || 0), 0), nW = add("nWin"), nL = add("nLoss");
@@ -545,7 +564,7 @@ function trackBox() {
     "<div>Winners held " + days(add("winHrs") / nW) + ", losers " + days(add("lossHrs") / nL) + "</div>" +
     '<div class="note" style="margin-top:4px">% = what the account made or lost, risking 1% on each trade. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
   return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
-    sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div>' + liveLine + '</div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
+    sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div>' + liveLine + liveGraph + '</div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
     (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. Results are what the account would have made risking 1% on each trade (at 2% risk, double them). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 

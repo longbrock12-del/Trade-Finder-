@@ -740,6 +740,9 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.waitForTimeout(200);
   const tr = await page.locator(".trk").first().textContent();
   ok(/Live record since .*1 closed · 0% wins · −1\.0% · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
+  ok((await page.locator(".trk .lchart svg polyline").count()) === 1 && /Live callouts: 1 closed, dashed = open now/.test(tr), "the track record charts the live callouts (closed ones, open one dashed)");
+  const lc = await page.evaluate(() => [liveChart([{ status: "closed", exitR: 2, closedAt: 1 }, { status: "closed", exitR: -1, closedAt: 2 }]), liveChart([{ status: "open", nowR: 0.5 }])]);
+  ok((lc[0].match(/<circle/g) || []).length === 2 && /var\(--gd\)/.test(lc[0]) && /starts when the first callout closes/.test(lc[1]), "live chart: one dot per closed callout, green when ahead; waits for the first closed one");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const n = await page.locator("[data-lal]").count();
   ok(n > 0 && /Alert me at this line/.test(await page.locator("[data-lal]").first().textContent()), "watch-list lines have an Alert me button", n);
