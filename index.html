@@ -105,6 +105,7 @@ input::placeholder{color:#55665c}
 .mbot{display:flex;flex-direction:column;gap:2px;font-size:11px;margin-top:1px}.mbot svg{width:100%;height:20px}
 .nbar{height:4px;border-radius:3px;background:var(--soft);margin:5px 0 2px;overflow:hidden}.nbar i{display:block;height:100%;border-radius:3px}
 .lchart{margin-top:6px}.lchart svg{width:100%;height:64px;display:block}
+.ofold{padding:4px 12px}.ofold>.btn{width:100%;text-align:left;border:0;background:none;padding:8px 0;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ofold .note.mini{margin-bottom:8px}
 </style></head>
 <body><div class="w">
 <header>
@@ -610,9 +611,10 @@ function openTrades() {
       '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" };
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
-  return '<h2><button class="btn" data-fold="openLive" aria-expanded="' + open + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
-    (open ? "▾ " : "▸ ") + "Open callouts, tracking only (" + ot.length + ') · <span class="' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + "%</span> now</button></h2>" +
-    (open ? '<div class="c" style="padding:8px 12px">' + rows.map((x) => x.html).join("") + '<div class="note mini">Already running: callouts the site sent earlier, still open. Not an entry. They are usually too far from their entry to get into now; wait for the next callout. Results at 1% risk each, updated with the prices on the page. If you are in one, your phone gets Move stop and Exit alerts.</div></div>' : "");
+  // One box: the bar on top, and when it's open, the trades inside it.
+  return '<div class="c ofold"><button class="btn" data-fold="openLive" aria-expanded="' + open + '">' +
+    (open ? "▾ " : "▸ ") + "Open (" + ot.length + ') · tracking · <span class="' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + "%</span></button>" +
+    (open ? rows.map((x) => x.html).join("") + '<div class="note mini">Already running: callouts the site sent earlier, still open. Not an entry. They are usually too far from their entry to get into now; wait for the next callout. Results at 1% risk each, updated with the prices on the page. If you are in one, your phone gets Move stop and Exit alerts.</div>' : "") + "</div>";
 }
 
 // Stocks that respect trendlines: every scanned stock ranked by its 6-month record on this chart (3+ trades, positive).

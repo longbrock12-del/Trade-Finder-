@@ -741,8 +741,9 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   const tr = await page.locator(".trk").first().textContent();
   ok(/Live record since .*1 closed · 0% wins · −1\.0% · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
   const ob = page.locator("[data-fold=openLive]");
-  ok((await ob.count()) === 1 && /Open callouts, tracking only \(1\) · [+−]\d+\.\d% now/.test(await ob.textContent()) && (await page.locator(".trr", { hasText: /^MGC (long|short)/ }).count()) === 0, "open callouts sit in a small closed bar with how they're doing", await ob.textContent());
+  ok((await ob.count()) === 1 && /Open \(1\) · tracking · [+−]\d+\.\d%/.test(await ob.textContent()) && (await page.locator(".trr", { hasText: /^MGC (long|short)/ }).count()) === 0, "open callouts sit in a small closed bar with how they're doing", await ob.textContent());
   await ob.click();
+  ok((await page.locator(".ofold .trr", { hasText: /MGC (long|short).*entry/ }).count()) === 1 && (await ob.evaluate((e) => e.scrollWidth <= e.clientWidth + 1)), "the open trades show inside the same box as the bar, and the bar text fits on screen");
   ok((await page.locator(".trr", { hasText: /MGC (long|short).*entry/ }).count()) === 1 && !/BUY|SELL/.test(await page.locator(".trr", { hasText: /MGC (long|short)/ }).textContent()) && /Not an entry/.test(await page.locator("#out").textContent()), "open callouts read as a status (MGC long), not BUY/SELL, and say they're not an entry");
   await ob.click();
   ok((await page.locator(".trk .lchart svg polyline").count()) === 1 && /Live callouts: 1 closed, dashed = open now/.test(tr), "the track record charts the live callouts (closed ones, open one dashed)");
