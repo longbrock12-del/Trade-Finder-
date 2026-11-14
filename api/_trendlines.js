@@ -646,7 +646,7 @@ function scanCore(hChart, dChart, opts = {}) {
   return {
     sym, name: meta.shortName || meta.longName || sym, kind: isFuture ? "futures" : "stocks",
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
-    dailyBars: daily.length, trend: trendAt(now), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), record: opts.history === false ? null : record(hist),
+    dailyBars: daily.length, trend: trendAt(now), ...(isFuture ? { spark: b4.slice(Math.max(0, l4 - 29), l4 + 1).map((q) => px(q.c)) } : {}), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), record: opts.history === false ? null : record(hist),
   };
 }
 

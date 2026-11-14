@@ -99,6 +99,11 @@ h2{color:var(--ac);font-family:"JetBrains Mono",monospace}
 input::placeholder{color:#55665c}
 .tag.tok{background:rgba(47,212,122,.14);color:var(--gd)}.tag.tnear{background:rgba(224,162,42,.14);color:var(--warn)}
 .cau{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.mcard{background:var(--card);border-radius:14px;padding:8px 9px;box-shadow:0 6px 18px rgba(0,0,0,.4);min-width:0}
+.mtop{display:flex;justify-content:space-between;font-size:12px;font-family:"JetBrains Mono",monospace}.mpx{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mbot{display:flex;flex-direction:column;gap:2px;font-size:11px;margin-top:1px}.mbot svg{width:100%;height:20px}
+.nbar{height:4px;border-radius:3px;background:var(--soft);margin:5px 0 2px;overflow:hidden}.nbar i{display:block;height:100%;border-radius:3px}
 </style></head>
 <body><div class="w">
 <header>
@@ -544,6 +549,25 @@ function trackBox() {
     (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. Results are what the account would have made risking 1% on each trade (at 2% risk, double them). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 
+// Futures at a glance: price, change over the last 24 hours (6 four-hour candles), her trend and a small chart
+// of the last 30 four-hour closes. Shown at the top of Callouts and Watch list on the Futures tab.
+function marketStrip() {
+  if (kind !== "futures" || !data) return "";
+  const fm = data.markets.filter((m) => m.kind === "futures" && !m.error);
+  if (!fm.length) return "";
+  const spark = (pts) => {
+    if (!pts || pts.length < 2) return "";
+    const lo = Math.min(...pts), hi = Math.max(...pts), W = 64, H = 22, x = (i) => (i / (pts.length - 1)) * W, y = (v) => H - 2 - ((v - lo) / (hi - lo || 1)) * (H - 4);
+    const col = pts[pts.length - 1] >= pts[0] ? "var(--gd)" : "var(--bad)";
+    return '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true"><polyline fill="none" stroke="' + col + '" stroke-width="1.6" stroke-linejoin="round" points="' + pts.map((v, i) => x(i).toFixed(1) + "," + y(v).toFixed(1)).join(" ") + '"/></svg>';
+  };
+  return '<div class="mstrip">' + fm.map((m) => {
+    const up = m.chg >= 0, tr = m.trend && m.trend.dir;
+    return '<div class="mcard"><div class="mtop"><b>' + esc(show(m.sym)) + "</b>" + (tr ? '<span class="' + (tr === "up" ? "ok" : "bad") + '" title="Her top-down trend">' + (tr === "up" ? "↑" : "↓") + "</span>" : '<span class="mu" title="No clear trend">–</span>') + "</div>" +
+      '<div class="mpx">' + num(m.price, m.digits) + '</div><div class="mbot"><span class="' + (up ? "ok" : "bad") + '">' + (up ? "+" : "−") + Math.abs(m.chg).toFixed(2) + "%</span>" + spark(m.spark) + "</div></div>";
+  }).join("") + "</div>";
+}
+
 function renderCalls() {
   // Only trades you can take right now: live, fired in the last day, still near entry, with a safety line and stop.
   // Everything else (older, already moved, closed, skipped, no safety line yet) only counts in the track record.
@@ -551,7 +575,7 @@ function renderCalls() {
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
     (folds.live ? "▾ " : "▸ ") + "Trades to get into now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
-  return trackBox() + getInBox(live) + bar;
+  return marketStrip() + trackBox() + getInBox(live) + bar;
 }
 
 // Stocks that respect trendlines: every scanned stock ranked by its 6-month record on this chart (3+ trades, positive).
@@ -592,6 +616,13 @@ function soonAplus(w) {
 }
 
 // One compact watch-list box: symbol, tags and the line's price; which line and how far; the plan; anything missing.
+// How close price is to the line, as a bar that fills up as it gets nearer: full = on the line, empty = about
+// 1.5 candle sizes away (the edge of the watch list). Amber when getting close, green when it's right there.
+function nearBar(dist) {
+  if (dist == null) return "";
+  const f = Math.max(0.04, Math.min(1, 1 - dist / 1.5)), col = dist <= 0.35 ? "var(--gd)" : dist <= 0.9 ? "var(--warn)" : "var(--mu)";
+  return '<div class="nbar" title="How close price is to the line"><i style="width:' + Math.round(f * 100) + "%;background:" + col + '"></i></div>';
+}
 function watchCard(m, w) {
   const c = w.checks || {}, miss = [];
   if (!c.taps) miss.push(w.taps + " taps (3+)");
@@ -603,6 +634,7 @@ function watchCard(m, w) {
   return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" + touchBadge(w) +
     (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
+    nearBar(w.dist) +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
     (pushInfo && pushInfo.configured ? '<div class="tv sm"><button class="btn" data-lal="' + esc(m.sym + "|" + w.tf + "|" + w.key) + '">' + (store.get("lineAlerts", {})[m.sym + "|" + w.tf + "|" + w.key] ? "🔔 Alert set ✓" : "🔔 Alert me at this line") + "</button></div>" : "") +
     watchChart(m, w) + "</article>";
@@ -657,7 +689,7 @@ async function lookUp(q) {
 const WATCH_SHOW = 5; // stocks watch list: cards shown before "Show all"
 function renderWatch() {
   if (!data) return lookBox();
-  return lookBox() + watchList();
+  return marketStrip() + lookBox() + watchList();
 }
 function watchList() {
   const rows = [];
@@ -689,6 +721,7 @@ function nearCard(m) {
   let h = '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">4H</span><span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" + touchBadge(L) +
     '</div><b class="wp">' + num(L.lineNow, d) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(L.lineTF) + " line</span><span>" + away(m, L) + "</span></div>" +
+    nearBar(L.dist) +
     '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
     '<div class="note mini">' + why + "</div>" +
     '<div class="tv sm"><button class="btn" data-nch="' + esc(m.sym) + '" aria-expanded="' + !!(c && c.shown) + '">' + (c && c.shown ? "Hide chart" : "📈 Show chart") + "</button></div>";

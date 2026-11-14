@@ -354,7 +354,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
   const futR = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.totalR, 0);
   const trk = (await page.locator(".trk").textContent());
-  ok(await page.evaluate(() => document.getElementById("out").firstElementChild.classList.contains("trk")), "the track record box is at the top");
+  ok(await page.evaluate(() => { const f = document.getElementById("out").firstElementChild; return f.classList.contains("trk") || (f.classList.contains("mstrip") && f.nextElementSibling.classList.contains("trk")); }), "the track record box is at the top (under the futures strip)");
   ok(!trk.includes("Overall") && !trk.includes("stocks") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures tab shows only the futures ROI: total % at 1% risk per trade", trk.slice(0, 160));
   await page.click("[data-fold=track]");
   const fr = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record), sum = (k) => fr.reduce((a, r) => a + r[k], 0);
@@ -619,6 +619,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   const badges = await page.evaluate(() => [touchBadge({ taps: 3, real: 3 }), touchBadge({ taps: 3, real: 2 }), touchBadge({ taps: 4, real: 1 })]);
   ok(/3 real touches ✓/.test(badges[0]) && /tok/.test(badges[0]) && /2 touches \+ 1 near/.test(badges[1]) && /tnear/.test(badges[1]) && /1 touch \+ 3 near/.test(badges[2]), "badge: green \"3 real touches ✓\", amber \"2 touches + 1 near\"", badges.join(" "));
   ok((await page.locator("#out .tag.tok, #out .tag.tnear").count()) > 0, "the real-touch badge shows on the cards");
+  const bars = await page.evaluate(() => [nearBar(0.1), nearBar(0.6), nearBar(1.4), nearBar(5)]);
+  ok(/width:93%;background:var\(--gd\)/.test(bars[0]) && /var\(--warn\)/.test(bars[1]) && /var\(--mu\)/.test(bars[2]) && /width:4%/.test(bars[3]), "closeness bar: fuller and greener as price nears the line", bars.map((b) => (b.match(/width:\d+%;background:[^"]+/) || [""])[0]).join(" | "));
+  await page.click("[data-tab=calls]"); await page.click("[data-k=futures]");
+  const strip = await page.locator(".mstrip .mcard").allTextContents();
+  ok(strip.length === body.markets.filter((m) => m.kind === "futures" && !m.error).length && strip.every((t) => /[+−]\d+\.\d\d%/.test(t)) && (await page.locator(".mstrip svg polyline").count()) === strip.length, "futures strip: every future with price, 24h change and a small chart", strip.join(" | "));
+  await page.click("[data-k=stocks]");
+  ok((await page.locator(".mstrip").count()) === 0, "the strip is only on Futures");
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }
