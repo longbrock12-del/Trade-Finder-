@@ -500,7 +500,7 @@ function card(m, s) {
 function getInBox(all) {
   const go = all.filter(({ s }) => canEnter(s));
   if (!go.length) return '<div class="gi none"><h3 style="margin:0">No Valid Entries Yet</h3></div>';
-  return ""; // trades you can get into are the cards under "Trades to get into now"
+  return ""; // trades you can get into are the cards under "Get In Now"
 }
 
 // Track record: the same rules replayed over the last 6 months of prices (see record() in api/_trendlines.js).
@@ -593,7 +593,7 @@ function renderCalls() {
   const live = callouts().filter(({ s }) => canEnter(s));
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
-    (folds.live ? "▾ " : "▸ ") + "Trades to get into now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
+    (folds.live ? "▾ " : "▸ ") + "Get In Now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
   return marketStrip() + trackBox() + openTrades() + getInBox(live) + bar;
 }
 

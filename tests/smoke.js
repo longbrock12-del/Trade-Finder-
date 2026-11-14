@@ -327,7 +327,7 @@ async function optionsTests() {
   return a.body;
 }
 
-// Opens the collapsed "Trades to get into now" list on the Callouts tab, if it's closed.
+// Opens the collapsed "Get In Now" list on the Callouts tab, if it's closed.
 async function openFolds(page) {
   // Each click redraws the list, so click the first closed one until none are left.
   for (let n = 0; n < 5 && (await page.locator("[data-fold][aria-expanded=false]").count()); n++) await page.locator("[data-fold][aria-expanded=false]").first().click();
@@ -366,7 +366,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
   await page.click("[data-fold=track]");
   const callTxt = await page.locator("#out").textContent();
-  ok((await page.locator("[data-fold=live]").textContent()).includes("Trades to get into now") && !/Live callouts|Waiting for a safety line|Skipped/.test(callTxt), "Callouts shows only \"Trades to get into now\": no Live callouts, Waiting or Skipped lists");
+  ok((await page.locator("[data-fold=live]").textContent()).includes("Get In Now (") && !/Live callouts|Waiting for a safety line|Skipped/.test(callTxt), "Callouts shows only \"Trades to get into now\": no Live callouts, Waiting or Skipped lists");
   ok((await page.locator(".cl").count()) === (await page.locator(".cl .st", { hasText: "GET IN NOW" }).count()), "every card on Callouts is a trade you can get into now");
   ok((await page.locator("[data-fold=live][aria-expanded=true]").count()) === 1 && (await page.locator(".gi.row").count()) === 0, "Live callouts starts open, with no green get-in boxes");
   await page.click("[data-fold=live]");
