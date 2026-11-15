@@ -742,6 +742,7 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   const tr = await page.locator(".trk").first().textContent();
   ok(/Live record since .*1 closed · 0% wins · −1\.0% · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
   const ob = page.locator("[data-fold=openLive]");
+  ok(await page.evaluate(() => { const o = document.querySelector(".ofold"), g = document.querySelector(".gi.none, [data-fold=live]"); return !!o && !!g && !!(g.compareDocumentPosition(o) & Node.DOCUMENT_POSITION_FOLLOWING); }), "Get In Now (or No Valid Entries Yet) comes before the tracking box");
   ok((await ob.count()) === 1 && /Open \(1\) · tracking · [+−]\d+\.\d%/.test(await ob.textContent()) && (await page.locator(".trr", { hasText: /^MGC (long|short)/ }).count()) === 0, "open callouts sit in a small closed bar with how they're doing", await ob.textContent());
   await ob.click();
   ok((await page.locator(".ofold .trr", { hasText: /MGC (long|short).*entry/ }).count()) === 1 && (await ob.evaluate((e) => e.scrollWidth <= e.clientWidth + 1)), "the open trades show inside the same box as the bar, and the bar text fits on screen");
