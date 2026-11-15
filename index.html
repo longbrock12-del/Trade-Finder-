@@ -106,6 +106,7 @@ input::placeholder{color:#55665c}
 .nbar{height:4px;border-radius:3px;background:var(--soft);margin:5px 0 2px;overflow:hidden}.nbar i{display:block;height:100%;border-radius:3px}
 .lchart{margin-top:6px}.lchart svg{width:100%;height:64px;display:block}
 .ofold{padding:4px 12px}.ofold>.btn{width:100%;text-align:left;border:0;background:none;padding:8px 0;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ofold .note.mini{margin-bottom:8px}
+.ohead{padding:8px 0 4px;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.omore{width:100%;border:0;background:none;color:var(--ac);padding:6px 0 0;text-align:left;font-size:12.5px}
 </style></head>
 <body><div class="w">
 <header>
@@ -600,7 +601,7 @@ function renderCalls() {
 // Callouts the site sent that are still open (from the live record), in a small bar that stays closed until
 // tapped: how each is doing right now, using the price on the page (or the last 15-minute check).
 function openTrades() {
-  const ot = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "open" && x.kind === kind && (x.view || "4H") === chartTF());
+  const ot = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "open" && x.kind === kind && (x.view || "4H") === chartTF()).sort((a, b) => b.t - a.t); // newest first
   if (!ot.length) return "";
   const rows = ot.map((x) => {
     const m = data.markets.find((q) => q.sym === x.sym && !q.error), sign = x.dir === "long" ? 1 : -1, d = (m && m.digits) || 2;
@@ -610,10 +611,11 @@ function openTrades() {
       '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" };
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
-  // One box: the bar on top, and when it's open, the trades inside it.
-  return '<div class="c ofold"><button class="btn" data-fold="openLive" aria-expanded="' + open + '">' +
-    (open ? "▾ " : "▸ ") + "Open (" + ot.length + ') · tracking · <span class="' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + "%</span></button>" +
-    (open ? rows.map((x) => x.html).join("") + '<div class="note mini">Already running callout(s) the site sent earlier. Do not enter into the trade(s) if it’s too far from the entry points. <b>*ENTER AT OWN RISK*</b></div>' : "") + "</div>";
+  // One box: the title, the newest open trade always showing, and a button for the rest.
+  const note = '<div class="note mini">Already running callout(s) the site sent earlier. Do not enter into the trade(s) if it’s too far from the entry points. <b>*ENTER AT OWN RISK*</b></div>';
+  const more = rows.length > 1 ? '<button class="btn omore" data-fold="openLive" aria-expanded="' + open + '">' + (open ? "▴ Show less" : "▾ Show " + (rows.length - 1) + " more") + "</button>" : "";
+  return '<div class="c ofold"><div class="ohead">Open (' + ot.length + ') · tracking · <span class="' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + "%</span></div>" +
+    rows[0].html + (open ? rows.slice(1).map((x) => x.html).join("") : "") + more + note + "</div>";
 }
 
 // Stocks that respect trendlines: every scanned stock ranked by its 6-month record on this chart (3+ trades, positive).
