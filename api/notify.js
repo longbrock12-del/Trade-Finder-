@@ -93,6 +93,8 @@ module.exports = async function handler(req, res) {
     let dropped = 0;
     for (const [lk, x] of Object.entries(await S.hgetallJSON("tf:live"))) {
       if (x.status !== "open") continue;
+      // One-time cleanup: the SBUX short from the false 3rd tap (the break candle) is taken off tracking for good.
+      if (x.sym === "SBUX") { await S.hdel("tf:live", lk); dropped++; continue; }
       const view = x.view || "4H";
       // Rules changed since this callout went out? Check once per rules version that today's rules still make it
       // (the replay has it). If not, e.g. a 3rd "tap" that was really the start of the break, drop it from tracking.
