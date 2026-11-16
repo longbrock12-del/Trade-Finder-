@@ -3,7 +3,7 @@
 // Tori Trades trendline scanner (api/_trendlines.js). Cached 5 minutes at Vercel's edge.
 const { scan } = require("./_trendlines.js");
 
-const FUTURES = ["MGC=F", "MCL=F", "SIL=F", "MHG=F"]; // Micro Gold, Crude, Silver and Copper. Stocks come from api/scan.js.
+const FUTURES = ["MGC=F", "MCL=F", "MHG=F"]; // Micro Gold, Crude and Copper. Stocks come from api/scan.js.
 // A micro trades at the same price as its full-size contract, so if Yahoo has no data for the micro, use the full one.
 const FULL = { "MGC=F": "GC=F", "MCL=F": "CL=F", "SIL=F": "SI=F", "MHG=F": "HG=F" };
 const MAX = 24;

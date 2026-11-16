@@ -208,8 +208,8 @@ async function scannerTests() {
   ok(holdN > 10 && !holdBad, "a tap only counts if the next 2 candles hold the line (crude 4-hour: " + noHold + " trades without the rule, " + withHold + " with)", holdN + " taps, " + holdBad + " broke right after");
   ok(!tapNearBad && tapNear > 0 && tapNear < tapN, "taps are marked near miss only when the wick stopped more than 0.1 ATR short of the line", tapNear + " near of " + tapN + ", " + tapNearBad + " wrong");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
-  ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F,SIL=F,MHG=F" && def.body.markets.every((m) => m.kind === "futures" && !m.error), "default futures are Micro Gold, Crude, Silver and Copper (falling back to the full-size prices if Yahoo has no micro data)", def.body.markets.map((m) => m.sym + (m.error ? " " + m.error : "")).join());
-  ok(def.body.markets.map((m) => m.pointValue).join() === "10,100,1000,2500", "micro contract values: gold $10, crude $100, silver $1,000, copper $2,500 per 1.00", def.body.markets.map((m) => m.pointValue).join());
+  ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F,MHG=F" && def.body.markets.every((m) => m.kind === "futures" && !m.error), "default futures are Micro Gold, Crude and Copper (no silver) (falling back to the full-size prices if Yahoo has no micro data)", def.body.markets.map((m) => m.sym + (m.error ? " " + m.error : "")).join());
+  ok(def.body.markets.map((m) => m.pointValue).join() === "10,100,2500", "micro contract values: gold $10, crude $100, copper $2,500 per 1.00", def.body.markets.map((m) => m.pointValue).join());
   ok(JSON.stringify(M.find((m) => m.sym === "MGC=F").signals.map((x) => x.t)) === JSON.stringify(M.find((m) => m.sym === "GC=F").signals.map((x) => x.t)), "Micro Gold callouts match gold's chart");
   const t0 = Date.now(), a1 = scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }), ms = Date.now() - t0;
   ok(JSON.stringify(a1.signals) === JSON.stringify(scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }).signals), "same data gives the same callouts");
@@ -267,7 +267,7 @@ async function scanTests() {
   ok((await call("api/scan.js", "/api/scan?stats=1&part=9", fy, AMZN_NOW * 1000)).status === 400, "parts only 0-3");
   const askedF = [], fg = fakeYahoo((x) => YF[x]), spyF = async (u) => { askedF.push(decodeURIComponent(String(u))); return fg(u); };
   const fs2 = await call("api/trades.js", "/api/trades?stats=1", spyF);
-  ok(fs2.status === 200 && fs2.body.years === 2 && fs2.body.markets.length === 4 && fs2.body.markets.every((m) => m.record && !m.signals) && askedF.some((u) => /interval=60m&range=2y/.test(u)), "/api/trades?stats=1: each future's 2-year track record", fs2.body.markets.map((m) => m.sym).join());
+  ok(fs2.status === 200 && fs2.body.years === 2 && fs2.body.markets.length === 3 && fs2.body.markets.every((m) => m.record && !m.signals) && askedF.some((u) => /interval=60m&range=2y/.test(u)), "/api/trades?stats=1: each future's 2-year track record", fs2.body.markets.map((m) => m.sym).join());
   console.log("Her filters (on, like the live site)");
   const DAYs = 86400, mkDaily = (f) => Array.from({ length: 400 }, (_, i) => { const t = 1700000000 + i * DAYs, m = f(i); return { t, o: m, h: m + 1, l: m - 1, c: m }; });
   const upT = TLM.trendSeries(mkDaily((i) => 100 + i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);
@@ -438,7 +438,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
   ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
-  ok(asked.length && asked[0].includes("s=MGC=F,MCL=F,SIL=F,MHG=F") && asked[0].includes("tf=4H"), "page asks for Micro Gold, Crude, Silver and Copper on the 4-hour chart", asked[0]);
+  ok(asked.length && asked[0].includes("s=MGC=F,MCL=F,MHG=F") && asked[0].includes("tf=4H"), "page asks for Micro Gold, Crude and Copper on the 4-hour chart", asked[0]);
   ok((await page.locator("#tfSw").count()) === 0 && !/1-hour|Both/.test(await page.textContent("#mine")) && !/4-hour chart/.test(await page.locator(".trk").textContent()), "no chart switch: the 4-hour chart is just the standard (not shown)");
   const syms = await page.locator(".cl .sym").allTextContents();
   ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));
@@ -852,7 +852,9 @@ async function rankPageTests(browser, body, scanBody) {
   await box.locator("[data-fold=ranks]").click();
   ok((await page.locator(".rkb").locator(".trr").count()) === 8, "Show all opens the whole list");
   await page.click("[data-k=futures]");
-  ok((await page.locator(".rkb").count()) === 0, "the ranked box is only on Stocks");
+  ok((await page.locator(".rkb:not(.fb)").count()) === 0, "the ranked box is only on Stocks");
+  const fbx = page.locator(".fb"), fbt = (await fbx.count()) ? await fbx.textContent() : "";
+  ok((await fbx.count()) === 1 && /Futures · last 2 years/.test(fbt) && (await fbx.locator(".trr").count()) >= 3 && /\d+ trades/.test(fbt) && /[+−]\d+\.\d%/.test(fbt) && /MGC/.test(fbt) && !/SIL/.test(fbt), "Futures watch list: each future's 2-year trades, win % and result", fbt.slice(0, 200));
   await page.click("[data-k=stocks]");
   const shown = await page.locator(".c .sym").allTextContents();
   ok(shown.includes(inList) && shown.includes(outList), "the watch list still shows every stock with a line (no filter)", shown.join());
