@@ -172,7 +172,7 @@ const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(1) + "%";
 
 // Futures (and your added symbols) and the stock scan load separately: each shows as soon as it arrives,
 // so futures don't wait for the stock scan.
-let futPart = null, stockPart = null, scanning = false, newsEvents = [], earnings = {};
+let futPart = null, stockPart = null, scanning = false, newsEvents = [], earnings = {}, ranks2y = null;
 
 // Market hours (New York time; holidays aren't counted). Futures: Sunday 6 PM to Friday 5 PM, with a
 // 5-6 PM break each weekday. Stocks: 9:30 AM to 4 PM, Monday to Friday. Returns "" when open.
@@ -221,7 +221,7 @@ function merge() {
   const a = futPart || { markets: [] }, b = stockPart || {};
   const have = new Set((a.markets || []).map((m) => m.sym));
   data = { at: a.at || b.at || Date.now(), markets: (a.markets || []).concat((b.markets || []).filter((m) => !have.has(m.sym))),
-    scanned: b.scanned, scanErr: !!stockPart && !b.markets, scanning, stockRecord: b.record || null, stockRanks: b.ranks || null };
+    scanned: b.scanned, scanErr: !!stockPart && !b.markets, scanning, stockRecord: b.record || null, stockRanks: ranks2y || b.ranks || null }; // 2-year ranking once it has loaded, else the scan's 6 months
 }
 async function load() {
   if (loading) return;
@@ -233,6 +233,8 @@ async function load() {
   const stk = fetch("/api/scan?tf=" + chartTF()).then((r) => r.json()).catch(() => ({ error: "scan failed" }))
     .then((b) => { stockPart = b; scanning = false; merge(); notifyNew(); render(); });
   const nws = fetch("/api/news").then((r) => r.json()).then((n) => { newsEvents = n.events || []; render(); }).catch(() => {});
+  // Respects trendlines: ranked on 2 years (worked out once a day on the server; slow the first time each day).
+  if (!ranks2y) fetch("/api/scan?ranks=1").then((r) => r.json()).then((j) => { if (j.ranks) { ranks2y = j.ranks; merge(); render(); } }).catch(() => {});
   const extraStocks = symbols().filter((x) => !/=F$/.test(x));
   fetch("/api/earnings" + (extraStocks.length ? "?s=" + encodeURIComponent(extraStocks.join(",")) : "")).then((r) => r.json()).then((n) => { earnings = n.earnings || {}; render(); }).catch(() => {});
   await Promise.all([fut, stk, nws]);
@@ -651,7 +653,7 @@ function rankBox() {
     const w = (m.watch || []).slice().sort((a, b) => a.dist - b.dist)[0];
     return w ? "<b>Near a line</b> · " + away(m, w) : '<span class="mu">No line nearby</span>';
   };
-  return '<div class="c rkb"><div class="st">Respects trendlines · last 6 months</div>' +
+  return '<div class="c rkb"><div class="st">Respects trendlines · ' + (ranks2y ? "last 2 years" : "last 6 months") + '</div>' +
     '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned. % = what your account would have made risking 1% on each trade (a $10,000 account: +5% = +$500).</div>" +
     shown.map((r, i) => '<div class="trr"><span><b>' + (i + 1) + ". " + esc(r.sym) + '</b> <span class="note">' + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span></span><b class="ok">+' + r.totalR.toFixed(1) + "%</b></div>" +
       '<div class="note" style="margin:0 0 4px">' + where(r.sym) + "</div>").join("") +

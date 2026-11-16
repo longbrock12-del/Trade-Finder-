@@ -246,6 +246,9 @@ async function scanTests() {
   const rF = await call("api/scan.js", "/api/scan?market=futures", fakeYahoo(() => "GC"), NOW * 1000);
   ok(rF.status === 200 && rF.body.market === "futures" && rF.body.scanned === 12 && rF.body.test.setups === "all", "?market=futures tests a basket of 12 futures with her full strategy", JSON.stringify({ s: rF.body.scanned, t: rF.body.test }));
   ok((await call("api/scan.js", "/api/scan?years=3", fy, AMZN_NOW * 1000)).status === 400, "only 0.5, 1 or 2 years");
+  const asked3 = [], spy3 = async (u) => { asked3.push(decodeURIComponent(String(u))); return fy(u); };
+  const rk2 = await call("api/scan.js", "/api/scan?ranks=1", spy3, AMZN_NOW * 1000);
+  ok(rk2.status === 200 && rk2.body.years === 2 && Array.isArray(rk2.body.ranks) && !rk2.body.markets && asked3.some((u) => /interval=60m&range=2y/.test(u)), "?ranks=1: the Respects trendlines list from 2 years of the live rules", JSON.stringify({ y: rk2.body.years, n: (rk2.body.ranks || []).length }));
   console.log("Her filters (on, like the live site)");
   const DAYs = 86400, mkDaily = (f) => Array.from({ length: 400 }, (_, i) => { const t = 1700000000 + i * DAYs, m = f(i); return { t, o: m, h: m + 1, l: m - 1, c: m }; });
   const upT = TLM.trendSeries(mkDaily((i) => 100 + i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);
