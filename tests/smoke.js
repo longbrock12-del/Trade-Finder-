@@ -166,6 +166,10 @@ async function scannerTests() {
   const wc = amzW.watch[0] && amzW.watch[0].chart;
   ok(wc && wc.bars.length > 50 && wc.line && wc.line.t0 === amzW.watch[0].line.t0 && Array.isArray(wc.lines) && wc.lines.some((l) => l.action) && wc.zoom.length > 100 && wc.mid.bars.length > 50, "?wchart=1: a watch line gets the same chart a callout gets (its line thick, every line, zoom views)", amzW.watch.length);
   ok(amzN.watch.length && amzN.watch.every((w) => !w.chart && !w._ln), "no watch charts unless asked (the page stays small)");
+  const gSig = T.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, all: true, tfs: ["4H"] }).signals.slice(-1)[0];
+  const ctM = (await tradesApi("/api/trades?s=MGC=F&tf=4H&ct=" + gSig.t + "&cd=" + gSig.dir)).body.markets[0];
+  ok(ctM.trade && ctM.trade.t === gSig.t && ctM.trade.entry === gSig.entry && ctM.trade.chart && ctM.trade.chart.bars.length > 50 && ctM.trade.chart.line, "?ct=&cd=: an earlier callout comes back with its own chart (for the tracking box)");
+  ok(!(await tradesApi("/api/trades?s=MGC=F&tf=4H&ct=123&cd=long")).body.markets[0].trade, "an unknown callout gives no chart (the page says so)");
   const futM = (await tradesApi("/api/trades?tf=4H")).body.markets;
   ok(futM.every((m) => m.look && m.look.lineNow > 0 && m.look.chart === null) && amzN.look === undefined, "futures always carry their nearest line (no chart: small); stocks don't");
   const lk = (await call("api/trades.js", "/api/trades?s=AAPL&tf=4H&look=1", fakeYahoo((s) => (s === "AAPL" ? "AAPL" : null)))).body.markets[0];
@@ -749,6 +753,15 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.click(".ofold .omore");
   const om2 = await page.evaluate(() => [document.querySelectorAll(".ofold .trr").length, document.querySelector(".ofold .omore").textContent]);
   ok(om[0] === 1 && om[1] === "▾ Show 2 more" && om2[0] === 3 && om2[1] === "▴ Show less", "with more open callouts: one shows, tap Show 2 more to see the rest", JSON.stringify([om, om2]));
+  const gAll = TLM.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, all: true, tfs: ["4H"] }), withTrade = { ...gAll, sym: "MGC=F", trade: gAll.signals.slice(-1)[0] };
+  let ctAsk = "";
+  await page.route("**/api/trades**ct=**", (r) => { ctAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: { at: Date.now(), markets: [withTrade] } }); });
+  await page.locator(".ofold [data-och]").first().click();
+  await page.waitForSelector(".ofold .chart svg", { timeout: 5000 }).catch(() => {});
+  ok(/ct=\d+&cd=(long|short)/.test(ctAsk) && (await page.locator(".ofold .chart svg").count()) === 1 && (await page.locator(".ofold .lns .lnr").count()) >= 2, "tracking box: 📈 Chart shows that callout's own chart and lines", ctAsk);
+  await page.locator(".ofold [data-och]").first().click();
+  ok((await page.locator(".ofold .chart").count()) === 0, "tapping again hides it");
+  await page.unroute("**/api/trades**ct=**");
   ok((await page.locator(".trk .lchart svg polyline").count()) === 1 && /Live callouts: 1 closed, dashed = open now/.test(tr), "the track record charts the live callouts (closed ones, open one dashed)");
   const lc = await page.evaluate(() => [liveChart([{ status: "closed", exitR: 2, closedAt: 1 }, { status: "closed", exitR: -1, closedAt: 2 }]), liveChart([{ status: "open", nowR: 0.5 }])]);
   ok((lc[0].match(/<circle/g) || []).length === 2 && /var\(--gd\)/.test(lc[0]) && /starts when the first callout closes/.test(lc[1]), "live chart: one dot per closed callout, green when ahead; waits for the first closed one");

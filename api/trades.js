@@ -54,10 +54,12 @@ async function handler(req, res) {
   const q = new URL(req.url, "http://x").searchParams.get("s");
   const list = q ? [...new Set(q.toUpperCase().split(",").map((x) => x.trim()).filter((x) => SYM.test(x)))].slice(0, MAX) : FUTURES;
   const sp = new URL(req.url, "http://x").searchParams, one = list.length === 1;
+  // ?ct=<time>&cd=long|short: one callout the site sent earlier, with its chart (the tracking box).
+  const ct = Number(sp.get("ct")), tradeAt = one && ct > 0 && ["long", "short"].includes(sp.get("cd")) ? { t: ct, dir: sp.get("cd") } : null;
   const tfs = chartsFrom(req), watchCharts = sp.get("wchart") === "1" && one, lookup = sp.get("look") === "1" && one; // one market: its watch-line charts / a look-up chart
   const markets = await Promise.all(list.map(async (sym) => {
     try {
-      return { ...scan(...(await both(sym)), { sym, tfs, watchCharts, lookup }), sym };
+      return { ...scan(...(await both(sym)), { sym, tfs, watchCharts, lookup, tradeAt }), sym };
     } catch (e) { return { sym, error: e.message || "failed" }; }
   }));
   const okCount = markets.filter((m) => !m.error).length;

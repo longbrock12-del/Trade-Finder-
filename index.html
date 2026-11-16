@@ -600,6 +600,24 @@ function renderCalls() {
 
 // Callouts the site sent that are still open (from the live record), in a small bar that stays closed until
 // tapped: how each is doing right now, using the price on the page (or the last 15-minute check).
+// Chart for one already-running callout in the tracking box: its own line, entry and stop, loaded when tapped.
+function tradeChart(x) {
+  const k = "O" + x.sym + "|" + x.t + "|" + x.dir, c = wcharts[k];
+  let h = '<div class="tv sm"><button class="btn" data-och="' + esc(x.sym + "|" + x.t + "|" + x.dir) + '" aria-expanded="' + !!(c && c.shown) + '">' + (c && c.shown ? "Hide chart" : "📈 Chart") + "</button></div>";
+  if (!c || !c.shown) return h;
+  if (c.loading) return h + '<div class="note"><span class="sp"></span> Loading chart…</div>';
+  if (c.error) return h + '<div class="note bad">' + esc(c.error) + "</div>";
+  return h + (zoomed[k] ? lineView(c.m, c.s, zoomed[k]) : chart(c.m, c.s)) + linesBlock(c.m, c.s, k);
+}
+async function loadTradeChart(id) {
+  const [sym, t, dir] = id.split("|"), k = "O" + id;
+  wcharts[k] = { shown: true, loading: true }; render();
+  try {
+    const m = ((await (await fetch("/api/trades?s=" + encodeURIComponent(sym) + "&tf=4H&ct=" + t + "&cd=" + dir)).json()).markets || [])[0];
+    wcharts[k] = m && m.trade && m.trade.chart ? { shown: true, m, s: m.trade } : { shown: true, error: "This callout's chart isn't available anymore (it's older than the 6 months the site replays)." };
+  } catch (e) { wcharts[k] = { shown: true, error: "The chart didn't load. Try again in a minute." }; }
+  render();
+}
 function openTrades() {
   const ot = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "open" && x.kind === kind && (x.view || "4H") === chartTF()).sort((a, b) => b.t - a.t); // newest first
   if (!ot.length) return "";
@@ -608,7 +626,7 @@ function openTrades() {
     const r = m && x.risk ? (sign * (m.price - x.entry)) / x.risk : x.nowR;
     const stop = x.stopNow != null ? x.stopNow : x.stop, act = esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short"); // a status, not an order: these are already running
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · entry " + num(x.entry, d) + (stop != null ? " · stop " + num(stop, d) : "") + "</span></span>" +
-      '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" };
+      '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + tradeChart(x) };
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
   // One box: the title, the newest open trade always showing, and a button for the rest.
@@ -837,7 +855,7 @@ function render() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return; // links open normally and don't toggle the chart
-  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-nch],[data-lookx],[data-wall],[data-lal],.op,.lns,#retry,.cl,#alerts");
+  const t = e.target.closest("[data-tab],[data-k],[data-rm],[data-reset],[data-fold],[data-opt],[data-zoom],[data-wch],[data-nch],[data-och],[data-lookx],[data-wall],[data-lal],.op,.lns,#retry,.cl,#alerts");
   if (!t || t.classList.contains("op")) return;
   if (t.dataset.lal) {
     const [sym, tf2, ...rest] = t.dataset.lal.split("|"), key = rest.join("|");
@@ -846,6 +864,7 @@ document.addEventListener("click", (e) => {
   }
   if (t.dataset.wall) { store.set("watchAll", !store.get("watchAll", false)); render(); return; }
   if (t.dataset.lookx) { looked = null; render(); return; }
+  if (t.dataset.och) { const k = "O" + t.dataset.och; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].s) { wcharts[k].shown = true; render(); } else loadTradeChart(t.dataset.och); return; }
   if (t.dataset.nch) { const k = "N" + t.dataset.nch; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].chart) { wcharts[k].shown = true; render(); } else loadNearChart(t.dataset.nch); return; }
   if (t.dataset.wch) { const k = t.dataset.wch; if (wcharts[k] && wcharts[k].shown) { wcharts[k].shown = false; render(); } else if (wcharts[k] && wcharts[k].chart) { wcharts[k].shown = true; render(); } else loadWatchChart(k); return; }
   if (t.dataset.zoom) { zoomed[t.dataset.zoom] = t.dataset.mode || ""; render(); return; }

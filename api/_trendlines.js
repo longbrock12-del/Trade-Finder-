@@ -637,6 +637,13 @@ function scanCore(hChart, dChart, opts = {}) {
         chart: opts.lookup ? chartFor({ tf: "4H", action: ln, safety: other || null, tapX: g.tapX, at: s.last, from: null, closedAt: null }) : null };
     }
   }
+  // A callout the site sent earlier (opts.tradeAt = { t, dir }: its time and direction), with its chart, for the
+  // tracking box. Found in the 6-month replay, which makes the same callouts.
+  let trade = null;
+  if (opts.tradeAt) {
+    const x = hist.find((c) => c.t === opts.tradeAt.t && c.dir === opts.tradeAt.dir);
+    if (x) { trade = { ...x, chart: chartFor(x) }; ["action", "safety", "tapX", "from", "entryRaw", "riskRaw"].forEach((k) => delete trade[k]); }
+  }
   const clean = (x) => {
     const o = { ...x, chart: opts.all || (x.status === "open" && now - x.t <= CHART_AGE) ? chartFor(x) : null };
     ["action", "safety", "tapX", "from", "entryRaw", "riskRaw"].forEach((k) => delete o[k]);
@@ -646,7 +653,7 @@ function scanCore(hChart, dChart, opts = {}) {
   return {
     sym, name: meta.shortName || meta.longName || sym, kind: isFuture ? "futures" : "stocks",
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
-    dailyBars: daily.length, trend: trendAt(now), ...(isFuture ? { spark: b4.slice(Math.max(0, l4 - 29), l4 + 1).map((q) => px(q.c)) } : {}), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), record: opts.history === false ? null : record(hist),
+    dailyBars: daily.length, trend: trendAt(now), ...(isFuture ? { spark: b4.slice(Math.max(0, l4 - 29), l4 + 1).map((q) => px(q.c)) } : {}), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), ...(trade ? { trade } : {}), record: opts.history === false ? null : record(hist),
   };
 }
 
