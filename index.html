@@ -108,6 +108,7 @@ input::placeholder{color:#55665c}
 .ofold{padding:4px 12px}.ofold>.btn{width:100%;text-align:left;border:0;background:none;padding:8px 0;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ofold .note.mini{margin-bottom:8px}
 .ohead{padding:8px 0 4px;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.omore{width:100%;border:0;background:none;color:var(--ac);padding:6px 0 0;text-align:left;font-size:12.5px}
 .cd{margin-left:auto;align-self:center;font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--mu);white-space:nowrap}.cd b{color:var(--ac);font-weight:700}
+.tag.tbad{background:rgba(240,86,90,.14);color:var(--bad)}
 </style></head>
 <body><div class="w">
 <header>
@@ -197,6 +198,7 @@ function infoLine(m, noTrend) { // noTrend: callout cards (a callout always goes
   // Her top-down trend: only trades in this direction are called out; none when there's no clear trend.
   if (m.trend && !noTrend) parts.push(m.trend.dir ? '<span class="' + (m.trend.dir === "up" ? "ok" : "bad") + '" title="Her top-down trend (Weekly, or Daily if the Weekly is unclear). Bounces only trade this way; breaks catch reversals.">Trend ' + (m.trend.dir === "up" ? "↑ up" : "↓ down") + " (" + m.trend.from + ")" + "</span>"
     : '<span class="warn" title="No clear trend on the Weekly or Daily: no bounce trades until one forms">No clear trend: no bounces</span>');
+  if (noTrend) { const y = yr2(m, true); if (y) parts.push(y); } // callout cards: the market's 2-year result, on this line to keep the box small
   if (c) parts.push('<span title="Market closed. New York time.">Opens ' + c + "</span>");
   // Cautions, all in one line: what's coming and how much it usually moves the market (Big / Moderate).
   // News: the next 24 hours. Stocks: earnings in the next 2 weeks (always Big: a gap can jump the trendline,
@@ -463,6 +465,23 @@ function sizeLine(m, s, short) {
   return '<div class="note">Size: <b>' + n + " " + unit + (n > 1 ? "s" : "") + "</b>, risking about $" + num(n * per, 0) + " (" + pct + "% of $" + num(acct, 0) + " = $" + num(budget, 0) + ")" + (m.kind === "stocks" ? ". With options, use the dollar risk, not the share count." : "") + "</div>";
 }
 
+// 2-yr badge: this market's own 2-year result with her rules (from the daily 2-year numbers).
+function yr2(m, short) {
+  const r = m.kind === "futures" ? (m.record2y && m.record) : stats2y && stats2y.bySym && stats2y.bySym[m.sym];
+  if (!r) return "";
+  if (!r.trades) return '<span class="tag" title="This market\u2019s 2-year result with her rules">2-yr: no trades</span>';
+  const pct = (r.totalR >= 0 ? "+" : "−") + Math.abs(r.totalR).toFixed(1) + "%";
+  return '<span class="tag ' + (r.totalR >= 0 ? "tok" : "tbad") + '" title="This market\u2019s 2-year result with her rules, at 1% risk per trade (' + r.trades + ' trades)">2-yr' + (short ? " " + pct : ": " + r.trades + " trades · " + pct) + "</span>";
+}
+// Setup odds: how this setup did over 2 years on this kind of market (all futures, or all scanned stocks).
+function setupOdds(m, s) {
+  const k = s.setup === "bounce" ? "bounce" : s.setup === "break & retest" ? "retest" : "break", name = { bounce: "bounces", retest: "break & retests", break: "breaks" }[k];
+  const parts = m.kind === "futures" ? data.markets.filter((q) => q.kind === "futures" && q.record2y && q.record && q.record.bySetup).map((q) => q.record.bySetup[k]).filter(Boolean)
+    : stats2y && stats2y.record && stats2y.record.bySetup && stats2y.record.bySetup[k] ? [stats2y.record.bySetup[k]] : [];
+  const n = parts.reduce((a, x) => a + x.trades, 0), w = parts.reduce((a, x) => a + x.wins, 0), r = parts.reduce((a, x) => a + x.totalR, 0);
+  if (!n) return "";
+  return '<div class="note mini">2-yr odds, ' + (m.kind === "futures" ? "futures " : "stocks ") + name + ": <b>" + Math.round((100 * w) / n) + '% wins</b> · <b style="color:var(' + (r >= 0 ? "--gd" : "--bad") + ')">' + (r >= 0 ? "+" : "−") + Math.abs(r / n).toFixed(2) + "% per trade</b> (" + n + " trades)</div>";
+}
 // Real touches badge: green when 3+ wicks actually reached the line (lines she'd count), amber when some taps
 // were only near misses. x: a callout, watch line or look-up line with taps and real.
 function touchBadge(x, short) {
@@ -486,7 +505,7 @@ function card(m, s) {
       : '<div class="st ' + st[1] + '">' + st[0] + (s.status === "closed" && s.exitPx != null ? " at " + num(s.exitPx, d) + (s.exitHow ? " (" + esc(s.exitHow) + ")" : "") : "") + "</div>";
   // Collapsed: a compact summary like the watch list. Tap the box for everything.
   if (!big) return '<article class="c cl sm" tabindex="0" data-k="' + esc(k) + '" aria-expanded="false">' +
-    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + '</span><span class="tag">' + esc(s.tf) + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + touchBadge(s, true) + (isNew ? '<span class="tag new">NEW</span>' : "") + "</div>" +
+    '<div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag ' + s.dir + '">' + s.dir.toUpperCase() + '</span><span class="tag ' + (s.grade === "A+" ? "ap" : "") + '">' + s.grade + " · " + s.passed + "/4</span>" + touchBadge(s, true) + (isNew ? '<span class="tag new">NEW</span>' : "") + "</div>" +
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + ' · <span class="tog">Details ▾</span></div></div>' +
     status.replace('style="font-size:15px"', "") + infoLine(m, true) +
     '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s, true) + "</article>";
@@ -500,7 +519,7 @@ function card(m, s) {
     (open ? '<div class="note">Set your stop order at <b>' + num(s.stop, d) + "</b>, just past the safety line, and trail it as the line moves. Get out early if a " + TFNAME[s.tf] + " candle closes through the safety line (now at " + num(s.line, d) + ").</div>" : "") +
     (open && s.tp ? '<div class="note">Optional take-profit, her quick-win exit: <b>' + num(s.tp.price, d) + "</b> (" + signR(s.tp.r) + "), just before a level price turned at " + s.tp.touches + " times. Trailing usually lets winners run further; the track record uses trailing.</div>" : "") +
     (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
-    (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) +
+    (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) + setupOdds(m, s) +
     '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
     (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
     (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k)) +
@@ -699,7 +718,7 @@ function watchCard(m, w) {
   const soon = soonAplus(w), up = w.kind.startsWith("rising");
   // Stocks trade breaks only; futures trade breaks and, with the trend, bounces.
   const plan = m.kind === "stocks" ? (up ? "Close below = short (break)" : "Close above = long (break)") : up ? "Close below = short · tag and hold = long (with the trend)" : "Close above = long · tag and reject = short (with the trend)";
-  return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" + touchBadge(w) +
+  return '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">' + esc(w.tf) + '</span><span class="tag ' + (w.grade === "A+" ? "ap" : "") + '">' + w.grade + " · " + w.passed + "/4</span>" + touchBadge(w) + yr2(m) +
     (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
     nearBar(w.dist) +

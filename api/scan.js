@@ -63,7 +63,9 @@ async function stats(req, res, sp) {
     ? fetch("https://" + host + "/api/scan?stats=1&part=" + i, { signal: AbortSignal.timeout(115000) }).then((r) => r.json()).catch(() => ({ recs: [], failed: [], scanned: 0 }))
     : statsPart(i)));
   const recs = parts.flatMap((x) => x.recs || []), scanned = parts.reduce((a, x) => a + (x.scanned || 0), 0), whole = parts.every((x) => x.scanned);
-  send(res, scanned ? 200 : 502, !scanned ? 0 : whole ? 86400 : 1800, { at: Date.now(), years: 2, scanned, failed: parts.flatMap((x) => x.failed || []), record: combine(recs), ranks: ranks(recs) });
+  send(res, scanned ? 200 : 502, !scanned ? 0 : whole ? 86400 : 1800, { at: Date.now(), years: 2, scanned, failed: parts.flatMap((x) => x.failed || []), record: combine(recs), ranks: ranks(recs),
+    // each stock's own 2-year result, for the 2-yr badge on its cards
+    bySym: Object.fromEntries(recs.map((r) => [r.sym, { trades: r.trades, wins: r.wins, totalR: Math.round(r.totalR * 10) / 10 }])) });
 }
 
 async function handler(req, res) {

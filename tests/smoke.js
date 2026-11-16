@@ -422,7 +422,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(fut.length >= 1 && fut.every((x) => /GET IN NOW: (BUY|SELL) [A-Z]+ near/.test(x)), "futures cards say GET IN NOW: BUY or SELL (no calls or puts)", fut.join(","));
   ok((await page.locator(".cl").count()) >= 1, "callout cards render", await page.locator(".cl").count());
   ok((await page.locator(".cl .tag", { hasText: /^(A\+ · 4|B · 3)\/4$/ }).count()) === (await page.locator(".cl").count()), "every card shows how many checklist rules it passes (3/4 or 4/4)");
-  ok((await page.locator(".cl .tag", { hasText: /^(4H|1H)$/ }).count()) === (await page.locator(".cl").count()), "every card says which chart it's on (4H or 1H)");
+  ok((await page.locator(".cl.sm .tag", { hasText: /^(4H|1H)$/ }).count()) === 0, "closed callout boxes skip the 4H tag (every callout is on the 4-hour chart), keeping the box compact");
   ok((await page.locator(".cl", { hasText: /(Monthly|Weekly|Daily|4-hour|1-hour)<?\/?b?>? ?line|line \(from/ }).count()) >= 1, "cards name the line's timeframe");
   ok(/no data for ZZZ/.test(await page.textContent("#sub")), "header names symbols with no data");
   ok(/scanned 108 stocks/.test(await page.textContent("#sub")), "header shows how many stocks were scanned");
@@ -648,6 +648,15 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=calls]"); await page.click("[data-k=futures]");
   const cdF = (await page.textContent("#cd")).trim(); await page.click("[data-k=stocks]"); const cdS = (await page.textContent("#cd")).trim();
   ok(cdF === "Market Opens In 11m" && cdS === "Market Opens In 15h 41m", "the top says Market Opens In (or Market Closes In) with a countdown, for the tab you're on", cdF + " | " + cdS);
+  const y2 = await page.evaluate(() => {
+    const keep = [stats2y, data.markets.map((m) => [m.record, m.record2y])];
+    stats2y = { record: { bySetup: { break: { trades: 40, wins: 14, totalR: 2 } } }, bySym: { ZZ: { trades: 6, wins: 3, totalR: -1.2 } } };
+    const fm = { kind: "futures", sym: "QQ=F", record2y: true, record: { trades: 22, wins: 9, totalR: 8.8 } };
+    const out = [yr2(fm), yr2(fm, true), yr2({ kind: "stocks", sym: "ZZ" }), yr2({ kind: "stocks", sym: "NONE" }), setupOdds({ kind: "stocks" }, { setup: "3-touch break" })];
+    stats2y = keep[0];
+    return out;
+  });
+  ok(/2-yr: 22 trades · \+8\.8%/.test(y2[0]) && /tok/.test(y2[0]) && /2-yr \+8\.8%/.test(y2[1]) && /2-yr: 6 trades · −1\.2%/.test(y2[2]) && /tbad/.test(y2[2]) && y2[3] === "" && /2-yr odds, stocks breaks: <b>35% wins<\/b>.*\+0\.05% per trade.*\(40 trades\)/.test(y2[4]), "2-yr badge (green/red, short on callout boxes) and 2-yr setup odds", JSON.stringify(y2).slice(0, 400));
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }
