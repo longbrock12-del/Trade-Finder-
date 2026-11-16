@@ -701,24 +701,6 @@ function rankBox() {
     (list.length > RANK_SHOW ? '<button class="btn" data-fold="ranks" style="width:100%;margin-top:6px">' + (all ? "Show top " + RANK_SHOW : "Show all " + list.length) + "</button>" : "") + "</div>";
 }
 
-// Futures watch list: each future's result following her rules over the last 2 years (best first), and where
-// it is now. Shows once the 2-year numbers load.
-function futBox() {
-  const list = data.markets.filter((m) => m.kind === "futures" && !m.error && m.record2y && m.record).sort((a, b) => b.record.totalR - a.record.totalR);
-  if (!list.length) return "";
-  const where = (m) => {
-    const s = (m.signals || []).find((x) => canEnter(x));
-    if (s) return '<b class="ok">▶ Callout now: ' + action(m, s) + "</b>";
-    const w = (m.watch || []).slice().sort((a, b) => a.dist - b.dist)[0];
-    return w ? "<b>Near a line</b> · " + away(m, w) : '<span class="mu">No line nearby</span>';
-  };
-  return '<div class="c rkb fb"><div class="st">Futures · last 2 years</div>' +
-    '<div class="note" style="margin:2px 0 4px">Each future\u2019s result following her rules, at 1% risk per trade.</div>' +
-    list.map((m) => { const r = m.record, p = (r.totalR >= 0 ? "+" : "\u2212") + Math.abs(r.totalR).toFixed(1) + "%";
-      return '<div class="trr"><span><b>' + esc(show(m.sym)) + '</b> <span class="note">' + r.trades + " trades" + (r.trades ? " · " + Math.round((100 * r.wins) / r.trades) + "% wins" : "") + '</span></span><b class="' + (r.totalR >= 0 ? "ok" : "bad") + '">' + p + "</b></div>" +
-        '<div class="note" style="margin:0 0 4px">' + where(m) + "</div>"; }).join("") + "</div>";
-}
-
 // How far price is from a line, in price: stocks in $, futures in points plus $ per micro contract.
 function away(m, w) {
   const d = Math.abs(m.price - w.lineNow);
@@ -816,7 +798,7 @@ function watchList() {
   // Fewest dollars away first: stocks in $ per share, futures in $ per contract (the amounts the boxes show).
   const usd = ({ m, w }) => Math.abs(m.price - w.lineNow) * (m.pointValue || 1);
   rows.sort((a, b) => usd(a) - usd(b));
-  const top = kind === "stocks" ? rankBox() : futBox(); // stocks that respect trendlines / each future's 2-year result, before anything is a callout
+  const top = kind === "stocks" ? rankBox() : ""; // stocks that respect trendlines, before anything is a callout
   // Futures: every futures market (MGC, MCL, MHG) always shows. Any without a callout-quality line near price get a box with their nearest line.
   const nearOnes = kind === "futures" ? data.markets.filter((m) => !m.error && m.kind === "futures" && m.look && !(m.watch || []).length) : [];
   const nearHtml = nearOnes.length ? '<h2>Nearest line (not near enough yet)</h2>' + nearOnes.map(nearCard).join("") : "";
@@ -837,7 +819,7 @@ function nearCard(m) {
   const ok = L.passed >= 3 && ck.taps && L.days >= 7;
   const why = ok ? "Passes her checklist, just not close to price yet." : "Doesn't pass her checklist yet, so it wouldn't make a callout.";
   const plan = up ? "Close below = short · tag and hold = long (with the trend)" : "Close above = long · tag and reject = short (with the trend)";
-  let h = '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">4H</span><span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" + touchBadge(L) +
+  let h = '<article class="c wc"><div class="top"><div style="min-width:0"><span class="sym">' + esc(show(m.sym)) + '</span> <span class="tag">4H</span><span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" + touchBadge(L) + yr2(m) +
     '</div><b class="wp">' + num(L.lineNow, d) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(L.lineTF) + " line</span><span>" + away(m, L) + "</span></div>" +
     nearBar(L.dist) +

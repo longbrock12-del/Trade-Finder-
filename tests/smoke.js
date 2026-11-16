@@ -852,9 +852,9 @@ async function rankPageTests(browser, body, scanBody) {
   await box.locator("[data-fold=ranks]").click();
   ok((await page.locator(".rkb").locator(".trr").count()) === 8, "Show all opens the whole list");
   await page.click("[data-k=futures]");
-  ok((await page.locator(".rkb:not(.fb)").count()) === 0, "the ranked box is only on Stocks");
-  const fbx = page.locator(".fb"), fbt = (await fbx.count()) ? await fbx.textContent() : "";
-  ok((await fbx.count()) === 1 && /Futures · last 2 years/.test(fbt) && (await fbx.locator(".trr").count()) >= 3 && /\d+ trades/.test(fbt) && /[+−]\d+\.\d%/.test(fbt) && /MGC/.test(fbt) && !/SIL/.test(fbt), "Futures watch list: each future's 2-year trades, win % and result", fbt.slice(0, 200));
+  ok((await page.locator(".rkb").count()) === 0, "the ranked box is only on Stocks");
+  const ftags = await page.locator("article.wc .tag").allTextContents();
+  ok((await page.locator(".fb").count()) === 0 && ftags.some((t) => /^2-yr: \d+ trades · [+−]\d+\.\d%$/.test(t)), "Futures watch boxes show the 2-yr tag (trades and result), like stocks", ftags.filter((t) => /2-yr/.test(t)).join(" | "));
   await page.click("[data-k=stocks]");
   const shown = await page.locator(".c .sym").allTextContents();
   ok(shown.includes(inList) && shown.includes(outList), "the watch list still shows every stock with a line (no filter)", shown.join());
