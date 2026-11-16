@@ -155,6 +155,9 @@ async function scannerTests() {
     ok(cAll.signals.every((x) => !TC.nearCrudeRoll(dayOf(x.t))) && TC.crudeLastDay(2026, 10).toISOString().slice(0, 10) === "2026-11-20" && TC.nearCrudeRoll("2026-11-17") && !TC.nearCrudeRoll("2026-11-16") && !TC.nearCrudeRoll("2026-11-23"), "no new crude callouts in the 4 trading days up to the contract's last day (Nov 17-20, 2026)");
     const trailG = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: null } });
     const stockR = TC.scan(load("yahoo_AAPL.json"), load("yahoo_daily_AAPL.json"), { sym: "AAPL", now: NOW, tfs: ["4H"], all: true });
+    const far1 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { tmin: 1 } });
+    const tpR = (r) => r.signals.filter((x) => x.exitHow === "take profit").map((x) => x.exitR);
+    ok(tpR(far1).every((r) => r >= 0.99) && tpR(gAll2).some((r) => r < 1), "tmin=1 test: target lines closer than 1R are skipped", tpR(far1).join(",") + " vs " + tpR(gAll2).join(","));
     ok(gAll2.signals.some((x) => x.exitHow === "take profit") && !trailG.signals.some((x) => x.exitHow === "take profit") && !stockR.signals.some((x) => x.exitHow === "take profit"), "futures take profit at a bigger-timeframe trendline (live); exit=trail turns it off; stocks trail only"); }
   ok(recs.every((r) => Object.values(r.bySetup).reduce((a, b) => a + b.trades, 0) === r.trades) && recs.some((r) => r.bySetup.retest), "track record splits trades by setup (break, break & retest, bounce)");
   // Break & retest: found after a break, same line, entered later on a candle that touched the line from the other side.

@@ -385,7 +385,7 @@ function callout(s, e, last, live, px) {
   // exit=tp test: her take-profit, set at entry from the candles up to then (no peeking ahead).
   const mode = s.exit || null; // "htf" (futures), "tp" (test), none = trail only
   const tpAt = mode === "tp" ? takeProfit(s, e.long, ent, ent, from) : null;
-  const htf = mode === "htf" ? htfTarget(s, e.long, from, ent) : null;
+  const htf = mode === "htf" ? htfTarget(s, e.long, from, ent, (s.tmin || 0) * risk) : null;
   const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : htf ? (i) => val(htf, s.x0 + i) : null);
   const far = risk > FAR_ATR * s.A[from];
   const sign = e.long ? 1 : -1;
@@ -427,14 +427,15 @@ function srLevels(daily, live) {
 // exit=htf test: her other exit, "price got to a higher time frame trendline". For a long, the nearest
 // Daily/Weekly/Monthly falling line above the entry (an older, flatter line of the falling chain, extended);
 // for a short, the nearest rising one below. Taken from the chains as they stood at entry.
-function htfTarget(s, long, from, entry) {
+// minDist (tests: tmin, in R): skip lines closer than that to the entry.
+function htfTarget(s, long, from, entry, minDist = 0) {
   const ch = s.chainsBefore(from + 1), c = long ? ch.dn : ch.up, x = s.x0 + from;
   let best = null, bestV = null;
   for (let k = 1; k < c.length; k++) {
     const ln = lineOf(c[k - 1], c[k]);
     if (!ln.slope || TF_ORDER.indexOf(tfOfLine(ln, s.tf)) < 2) continue;
     const v = val(ln, x);
-    if (long ? v > entry && (bestV == null || v < bestV) : v < entry && (bestV == null || v > bestV)) { best = ln; bestV = v; }
+    if (long ? v > entry + minDist && (bestV == null || v < bestV) : v < entry - minDist && (bestV == null || v > bestV)) { best = ln; bestV = v; }
   }
   return best;
 }
@@ -599,7 +600,7 @@ function scanCore(hChart, dChart, opts = {}) {
     const b = sets[tf], use = !opts.tfs || opts.tfs.includes(tf);
     if (b.length < 30 || (!use && tf !== "4H")) return;
     const s = (S[tf] = setup(daily, b, isFuture, tf));
-    s.exit = R.exit || null;
+    s.exit = R.exit || null; s.tmin = R.tmin || 0;
     const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
     s.last = last;
     if (!use) return;

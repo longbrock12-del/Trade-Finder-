@@ -93,14 +93,16 @@ async function handler(req, res) {
   const sq = new URL(req.url, "http://x").searchParams;
   if (sq.get("stats") === "1") {
     // Tests only: roll=1 (crude back-adjusted for contract switches), exit=tp (take profit at her S/R target),
-    // exit=htf (take profit at a bigger-timeframe trendline; the futures' live exit), exit=trail (safety line only).
-    const roll = sq.get("roll") === "1", exit = ["tp", "htf", "trail"].includes(sq.get("exit")) ? sq.get("exit") : null, test = roll || !!exit;
+    // exit=htf (take profit at a bigger-timeframe trendline; the futures' live exit), exit=trail (safety line only), tmin=1 (target lines closer than 1R are skipped).
+    const tmin = sq.get("tmin") != null ? Number(sq.get("tmin")) : null;
+    if (tmin != null && !(tmin >= 0 && tmin <= 5)) return send(res, 400, 0, { error: "tmin must be 0-5 (R)" });
+    const roll = sq.get("roll") === "1", exit = ["tp", "htf", "trail"].includes(sq.get("exit")) ? sq.get("exit") : null, test = roll || !!exit || tmin != null;
     const out = await Promise.all(list.map(async (sym) => { try {
       const args = await both(sym, "2y"), rolls = roll && /^M?CL=F$/.test(sym) ? rollAdjust(...args) : undefined;
-      const m = scan(...args, { sym, tfs: ["4H"], ...(exit ? { rules: { exit: exit === "trail" ? null : exit } } : {}) });
+      const m = scan(...args, { sym, tfs: ["4H"], ...(exit || tmin != null ? { rules: { ...(exit ? { exit: exit === "trail" ? null : exit } : {}), ...(tmin != null ? { tmin } : {}) } } : {}) });
       return m.error ? { sym, error: m.error } : { sym, record: m.record, ...(rolls ? { rolls } : {}) };
     } catch (e) { return { sym, error: e.message || "failed" }; } }));
-    if (test) return send(res, 200, 1800, { at: Date.now(), years: 2, test: { roll, exit: exit || "trail" }, markets: out });
+    if (test) return send(res, 200, 1800, { at: Date.now(), years: 2, test: { roll, exit: exit || "live", ...(tmin != null ? { tmin } : {}) }, markets: out });
     const ok = out.filter((x) => x.record).length;
     return send(res, ok ? 200 : 502, ok === out.length ? 86400 : ok ? 1800 : 0, { at: Date.now(), years: 2, markets: out });
   }
