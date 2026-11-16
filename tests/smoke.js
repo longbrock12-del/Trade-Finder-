@@ -634,12 +634,13 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(strip.length === body.markets.filter((m) => m.kind === "futures" && !m.error).length && strip.every((t) => /[+−]\d+\.\d\d%/.test(t)) && (await page.locator(".mstrip svg polyline").count()) === strip.length, "futures strip: every future with price, 24h change and a small chart", strip.join(" | "));
   await page.click("[data-k=stocks]");
   ok((await page.locator(".mstrip").count()) === 0, "the strip is only on Futures");
-  // Countdown: Mon Nov 9 2026, 5:48 PM New York (the test clock). Futures: next close 10 PM (4h 11m). Stocks: Tue 1:30 PM.
-  const cdTimes = await page.evaluate(() => [nextClose("futures", 1794264531000), nextClose("stocks", 1794264531000), nextClose("futures", Date.UTC(2026, 10, 14, 18)), nextClose("stocks", Date.UTC(2026, 10, 9, 16))]);
-  const ny = (t) => new Date(t).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" });
-  ok(ny(cdTimes[0]) === "Mon 10:00 PM" && ny(cdTimes[1]) === "Tue 1:30 PM" && ny(cdTimes[2]) === "Sun 10:00 PM" && ny(cdTimes[3]) === "Mon 1:30 PM", "4-hour close countdown: futures 10 PM / 2 / 6 / 10 AM / 2 / 5 PM, stocks 1:30 and 4 PM, none on weekends", cdTimes.map(ny).join(", "));
+  // Market countdown. Test clock: Mon Nov 9 2026, 5:48 PM New York (futures in their 5-6 PM break, stocks closed).
+  const ses = await page.evaluate(() => [session("futures", 1794264531000), session("stocks", 1794264531000), session("futures", Date.UTC(2026, 10, 10, 15)), session("stocks", Date.UTC(2026, 10, 10, 15)), session("futures", Date.UTC(2026, 10, 14, 18)), session("stocks", Date.UTC(2026, 10, 14, 18))]);
+  const ny = (x) => (x.isOpen ? "closes " : "opens ") + new Date(x.t).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" });
+  ok(ses.map(ny).join(", ") === "opens Mon 6:00 PM, opens Tue 9:30 AM, closes Tue 5:00 PM, closes Tue 4:00 PM, opens Sun 6:00 PM, opens Mon 9:30 AM", "market countdown: open/closed and when it changes (futures Sun 6 PM-Fri 5 PM with a 5-6 PM break, stocks 9:30-4)", ses.map(ny).join(", "));
   await page.click("[data-tab=calls]"); await page.click("[data-k=futures]");
-  ok(/^4H close in 4h 11m$/.test((await page.textContent("#cd")).trim()), "the countdown shows at the top", await page.textContent("#cd"));
+  const cdF = (await page.textContent("#cd")).trim(); await page.click("[data-k=stocks]"); const cdS = (await page.textContent("#cd")).trim();
+  ok(cdF === "Market Opens In 11m" && cdS === "Market Opens In 15h 41m", "the top says Market Opens In (or Market Closes In) with a countdown, for the tab you're on", cdF + " | " + cdS);
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }

@@ -119,7 +119,7 @@ input::placeholder{color:#55665c}
   <button data-tab="watch" role="tab">Watch list</button>
   <button data-tab="rules" role="tab">Rules</button>
 </div>
-<div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button><span id="cd" class="cd" title="Entries and exits happen on the 4-hour close"></span></div></div>
+<div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button><span id="cd" class="cd" title="New York market hours"></span></div></div>
 <div id="ptr" aria-hidden="true"></div>
 <main id="out"><div class="sk"></div><div class="sk"></div><div class="sk"></div></main>
 
@@ -825,31 +825,31 @@ function renderRules() {
     '</div>';
 }
 
-// Countdown to the next 4-hour candle close (New York time): entries and exits happen on that close.
-// Futures: candles close at 10 PM (Sun-Thu) and 2, 6, 10 AM, 2 and 5 PM (Mon-Fri). Stocks: 1:30 and 4 PM, Mon-Fri.
 const etParts = (ms) => { const p = {}; new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hour12: false, weekday: "short" }).formatToParts(new Date(ms)).forEach((x) => { p[x.type] = x.value; }); return p; };
 function etToMs(y, mo, d, h, mi) { // a New York wall-clock time -> ms
   let g = Date.UTC(y, mo - 1, d, h, mi) + 5 * 3600000;
   for (let i = 0; i < 2; i++) { const p = etParts(g), got = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute); g += Date.UTC(y, mo - 1, d, h, mi) - got; }
   return g;
 }
-function nextClose(k, now = Date.now()) {
-  const fut = [[22, 0, [0, 1, 2, 3, 4]], [2, 0, [1, 2, 3, 4, 5]], [6, 0, [1, 2, 3, 4, 5]], [10, 0, [1, 2, 3, 4, 5]], [14, 0, [1, 2, 3, 4, 5]], [17, 0, [1, 2, 3, 4, 5]]];
-  const stk = [[13, 30, [1, 2, 3, 4, 5]], [16, 0, [1, 2, 3, 4, 5]]], DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  let best = Infinity;
-  for (let day = 0; day < 5; day++) {
-    const p = etParts(now + day * 86400000), dow = DOW[p.weekday];
-    (k === "futures" ? fut : stk).forEach(([h, mi, days]) => { if (!days.includes(dow)) return; const t = etToMs(+p.year, +p.month, +p.day, h, mi); if (t > now && t < best) best = t; });
+// Market open / closed countdown (New York time, no holidays). Stocks: 9:30 AM-4 PM Mon-Fri.
+// Futures: Sunday 6 PM to Friday 5 PM, with a break 5-6 PM each weekday.
+function session(k, now = Date.now()) {
+  const DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }, ev = [];
+  for (let day = -1; day < 8; day++) {
+    const p = etParts(now + day * 86400000), dow = DOW[p.weekday], at = (h, mi) => etToMs(+p.year, +p.month, +p.day, h, mi);
+    if (k === "futures") { if (dow <= 4) ev.push({ t: at(18, 0), open: true }); if (dow >= 1 && dow <= 5) ev.push({ t: at(17, 0), open: false }); }
+    else if (dow >= 1 && dow <= 5) { ev.push({ t: at(9, 30), open: true }); ev.push({ t: at(16, 0), open: false }); }
   }
-  return best;
+  const next = ev.filter((e) => e.t > now).sort((a, b) => a.t - b.t)[0];
+  return next ? { isOpen: !next.open, t: next.t } : null; // the next event is a close -> open now
 }
 function countdown() {
   const el = $("cd");
   if (!el) return;
-  const left = nextClose(kind) - Date.now();
-  if (!isFinite(left)) { el.textContent = ""; return; }
-  const h = Math.floor(left / 3600000), m = Math.floor((left % 3600000) / 60000);
-  el.innerHTML = "4H close in <b>" + (h >= 24 ? Math.floor(h / 24) + "d " + (h % 24) + "h" : h ? h + "h " + m + "m" : m + "m") + "</b>";
+  const s = session(kind);
+  if (!s) { el.textContent = ""; return; }
+  const left = s.t - Date.now(), h = Math.floor(left / 3600000), m = Math.floor((left % 3600000) / 60000);
+  el.innerHTML = (s.isOpen ? "Market Closes In " : "Market Opens In ") + "<b>" + (h >= 24 ? Math.floor(h / 24) + "d " + (h % 24) + "h" : h ? h + "h " + m + "m" : m + "m") + "</b>";
 }
 setInterval(countdown, 30000);
 
