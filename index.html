@@ -346,7 +346,8 @@ function chart(m, s) {
   const d0 = etFmt.format(new Date(view[0][0] * 1000)).split(",").slice(0, 2).join(","), d1 = etFmt.format(new Date(view[view.length - 1][0] * 1000)).split(",").slice(0, 2).join(",");
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + esc(d0) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + esc(d1) + "</text>";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + TFNAME[s.tf] + " chart of " + esc(show(m.sym)) + ' with the trendlines">' + g + "</svg>" +
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line</span><span>● touch ◌ near miss</span>' + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div>" + srNote(C.levels, m.digits) + "</div>";
+    // Legend in reading order: the lines, what the thick and dashed ones are, the marks, then the S/R levels.
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span>' + (C.safety ? "<span>Dashed = safety line</span>" : "") + "<span>Thick = action line</span><span>● touch ◌ near miss</span>" + (C.closedAt != null ? "<span>○ = exit</span>" : "") + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + "</div>" + srNote(C.levels, m.digits) + "</div>";
 }
 
 const TFSHORT = { Monthly: "M", Weekly: "W", Daily: "D", "4-hour": "4H", "1-hour": "1H" };
@@ -386,9 +387,8 @@ function lineView(m, s, mode) {
   lab.sort((p, q) => p.y - q.y).forEach((l, i, a) => { if (i && l.y - a[i - 1].y < 11) l.y = a[i - 1].y + 11; g += '<text x="' + (W - R + 4) + '" y="' + (l.y + 4) + '" font-size="11" font-weight="700" fill="' + l.col + '">' + l.t + "</text>"; });
   const d = (t) => new Date(t * 1000).toLocaleDateString("en-US", mode === "mid" ? { month: "short", day: "numeric" } : { month: "short", year: "numeric" });
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + d(B[0][0]) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + d(B[n - 1][0]) + "</text>";
-  const what = mode === "mid" ? "Daily, 4-hour" + (s.tf === "1H" ? " and 1-hour" : "") + " lines · 4-hour candles, about 3 months" : "Every line · daily candles, about 2 years";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + (mode === "mid" ? "4-hour chart, 3 months" : "Daily chart, 2 years") + " of " + esc(show(m.sym)) + ' with trendlines">' + g + "</svg>" +
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>M W D 4H 1H = the chart each line comes from</span><span>Thick = action line, dashed = safety line</span><span>' + what + "</span></div>" + srNote(C.levels, m.digits) +
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Dashed = safety line</span><span>Thick = action line</span><span>● touch ◌ near miss</span><span>M W D 4H 1H = the chart each line comes from</span>' + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + "</div>" + srNote(C.levels, m.digits) +
     (lines.length ? "" : '<div class="note">No ' + (mode === "mid" ? "Daily or 4-hour" : "") + " lines on this market right now.</div>") + "</div>";
 }
 

@@ -583,6 +583,8 @@ async function pageTests(browser, body, optBody, scanBody) {
     return [n([60, 200, 315]), n([5, 200, 315])];
   });
   const lvm = await page.evaluate(() => levelMarks([{ p: 100, n: 5, side: "R" }, { p: 100.2, n: 3, side: "R" }, { p: 50, n: 4, side: "S" }, { p: 500, n: 9, side: "R" }], (v) => 300 - v, 0, 600, 0, 200));
+  const lgs = await page.evaluate(() => [...document.querySelectorAll(".chart .lg")].map((x) => x.textContent));
+  ok(lgs.length && lgs.every((t) => /^Rising lines\s*Falling lines/.test(t) && !/candles/.test(t) && (!/S\/R level/.test(t) || /S\/R level \(×touches\)$/.test(t)) && (!/Dashed = safety line/.test(t) || t.indexOf("Dashed = safety line") < t.indexOf("Thick = action line"))), "chart legends read in order: rising, falling, dashed safety, thick action, marks, S/R last; no candle note", lgs[0]);
   const srn = await page.evaluate(() => srNote([{ p: 4266.57, n: 6, side: "R" }, { p: 4077.9, n: 5, side: "S" }, { p: 4383.68, n: 5, side: "R" }], 1));
   ok(/S\/R levels: .*R 4,383\.7.*×5.*R 4,266\.6.*×6.*S 4,077\.9.*×5/.test(srn.replace(/<[^>]+>/g, "")), "the S/R levels' prices are listed under the chart, highest first", srn.replace(/<[^>]+>/g, ""));
   ok((lvm.match(/<line/g) || []).length === 3 && (lvm.match(/<text/g) || []).length === 2 && /R ×5/.test(lvm) && /S ×4/.test(lvm) && !/×9/.test(lvm), "S/R levels: dashed lines in the chart's range, labeled with touches, no overlapping labels");
