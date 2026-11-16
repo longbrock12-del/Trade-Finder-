@@ -50,7 +50,8 @@ async function both(sym, hourRange = "6mo") {
   }
   return out;
 }
-const dailyCount = (c) => { try { return (c.chart.result[0].timestamp || []).length; } catch (e) { return 0; } };
+// Daily candles that have prices (Yahoo can send years of dates with the prices left blank).
+const dailyCount = (c) => { try { const q = c.chart.result[0].indicators.quote[0]; return (q.close || []).filter((x) => typeof x === "number" && isFinite(x)).length; } catch (e) { return 0; } };
 
 // ?tf=4H (default), 1H or both: which chart callouts come from.
 function chartsFrom(req) {

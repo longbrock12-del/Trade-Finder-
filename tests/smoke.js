@@ -213,10 +213,11 @@ async function scannerTests() {
     const fy = fakeYahoo((x) => YF[x]), oneDay = async (u) => {
       const d = decodeURIComponent(String(u));
       if (/chart\/MCL=F/.test(d) && /interval=1d/.test(d)) { const j = load("yahoo_daily_CL.json"), r = j.chart.result[0], q = r.indicators.quote[0], k = r.timestamp.length - 1; r.timestamp = r.timestamp.slice(k); Object.keys(q).forEach((f) => { q[f] = q[f].slice(k); }); return { ok: true, status: 200, json: async () => j }; }
+      if (/chart\/MHG=F/.test(d) && /interval=1d/.test(d)) { const j = load("yahoo_daily_CL.json"), r = j.chart.result[0], q = r.indicators.quote[0], k = r.timestamp.length - 1; Object.keys(q).forEach((f) => { q[f] = q[f].map((v, i) => (i < k ? null : v)); }); return { ok: true, status: 200, json: async () => j }; } // years of dates, prices blank
       return fy(u);
     };
-    const mcl = (await call("api/trades.js", "/api/trades?s=MCL=F", oneDay)).body.markets[0];
-    ok(mcl.dailyBars > 2000 && !mcl.error, "a micro that Yahoo sends almost no daily candles for uses its full-size contract's daily history", String(mcl.dailyBars));
+    const [mcl, mhg] = (await call("api/trades.js", "/api/trades?s=MCL=F,MHG=F", oneDay)).body.markets;
+    ok(mcl.dailyBars > 2000 && !mcl.error && mhg.dailyBars > 2000 && !mhg.error, "a micro that Yahoo sends almost no daily candles for (or only blank ones) uses its full-size contract's daily history", mcl.dailyBars + " / " + mhg.dailyBars);
   }
   ok(def.body.markets.map((m) => m.pointValue).join() === "10,100,2500", "micro contract values: gold $10, crude $100, copper $2,500 per 1.00", def.body.markets.map((m) => m.pointValue).join());
   ok(JSON.stringify(M.find((m) => m.sym === "MGC=F").signals.map((x) => x.t)) === JSON.stringify(M.find((m) => m.sym === "GC=F").signals.map((x) => x.t)), "Micro Gold callouts match gold's chart");
