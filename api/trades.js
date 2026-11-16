@@ -65,7 +65,9 @@ async function handler(req, res) {
   const tfs = chartsFrom(req), watchCharts = sp.get("wchart") === "1" && one, lookup = sp.get("look") === "1" && one; // one market: its watch-line charts / a look-up chart
   const markets = await Promise.all(list.map(async (sym) => {
     try {
-      return { ...scan(...(await both(sym)), { sym, tfs, watchCharts, lookup, tradeAt }), sym };
+      // A micro's support/resistance levels use its full-size contract's 10 years of daily candles.
+      const [args, levelDaily] = await Promise.all([both(sym), FULL[sym] ? chart(FULL[sym], "1d", "10y").catch(() => null) : null]);
+      return { ...scan(...args, { sym, tfs, watchCharts, lookup, tradeAt, levelDaily }), sym };
     } catch (e) { return { sym, error: e.message || "failed" }; }
   }));
   const okCount = markets.filter((m) => !m.error).length;

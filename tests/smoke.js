@@ -247,6 +247,13 @@ async function scanTests() {
   ok(rF.status === 200 && rF.body.market === "futures" && rF.body.scanned === 12 && rF.body.test.setups === "all", "?market=futures tests a basket of 12 futures with her full strategy", JSON.stringify({ s: rF.body.scanned, t: rF.body.test }));
   ok((await call("api/scan.js", "/api/scan?years=3", fy, AMZN_NOW * 1000)).status === 400, "only 0.5, 1 or 2 years");
   const lvAll = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }), lvs = lvAll.signals.slice(-1)[0].chart.levels, gp = lvAll.price;
+  { // A micro with only a few years of its own daily candles takes its levels from the full-size contract.
+    const shortD = load("yahoo_daily_GC.json"), r = shortD.chart.result[0], q = r.indicators.quote[0], k = r.timestamp.length - 300;
+    r.timestamp = r.timestamp.slice(k); Object.keys(q).forEach((f) => { q[f] = q[f].slice(k); });
+    const own = TL.scan(load("yahoo_GC.json"), shortD, { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }).signals.slice(-1)[0].chart.levels;
+    const full = TL.scan(load("yahoo_GC.json"), shortD, { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, levelDaily: load("yahoo_daily_GC.json") }).signals.slice(-1)[0].chart.levels;
+    ok(JSON.stringify(full) === JSON.stringify(lvs) && own.length < full.length, "micros with short history use the full-size contract's daily candles for S/R levels", own.length + " vs " + full.length);
+  }
   ok(lvs.length >= 4 && lvs.every((v) => v.n >= 4 && Math.abs(v.p - gp) <= 0.4 * gp && (v.side === "R" ? v.p >= gp : v.p < gp)) && lvs.some((v) => v.side === "R") && lvs.some((v) => v.side === "S"), "charts carry every strong support/resistance level: 4+ turns over all daily history, within 40% of price", JSON.stringify(lvs));
   const pv2 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { pivot: 2 } }).record, pv3 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
   const rp = await call("api/scan.js", "/api/scan?pivot=2&market=futures", fakeYahoo(() => "GC"), NOW * 1000);

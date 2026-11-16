@@ -527,6 +527,11 @@ function scanCore(hChart, dChart, opts = {}) {
   const tick = ref >= 1000 ? 1 : ref >= 50 ? 2 : ref >= 1 ? 3 : 5;
   const px = (x) => r2(x, tick);
   const all = [], watch = [], S = {};
+  // Support/resistance comes from the longest clean daily history: a micro's full-size contract (same prices,
+  // trading since long before the micros started in 2021) when it's given, else this market's own.
+  let lvDaily = daily;
+  try { if (opts.levelDaily) { const b = hourly(opts.levelDaily).bars; if (b.length > daily.length) lvDaily = b; } } catch (e) {}
+  const LEVELS = srLevels(lvDaily, live).map((x) => ({ ...x, p: px(x.p) }));
 
   const hist = []; // every callout over the whole window, for the track record
   // Which setups and filters each kind of market uses (opts.rules overrides any of them, for tests):
@@ -628,7 +633,7 @@ function scanCore(hChart, dChart, opts = {}) {
       }) : [],
       at: x.at - off, from: x.from == null ? null : x.from - off, closedAt: x.closedAt == null ? null : x.closedAt - off,
       chains: edges(ch.up, true).concat(edges(ch.dn, false)),
-      levels: srLevels(daily, live).map((x) => ({ ...x, p: px(x.p) })),
+      levels: LEVELS,
       lines, zoom: daily.slice(zoff).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
       // Middle view: about 3 months of 4-hour candles. X of candle k = X0 + k * dX (same daily-candle units as the lines).
       mid: (() => {
