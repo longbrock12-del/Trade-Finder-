@@ -302,9 +302,8 @@ function nearMiss(S, ln, x) {
 // always on the other side") and trails along it; and the trade ends when a finished candle closes through
 // the safety line. Both trail along the newest line of the safety chain and never loosen.
 // line0: safety line value at entry; room: distance of the stop order past the line.
-// tpPx (tests only): also take profit when a candle reaches that price (exit=tp), or a moving price, candle
-// by candle (exit=htf: a bigger-timeframe trendline).
-let TP_EXIT = false;
+// tpPx: also take profit when a candle reaches that price (exit=tp test), or a moving price, candle by candle
+// (exit "htf": a bigger-timeframe trendline, the futures' live exit).
 function follow(S, long, from, last, line0, room, tpPx) {
   let line = line0, stop = long ? line0 - room : line0 + room;
   for (let i = from + 1; i <= last; i++) {
@@ -384,14 +383,16 @@ function callout(s, e, last, live, px) {
   const stop0 = e.long ? line0 - room : line0 + room, risk = e.long ? ent - stop0 : stop0 - ent;
   if (!(risk > 0) || (e.long ? ent <= line0 : ent >= line0)) return { ...c, status: "no-safety", note: "The safety line is on the wrong side of the entry." };
   // exit=tp test: her take-profit, set at entry from the candles up to then (no peeking ahead).
-  const tpAt = TP_EXIT === "tp" ? takeProfit(s, e.long, ent, ent, from) : null;
-  const htf = TP_EXIT === "htf" ? htfTarget(s, e.long, from, ent) : null;
+  const mode = s.exit || null; // "htf" (futures), "tp" (test), none = trail only
+  const tpAt = mode === "tp" ? takeProfit(s, e.long, ent, ent, from) : null;
+  const htf = mode === "htf" ? htfTarget(s, e.long, from, ent) : null;
   const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : htf ? (i) => val(htf, s.x0 + i) : null);
   const far = risk > FAR_ATR * s.A[from];
   const sign = e.long ? 1 : -1;
   const tp = out.status === "open" ? takeProfit(s, e.long, live, ent, last) : null;
   return { ...c, from, stop0: px(stop0), risk: px(risk), stop: px(out.stop), line: px(out.line), exitHow: out.how || null, safety: out.safety || sl,
     tp: tp && { price: px(tp.price), touches: tp.touches, r: r2(((e.long ? 1 : -1) * (tp.price - ent)) / risk, 1) },
+    target: htf && out.status === "open" && !far ? { price: px(val(htf, s.x0 + last + 1)), tf: tfOfLine(htf, tf), r: r2(((e.long ? 1 : -1) * (val(htf, s.x0 + last + 1) - ent)) / risk, 1) } : null,
     entryT: b[from].e, exitT: out.at == null ? null : b[out.at].e, entryRaw: ent, riskRaw: risk,
     status: far ? "too-far" : out.status, closedAt: out.at, exitPx: px(out.px), exitR: out.px == null ? null : r2((sign * (out.px - ent)) / risk, 2),
     nowR: r2((sign * (live - ent)) / risk, 2), liveThrough: out.status === "open" && (e.long ? live < out.stop : live > out.stop),
@@ -467,13 +468,13 @@ function record(hist) {
   take.forEach((x) => {
     if (pos && x.entryT === pos.entryT) return; // two charts at once: keep the first (higher-ranked) one
     if (pos) {
-      if (pos.exitT != null && pos.exitT <= x.entryT) done.push({ ...pos, r: pos.exitR, how: "safety line" });
+      if (pos.exitT != null && pos.exitT <= x.entryT) done.push({ ...pos, r: pos.exitR, how: pos.exitHow === "take profit" ? "target line" : "safety line" });
       else done.push({ ...pos, r: r2(((pos.dir === "long" ? 1 : -1) * (x.entryRaw - pos.entryRaw)) / pos.riskRaw, 2), how: "replaced", exitT: x.entryT });
     }
     pos = x;
   });
   let open = null;
-  if (pos) { if (pos.exitT != null) done.push({ ...pos, r: pos.exitR, how: "safety line" }); else open = pos; }
+  if (pos) { if (pos.exitT != null) done.push({ ...pos, r: pos.exitR, how: pos.exitHow === "take profit" ? "target line" : "safety line" }); else open = pos; }
   const rs = done.map((x) => x.r), tot = rs.reduce((a, r) => a + r, 0);
   // Size of wins and losses, and how long each was held (raw sums, so markets can be added together).
   const W = done.filter((x) => x.r > 0), Ls = done.filter((x) => x.r <= 0), hrs = (x) => Math.max(0, (x.exitT - x.entryT) / 3600);
@@ -492,12 +493,14 @@ function record(hist) {
   };
 }
 
-const FUTURE_RULES = { trend: "bounce", once: false, setups: null };
+// exit "htf": her exit "price got to a higher time frame trendline": take profit at the nearest Daily, Weekly or
+// Monthly line in the trade's direction (2 years: gold +3.6% -> +6.2%, copper +7.3% -> +12.6%).
+const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htf" };
 const STOCK_RULES = { trend: "bounce", once: false, setups: ["break"] };
 // Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
 // bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
 // in the 4 trading days up to the front contract's last day.
-const CRUDE_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], rollBlackout: true };
+const CRUDE_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], rollBlackout: true, exit: "htf" };
 const isCrude = (sym) => /^M?CL=F$/.test(sym || "");
 // Crude's last trading day for the contract that expires in this month: 3 business days before the 25th
 // (4 if the 25th is a weekend day). Holidays aren't counted.
@@ -596,6 +599,7 @@ function scanCore(hChart, dChart, opts = {}) {
     const b = sets[tf], use = !opts.tfs || opts.tfs.includes(tf);
     if (b.length < 30 || (!use && tf !== "4H")) return;
     const s = (S[tf] = setup(daily, b, isFuture, tf));
+    s.exit = R.exit || null;
     const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
     s.last = last;
     if (!use) return;
@@ -735,16 +739,15 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, TP_EXIT];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
     if (opts.rules.short != null) SHORT_ATR = opts.rules.short;
     if (opts.rules.hold != null) HOLD = opts.rules.hold;
     if (opts.rules.pivot != null) PIVOT = opts.rules.pivot;
-    TP_EXIT = opts.rules.exit === "tp" || opts.rules.exit === "htf" ? opts.rules.exit : false;
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, TP_EXIT] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT] = saved; }
 }
 
 module.exports = { nearCrudeRoll, crudeLastDay, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

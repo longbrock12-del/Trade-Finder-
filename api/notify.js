@@ -111,7 +111,7 @@ module.exports = async function handler(req, res) {
       if (s && s.status === "closed") {
         Object.assign(x, { status: "closed", exitR: s.exitR, closedAt: Date.now(), how: s.exitHow });
         exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(s.exitR), tag: "exit-" + x.key, url: "/",
-          body: (s.exitHow === "stop order" ? "Stop order hit" : "A " + x.tf + " candle closed through the safety line") + (s.exitPx != null ? " at " + s.exitPx : "") + ". Trade over: " + R1(s.exitR) + "." });
+          body: (s.exitHow === "stop order" ? "Stop order hit" : s.exitHow === "take profit" ? "Target line reached (a bigger-timeframe trendline)" : "A " + x.tf + " candle closed through the safety line") + (s.exitPx != null ? " at " + s.exitPx : "") + ". Trade over: " + R1(s.exitR) + "." });
       } else if (s) {
         x.nowR = s.nowR;
         const was = x.stopNow != null ? x.stopNow : x.stop;

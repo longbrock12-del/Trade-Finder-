@@ -100,10 +100,11 @@ async function scannerTests() {
   ok(priced.filter(({ s }) => s.setup !== "bounce").every(({ s }) => s.chart.safety && s.chart.safety.slope * (s.dir === "long" ? 1 : -1) > 0), "break stops sit on the opposite chain's line (the safety line)");
   ok(priced.every(({ s }) => (s.dir === "long" ? s.stop >= s.stop0 : s.stop <= s.stop0)), "the trailing stop only ever tightens");
   const closed = priced.filter(({ s }) => s.status === "closed");
-  ok(closed.length >= 3 && closed.every(({ s }) => s.exitR != null && (s.exitHow === "stop order" ? (s.dir === "long" ? s.exitPx <= s.stop + 1e-9 : s.exitPx >= s.stop - 1e-9) : s.exitHow === "close through the line" && (s.dir === "long" ? s.exitPx < s.line : s.exitPx > s.line))), "trades close on the stop order or on a candle closing through the safety line");
+  ok(closed.length >= 3 && closed.every(({ s }) => s.exitR != null && (s.exitHow === "stop order" ? (s.dir === "long" ? s.exitPx <= s.stop + 1e-9 : s.exitPx >= s.stop - 1e-9) : s.exitHow === "take profit" ? (s.dir === "long" ? s.exitPx > s.entry : s.exitPx < s.entry) : s.exitHow === "close through the line" && (s.dir === "long" ? s.exitPx < s.line : s.exitPx > s.line))), "trades close on the stop order, a candle closing through the safety line, or (futures) at the bigger-timeframe target line");
   ok(priced.every(({ s }) => (s.dir === "long" ? s.stop < s.line : s.stop > s.line)), "the stop order sits past the safety line, never on it (her rule)");
   ok(closed.filter(({ s }) => s.exitHow === "stop order").length >= 1, "some trades are stopped out by the stop order (it's a real stop, not just a line)");
-  ok(sigs.every(({ s }) => ["open", "closed", "too-far", "no-safety"].includes(s.status) && s.target === undefined), "every callout has a known status and no fixed target");
+  const badT = sigs.filter(({ s }) => !(s.target == null || (s.status === "open" && s.target.price > 0 && ["Daily", "Weekly", "Monthly"].includes(s.target.tf)))).map(({ s }) => s.status + " " + JSON.stringify(s.target));
+  ok(sigs.every(({ s }) => ["open", "closed", "too-far", "no-safety"].includes(s.status) && (s.target == null || (s.status === "open" && s.target.price > 0 && ["Daily", "Weekly", "Monthly"].includes(s.target.tf)))), "every callout has a known status; only open futures trades carry a target (a bigger-timeframe line)", badT.slice(0, 3).join(" | "));
   const aw = scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: AMZN_NOW }).watch;
   ok(aw.length >= 1 && watch.concat(aw.map((w) => ({ w }))).every(({ w }) => w.dist <= 1.5 && w.lineNow > 0 && ["4H", "1H"].includes(w.tf) && w.passed >= 3 && w.checks.taps && w.days >= 7), "watch list only holds callout-quality lines near price (AMZN has one): 3 of 4, 3+ taps, 1+ week; newest lines near price (AAPL has one)");
   ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.t === s.t && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
@@ -144,16 +145,17 @@ async function scannerTests() {
   ok(recs.every((r) => r && r.trades >= 5 && r.wins <= r.trades && Math.abs(r.avgR * r.trades - r.totalR) < 0.02 * r.trades + 0.05 && r.worstR <= r.bestR && r.maxDrawdownR <= 0), "every market has a 6-month track record that adds up");
   ok(recs.every((r) => r.nWin + r.nLoss === r.trades && Math.abs(r.winSum - r.lossSum - r.totalR) < 0.05 && r.winHrs >= 0 && r.lossHrs >= 0), "wins and losses add up to the trades and the total R");
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
-  ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced"].includes(x.how))), "trades end on the safety line or when a newer callout replaces them");
+  ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced", "target line"].includes(x.how))), "trades end on the safety line, the target line, or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 27 && clr.totalR === 41.7, "crude's 6 months: 27 trades, +41.7R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 27 && clr.totalR === 32.14, "crude's 6 months: 27 trades, +32.14R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
   { const TC = require(path.join(ROOT, "api/_trendlines.js")), cAll = TC.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
     const gAll2 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true });
     const dayOf = (t) => new Date((t + 6 * 3600) * 1000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     ok(cAll.signals.length > 0 && cAll.signals.every((x) => x.setup !== "bounce") && gAll2.signals.some((x) => x.setup === "bounce"), "crude takes only breaks and break & retests (her crude trades); gold still takes bounces", cAll.signals.map((x) => x.setup).join(","));
     ok(cAll.signals.every((x) => !TC.nearCrudeRoll(dayOf(x.t))) && TC.crudeLastDay(2026, 10).toISOString().slice(0, 10) === "2026-11-20" && TC.nearCrudeRoll("2026-11-17") && !TC.nearCrudeRoll("2026-11-16") && !TC.nearCrudeRoll("2026-11-23"), "no new crude callouts in the 4 trading days up to the contract's last day (Nov 17-20, 2026)");
-    const htf = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: "htf" } });
-    ok(htf.signals.some((x) => x.exitHow === "take profit") && !gAll2.signals.some((x) => x.exitHow === "take profit"), "exit=htf test: take profit at a bigger-timeframe trendline (test only)"); }
+    const trailG = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: null } });
+    const stockR = TC.scan(load("yahoo_AAPL.json"), load("yahoo_daily_AAPL.json"), { sym: "AAPL", now: NOW, tfs: ["4H"], all: true });
+    ok(gAll2.signals.some((x) => x.exitHow === "take profit") && !trailG.signals.some((x) => x.exitHow === "take profit") && !stockR.signals.some((x) => x.exitHow === "take profit"), "futures take profit at a bigger-timeframe trendline (live); exit=trail turns it off; stocks trail only"); }
   ok(recs.every((r) => Object.values(r.bySetup).reduce((a, b) => a + b.trades, 0) === r.trades) && recs.some((r) => r.bySetup.retest), "track record splits trades by setup (break, break & retest, bounce)");
   // Break & retest: found after a break, same line, entered later on a candle that touched the line from the other side.
   const rt = sigs.filter(({ s }) => s.setup === "break & retest");
@@ -288,9 +290,9 @@ async function scanTests() {
   const fs3 = await call("api/trades.js", "/api/trades?stats=1&roll=1&exit=tp", fakeYahoo((x) => YF[x]));
   const crude = fs3.body.markets.find((m) => m.sym === "MCL=F"), gold = fs3.body.markets.find((m) => m.sym === "MGC=F");
   ok(fs3.status === 200 && fs3.body.test.roll && fs3.body.test.exit === "tp" && crude.record && crude.rolls && crude.rolls.length > 20 && gold.record && !gold.rolls, "2-year test settings: roll=1 back-adjusts crude for contract switches, exit=tp takes profit at her S/R target", JSON.stringify({ rolls: crude.rolls && crude.rolls.length }));
-  const T2 = require(path.join(ROOT, "api/_trendlines.js")), trail = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
+  const T2 = require(path.join(ROOT, "api/_trendlines.js")), trail = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: null } }), liveC = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
   const tpRun = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: "tp" } }), again = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
-  ok(tpRun.signals.some((x) => x.exitHow === "take profit") && !trail.signals.some((x) => x.exitHow === "take profit") && JSON.stringify(again.record) === JSON.stringify(trail.record), "exit=tp only changes the test run (live exits still trail the safety line)");
+  ok(tpRun.signals.some((x) => x.exitHow === "take profit") && !trail.signals.some((x) => x.exitHow === "take profit") && JSON.stringify(again.record) === JSON.stringify(liveC.record), "exit=tp only changes the test run (the live exit is untouched afterwards)");
   console.log("Her filters (on, like the live site)");
   const DAYs = 86400, mkDaily = (f) => Array.from({ length: 400 }, (_, i) => { const t = 1700000000 + i * DAYs, m = f(i); return { t, o: m, h: m + 1, l: m - 1, c: m }; });
   const upT = TLM.trendSeries(mkDaily((i) => 100 + i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);
