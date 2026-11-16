@@ -497,7 +497,8 @@ function record(hist) {
 // exit "htf": her exit "price got to a higher time frame trendline": take profit at the nearest Daily, Weekly or
 // Monthly line in the trade's direction (2 years: gold +3.6% -> +6.2%, copper +7.3% -> +12.6%).
 const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htf" };
-const STOCK_RULES = { trend: "bounce", once: false, setups: ["break"] };
+// Stocks take the same bigger-timeframe exit (2 years, 112 stocks: -16.3% trailing only -> +4.7%, 33% -> 64% wins).
+const STOCK_RULES = { trend: "bounce", once: false, setups: ["break"], exit: "htf" };
 // Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
 // bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
 // in the 4 trading days up to the front contract's last day.
