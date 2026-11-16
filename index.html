@@ -280,7 +280,7 @@ function notifyNew() {
 
 // 4-hour or 1-hour candles with her chains: green = rising lines under the lows, red = falling lines over the
 // highs. The action line is drawn thick, the safety line dashed.
-// Strong support/resistance levels (4+ turns over ~10 years of daily candles): faint dashed lines across the chart, labeled with
+// Strong support/resistance levels (4+ turns, the 2 nearest above and below price): faint dashed lines across the chart, labeled with
 // how many times price turned there. Only the ones inside the chart's price range are drawn.
 function levelMarks(levels, Y, x0, x1, lo, hi) {
   const shown = (levels || []).filter((v) => v.p > lo && v.p < hi), placed = [];

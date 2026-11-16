@@ -252,9 +252,9 @@ async function scanTests() {
     r.timestamp = r.timestamp.slice(k); Object.keys(q).forEach((f) => { q[f] = q[f].slice(k); });
     const own = TL.scan(load("yahoo_GC.json"), shortD, { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }).signals.slice(-1)[0].chart.levels;
     const full = TL.scan(load("yahoo_GC.json"), shortD, { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, levelDaily: load("yahoo_daily_GC.json") }).signals.slice(-1)[0].chart.levels;
-    ok(JSON.stringify(full) === JSON.stringify(lvs) && own.length < full.length, "micros with short history use the full-size contract's daily candles for S/R levels", own.length + " vs " + full.length);
+    ok(JSON.stringify(full) === JSON.stringify(lvs) && own.length <= full.length, "micros with short history use the full-size contract's daily candles for S/R levels", own.length + " vs " + full.length);
   }
-  ok(lvs.length >= 4 && lvs.every((v) => v.n >= 4 && Math.abs(v.p - gp) <= 0.4 * gp && (v.side === "R" ? v.p >= gp : v.p < gp)) && lvs.some((v) => v.side === "R") && lvs.some((v) => v.side === "S"), "charts carry every strong support/resistance level: 4+ turns over all daily history, within 40% of price", JSON.stringify(lvs));
+  ok(lvs.length >= 2 && lvs.every((v) => v.n >= 4 && (v.side === "R" ? v.p >= gp : v.p < gp)) && lvs.filter((v) => v.side === "R").length <= 2 && lvs.filter((v) => v.side === "S").length <= 2, "charts carry only the S/R levels a trade would hit: 4+ turns, the 2 nearest above and 2 nearest below price", JSON.stringify(lvs));
   const pv2 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { pivot: 2 } }).record, pv3 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
   const rp = await call("api/scan.js", "/api/scan?pivot=2&market=futures", fakeYahoo(() => "GC"), NOW * 1000);
   ok(pv2.trades !== pv3.trades && rp.status === 200 && rp.body.test.pivot === 2 && TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === pv3.trades, "?pivot=2 (a swing confirmed after 2 candles, not 3) is a test setting; the live scan is unchanged", pv3.trades + " → " + pv2.trades);
