@@ -293,8 +293,9 @@ function levelMarks(levels, Y, x0, x1, lo, hi) {
   }).join("");
 }
 // A tap on the chart: solid dot = the wick reached the line; hollow dashed ring = a near miss (came close, stopped short).
-const tapMark = (x, y, col, near) => near ? '<circle cx="' + x + '" cy="' + y + '" r="4.5" fill="none" stroke="' + col + '" stroke-width="1.6" stroke-dasharray="2 2"/>'
-  : '<circle cx="' + x + '" cy="' + y + '" r="4" fill="' + col + '" stroke="var(--card)" stroke-width="1.5"/>';
+// small: a tap on one of the other lines (smaller and a little faint, so the action line's taps stand out).
+const tapMark = (x, y, col, near, small) => near ? '<circle cx="' + x + '" cy="' + y + '" r="' + (small ? 3.2 : 4.5) + '" fill="none" stroke="' + col + '" stroke-width="' + (small ? 1.2 : 1.6) + '" stroke-dasharray="2 2"' + (small ? ' opacity=".8"' : "") + "/>"
+  : '<circle cx="' + x + '" cy="' + y + '" r="' + (small ? 3 : 4) + '" fill="' + col + '" stroke="var(--card)" stroke-width="' + (small ? 1 : 1.5) + '"' + (small ? ' opacity=".8"' : "") + "/>";
 function chart(m, s) {
   const C = s.chart, B = C.bars, n = B.length, end = n - 1;
   // Start a few candles before the action line's first tap when it's in the data (up to ~300 candles), so every
@@ -320,6 +321,8 @@ function chart(m, s) {
   });
   const seg = (ln, a, b, col, dash, w, op) => '<line x1="' + X(a) + '" x2="' + X(b) + '" y1="' + Y(lv(ln, a)) + '" y2="' + Y(lv(ln, b)) + '" stroke="' + col + '" stroke-width="' + w + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : "") + ' stroke-linecap="round" opacity="' + (op || 1) + '"/>';
   (C.chains || []).forEach((e) => { if (e.i1 >= from - 400) g += seg(e, Math.max(e.i0, from - 400), e.i1, e.up ? GREEN : RED, "", 1.2, 0.55); });
+  // Taps on the other lines too (smaller and fainter than the action line's).
+  (C.chains || []).forEach((e) => { if (C.line && e.t0 === C.line.t0 && e.t1 === C.line.t1) return; (e.taps || []).forEach((q) => { if (q.i >= from && q.i < B.length) g += tapMark(X(q.i), Y(q.p), e.up ? GREEN : RED, q.near, true); }); });
   const actUp = C.line && C.line.slope > 0;
   if (C.line) g += seg(C.line, Math.max(from - 400, C.line.i0), end, actUp ? GREEN : RED, "", 2.6);
   const nearAt = new Set((C.taps || []).filter((q) => q.near).map((q) => q.t));
@@ -371,6 +374,7 @@ function lineView(m, s, mode) {
     const y = Y(v(Xb));
     if (y > T && y < H - Bm) lab.push({ y, t: TFSHORT[l.tf] || l.tf, col });
   });
+  lines.forEach((l) => { if (!l.action) (l.taps || []).forEach((q) => { if (q.X >= Xa && q.X <= Xb) g += tapMark(X(q.X), Y(q.p), l.up ? GREEN : RED, q.near, true); }); });
   const act = lines.find((l) => l.action);
   (C.taps || []).forEach((q) => { if (act && q.X >= Xa && q.X <= Xb) g += tapMark(X(q.X), Y(q.p), act.up ? GREEN : RED, q.near); });
   g += "</g>";

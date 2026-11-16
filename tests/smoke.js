@@ -292,6 +292,9 @@ async function scanTests() {
   ok(fs2.status === 200 && fs2.body.years === 2 && fs2.body.markets.length === 3 && fs2.body.markets.every((m) => m.record && !m.signals) && askedF.some((u) => /interval=60m&range=2y/.test(u)), "/api/trades?stats=1: each future's 2-year track record", fs2.body.markets.map((m) => m.sym).join());
   const sx = await call("api/scan.js", "/api/scan?exit=htf&years=0.5", fakeYahoo((x) => YF[x] || "AAPL"), AMZN_NOW * 1000);
   ok(sx.status === 200 && sx.body.test.exit === "htf" && sx.body.record && sx.body.record.trades >= 0, "stocks test: ?exit=htf runs the stock scan with the bigger-timeframe target exit", JSON.stringify(sx.body.test || sx.body));
+  { const TT = require(path.join(ROOT, "api/_trendlines.js")), cc = TT.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }).signals.slice(-1)[0].chart;
+    const others = cc.chains.filter((e) => !(e.t0 === cc.line.t0 && e.t1 === cc.line.t1)), withTaps = others.filter((e) => e.taps.length >= 2);
+    ok(others.length && others.every((e) => Array.isArray(e.taps)) && withTaps.length && cc.lines.filter((l) => !l.action).every((l) => Array.isArray(l.taps)), "every line on the chart carries its own taps, not just the action line", withTaps.map((e) => e.taps.length).join(",")); }
   { const TQ = require(path.join(ROOT, "api/_trendlines.js")), a0 = TQ.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], split: true });
     const a1 = TQ.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { cost: 0.1 } }), a2 = TQ.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] });
     ok(Math.abs(a1.record.totalR - (a2.record.totalR - 0.1 * a2.record.trades)) < 0.05 && a1.record.trades === a2.record.trades, "cost test: every trade gives up that much R", a1.record.totalR + " vs " + a2.record.totalR);

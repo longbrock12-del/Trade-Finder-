@@ -663,9 +663,13 @@ function scanCore(hChart, dChart, opts = {}) {
     const ch = s.chainsBefore(s.last + 1);
     // Only real trendlines: swing point to swing point, 6+ candles, not flat (the same rule as action lines).
     // The short pieces in between would draw as a bend, and they're never traded.
+    // Every line's own taps (the same tap rules as the action line), so the chart can mark them all.
+    // i: candle on this chart (negative = before it), X: daily-candle units for the 3-month and 2-year views.
+    const zoff0 = Math.max(0, daily.length - ZOOM);
+    const tapsOf = (ln, up) => taps(s, ln, s.last + 1, up).map((q) => ({ i: q - base, X: q / s.ppd - zoff0, p: px(val(ln, q)), near: nearMiss(s, ln, q) }));
     const edges = (c, up) => c.slice(1).map((q, k) => [c[k], q])
       .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
-      .map(([a, q]) => ({ up, ...loc(lineOf(a, q)) })).filter((e) => e.i1 >= -KEEP);
+      .map(([a, q]) => ({ up, ...loc(lineOf(a, q)), taps: tapsOf(lineOf(a, q), up) })).filter((e) => e.i1 >= -KEEP);
     // Every real line in both chains, Monthly down to 1-hour, with where its ray sits now.
     // X = position in daily candles (the merged x divided by candles per day), for the zoomed-out daily chart.
     const xNow = s.x0 + s.last + 1, same = (ln, o) => !!o && ln.a.t === o.a.t && ln.b.t === o.b.t;
@@ -673,7 +677,8 @@ function scanCore(hChart, dChart, opts = {}) {
     const info = (ln, up) => {
       const v = val(ln, xNow);
       return { up, tf: tfOfLine(ln, x.tf), t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, now: px(v), pct: r2((100 * (v - live)) / live, 1),
-        action: same(ln, x.action), safety: same(ln, x.safety), X0: ln.a.x / s.ppd - zoff, P0: ln.a.p, slopeX: ln.slope * s.ppd };
+        action: same(ln, x.action), safety: same(ln, x.safety), X0: ln.a.x / s.ppd - zoff, P0: ln.a.p, slopeX: ln.slope * s.ppd,
+        taps: same(ln, x.action) ? undefined : tapsOf(ln, up).map((q) => ({ X: q.X, p: q.p, near: q.near })) };
     };
     const lines = [[ch.up, true], [ch.dn, false]].flatMap(([c, up]) => c.slice(1).map((q, k) => [c[k], q])
       .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
