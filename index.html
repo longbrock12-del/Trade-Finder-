@@ -107,6 +107,7 @@ input::placeholder{color:#55665c}
 .lchart{margin-top:6px}.lchart svg{width:100%;height:64px;display:block}
 .ofold{padding:4px 12px}.ofold>.btn{width:100%;text-align:left;border:0;background:none;padding:8px 0;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ofold .note.mini{margin-bottom:8px}
 .ohead{padding:8px 0 4px;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.omore{width:100%;border:0;background:none;color:var(--ac);padding:6px 0 0;text-align:left;font-size:12.5px}
+.cd{margin-left:auto;align-self:center;font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--mu);white-space:nowrap}.cd b{color:var(--ac);font-weight:700}
 </style></head>
 <body><div class="w">
 <header>
@@ -118,7 +119,7 @@ input::placeholder{color:#55665c}
   <button data-tab="watch" role="tab">Watch list</button>
   <button data-tab="rules" role="tab">Rules</button>
 </div>
-<div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button></div></div>
+<div class="chips" id="kinds"><button class="on" data-k="futures">Futures</button><button data-k="stocks">Stocks</button><span id="cd" class="cd" title="Entries and exits happen on the 4-hour close"></span></div></div>
 <div id="ptr" aria-hidden="true"></div>
 <main id="out"><div class="sk"></div><div class="sk"></div><div class="sk"></div></main>
 
@@ -654,7 +655,7 @@ function rankBox() {
     return w ? "<b>Near a line</b> · " + away(m, w) : '<span class="mu">No line nearby</span>';
   };
   return '<div class="c rkb"><div class="st">Respects trendlines · ' + (ranks2y ? "last 2 years" : "last 6 months") + '</div>' +
-    '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned. % = what your account would have made risking 1% on each trade (a $10,000 account: +5% = +$500).</div>" +
+    '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned.</div>" +
     shown.map((r, i) => '<div class="trr"><span><b>' + (i + 1) + ". " + esc(r.sym) + '</b> <span class="note">' + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span></span><b class="ok">+' + r.totalR.toFixed(1) + "%</b></div>" +
       '<div class="note" style="margin:0 0 4px">' + where(r.sym) + "</div>").join("") +
     (list.length > RANK_SHOW ? '<button class="btn" data-fold="ranks" style="width:100%;margin-top:6px">' + (all ? "Show top " + RANK_SHOW : "Show all " + list.length) + "</button>" : "") + "</div>";
@@ -824,6 +825,34 @@ function renderRules() {
     '</div>';
 }
 
+// Countdown to the next 4-hour candle close (New York time): entries and exits happen on that close.
+// Futures: candles close at 10 PM (Sun-Thu) and 2, 6, 10 AM, 2 and 5 PM (Mon-Fri). Stocks: 1:30 and 4 PM, Mon-Fri.
+const etParts = (ms) => { const p = {}; new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hour12: false, weekday: "short" }).formatToParts(new Date(ms)).forEach((x) => { p[x.type] = x.value; }); return p; };
+function etToMs(y, mo, d, h, mi) { // a New York wall-clock time -> ms
+  let g = Date.UTC(y, mo - 1, d, h, mi) + 5 * 3600000;
+  for (let i = 0; i < 2; i++) { const p = etParts(g), got = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute); g += Date.UTC(y, mo - 1, d, h, mi) - got; }
+  return g;
+}
+function nextClose(k, now = Date.now()) {
+  const fut = [[22, 0, [0, 1, 2, 3, 4]], [2, 0, [1, 2, 3, 4, 5]], [6, 0, [1, 2, 3, 4, 5]], [10, 0, [1, 2, 3, 4, 5]], [14, 0, [1, 2, 3, 4, 5]], [17, 0, [1, 2, 3, 4, 5]]];
+  const stk = [[13, 30, [1, 2, 3, 4, 5]], [16, 0, [1, 2, 3, 4, 5]]], DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  let best = Infinity;
+  for (let day = 0; day < 5; day++) {
+    const p = etParts(now + day * 86400000), dow = DOW[p.weekday];
+    (k === "futures" ? fut : stk).forEach(([h, mi, days]) => { if (!days.includes(dow)) return; const t = etToMs(+p.year, +p.month, +p.day, h, mi); if (t > now && t < best) best = t; });
+  }
+  return best;
+}
+function countdown() {
+  const el = $("cd");
+  if (!el) return;
+  const left = nextClose(kind) - Date.now();
+  if (!isFinite(left)) { el.textContent = ""; return; }
+  const h = Math.floor(left / 3600000), m = Math.floor((left % 3600000) / 60000);
+  el.innerHTML = "4H close in <b>" + (h >= 24 ? Math.floor(h / 24) + "d " + (h % 24) + "h" : h ? h + "h " + m + "m" : m + "m") + "</b>";
+}
+setInterval(countdown, 30000);
+
 const PULL = 90; // pixels to pull down before a refresh
 const SKELETON = '<div class="sk tall"></div><div class="sk"></div><div class="sk"></div>';
 function render() {
@@ -848,6 +877,7 @@ function render() {
     out.innerHTML = wait && !data.markets.some((m) => m.kind === "stocks") ? wait + SKELETON : wait + (tab === "calls" ? renderCalls() : renderWatch());
   }
   if (typed && $("lookIn")) { const li = $("lookIn"); li.value = typed[0]; li.focus(); try { li.setSelectionRange(typed[1], typed[1]); } catch (e) { /* ok */ } } // a refresh while typing keeps what you typed
+  countdown();
   const al = store.get("alerts", false);
   $("alerts").textContent = al ? (store.get("push", false) ? "🔔 Phone alerts on" : "🔔 Alerts on") : "🔔 Alerts off";
   $("alerts").classList.toggle("on", al); $("alerts").setAttribute("aria-pressed", String(al));

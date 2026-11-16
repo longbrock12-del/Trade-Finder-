@@ -634,6 +634,12 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(strip.length === body.markets.filter((m) => m.kind === "futures" && !m.error).length && strip.every((t) => /[+−]\d+\.\d\d%/.test(t)) && (await page.locator(".mstrip svg polyline").count()) === strip.length, "futures strip: every future with price, 24h change and a small chart", strip.join(" | "));
   await page.click("[data-k=stocks]");
   ok((await page.locator(".mstrip").count()) === 0, "the strip is only on Futures");
+  // Countdown: Mon Nov 9 2026, 5:48 PM New York (the test clock). Futures: next close 10 PM (4h 11m). Stocks: Tue 1:30 PM.
+  const cdTimes = await page.evaluate(() => [nextClose("futures", 1794264531000), nextClose("stocks", 1794264531000), nextClose("futures", Date.UTC(2026, 10, 14, 18)), nextClose("stocks", Date.UTC(2026, 10, 9, 16))]);
+  const ny = (t) => new Date(t).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" });
+  ok(ny(cdTimes[0]) === "Mon 10:00 PM" && ny(cdTimes[1]) === "Tue 1:30 PM" && ny(cdTimes[2]) === "Sun 10:00 PM" && ny(cdTimes[3]) === "Mon 1:30 PM", "4-hour close countdown: futures 10 PM / 2 / 6 / 10 AM / 2 / 5 PM, stocks 1:30 and 4 PM, none on weekends", cdTimes.map(ny).join(", "));
+  await page.click("[data-tab=calls]"); await page.click("[data-k=futures]");
+  ok(/^4H close in 4h 11m$/.test((await page.textContent("#cd")).trim()), "the countdown shows at the top", await page.textContent("#cd"));
   ok(!errors.length, "page has no errors", errors.join(" | "));
   await page.close();
 }
@@ -809,7 +815,7 @@ async function rankPageTests(browser, body, scanBody) {
   ok((await page.locator(".rkb").count()) === 0, "the ranked box isn't on Callouts");
   await page.click("[data-tab=watch]");
   const box = page.locator(".rkb");
-  ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2%/.test(await box.textContent()) && /risking 1% on each trade/.test(await box.textContent()), "Stocks watch list: a ranked Respects trendlines box with the top 5");
+  ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2%/.test(await box.textContent()) && !/risking 1% on each trade/.test(await box.textContent()), "Stocks watch list: a ranked Respects trendlines box with the top 5");
   ok(/No line nearby/.test(await box.textContent()) && /(Callout now|Near a line)/.test(await box.textContent()), "each ranked stock says where it is now");
   await box.locator("[data-fold=ranks]").click();
   ok((await page.locator(".rkb").locator(".trr").count()) === 8, "Show all opens the whole list");
