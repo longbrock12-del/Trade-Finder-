@@ -108,7 +108,7 @@ async function handler(req, res) {
   const scanned = list.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
   const R = rules || {};
-  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["break", "retest"]) : R.setups || "all", exit: R.exit === undefined ? "htf" : R.exit || "trail", cost: R.cost || 0 }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}) });
+  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["retest"]) : R.setups || "all", exit: R.exit === undefined ? "htf" : R.exit || "trail", cost: R.cost || 0 }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 
