@@ -157,7 +157,7 @@ function active(corners) {
   return null;
 }
 
-const PIVOT = 3; // a swing point is the extreme of 3 candles each side
+let PIVOT = 3;   // a swing point is the extreme of 3 candles each side (test with ?pivot=2)
 function swings(bars) {
   const lo = new Array(bars.length).fill(false), hi = new Array(bars.length).fill(false);
   for (let i = PIVOT; i < bars.length - PIVOT; i++) {
@@ -661,14 +661,15 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
     if (opts.rules.short != null) SHORT_ATR = opts.rules.short;
     if (opts.rules.hold != null) HOLD = opts.rules.hold;
+    if (opts.rules.pivot != null) PIVOT = opts.rules.pivot;
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT] = saved; }
 }
 
 module.exports = { trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

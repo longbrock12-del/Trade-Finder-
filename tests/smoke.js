@@ -246,6 +246,9 @@ async function scanTests() {
   const rF = await call("api/scan.js", "/api/scan?market=futures", fakeYahoo(() => "GC"), NOW * 1000);
   ok(rF.status === 200 && rF.body.market === "futures" && rF.body.scanned === 12 && rF.body.test.setups === "all", "?market=futures tests a basket of 12 futures with her full strategy", JSON.stringify({ s: rF.body.scanned, t: rF.body.test }));
   ok((await call("api/scan.js", "/api/scan?years=3", fy, AMZN_NOW * 1000)).status === 400, "only 0.5, 1 or 2 years");
+  const pv2 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { pivot: 2 } }).record, pv3 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
+  const rp = await call("api/scan.js", "/api/scan?pivot=2&market=futures", fakeYahoo(() => "GC"), NOW * 1000);
+  ok(pv2.trades !== pv3.trades && rp.status === 200 && rp.body.test.pivot === 2 && TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === pv3.trades, "?pivot=2 (a swing confirmed after 2 candles, not 3) is a test setting; the live scan is unchanged", pv3.trades + " → " + pv2.trades);
   const asked3 = [], spy3 = async (u) => { asked3.push(decodeURIComponent(String(u))); return fy(u); };
   const rk2 = await call("api/scan.js", "/api/scan?ranks=1", spy3, AMZN_NOW * 1000);
   ok(rk2.status === 200 && rk2.body.years === 2 && Array.isArray(rk2.body.ranks) && !rk2.body.markets && asked3.some((u) => /interval=60m&range=2y/.test(u)), "?ranks=1: the Respects trendlines list from 2 years of the live rules", JSON.stringify({ y: rk2.body.years, n: (rk2.body.ranks || []).length }));
