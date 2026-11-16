@@ -40,17 +40,8 @@ async function both(sym, hourRange = "6mo") {
     const hourly = hourRange === "6mo" ? chart(x) : chart(x, "60m", hourRange).catch(() => chart(x, "60m", "729d"));
     return Promise.all([hourly, chart(x, "1d", "10y")]);
   };
-  let out;
-  try { out = await get(sym); } catch (e) { if (FULL[sym]) return get(FULL[sym]); throw e; }
-  // Yahoo sometimes sends a micro only a day or so of daily candles (MCL, MHG). Its full-size contract trades
-  // at the same price with years of history, so the daily (trend, monthly/weekly/daily lines) comes from it.
-  if (FULL[sym] && dailyCount(out[1]) < 250) {
-    const full = await chart(FULL[sym], "1d", "10y").catch(() => null);
-    if (full && dailyCount(full) > dailyCount(out[1])) out = [out[0], full];
-  }
-  return out;
+  try { return await get(sym); } catch (e) { if (FULL[sym]) return get(FULL[sym]); throw e; }
 }
-const dailyCount = (c) => { try { return (c.chart.result[0].timestamp || []).length; } catch (e) { return 0; } };
 
 // ?tf=4H (default), 1H or both: which chart callouts come from.
 function chartsFrom(req) {

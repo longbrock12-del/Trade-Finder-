@@ -209,15 +209,6 @@ async function scannerTests() {
   ok(!tapNearBad && tapNear > 0 && tapNear < tapN, "taps are marked near miss only when the wick stopped more than 0.1 ATR short of the line", tapNear + " near of " + tapN + ", " + tapNearBad + " wrong");
   ok(d1.signals.every((x) => x.tf === "1H") && d1.record.trades !== d4.record.trades && dB.record.trades === M.find((m) => m.sym === "MGC=F").record.trades, "?tf=1H and ?tf=both switch the chart (and the track record)", [d4.record.trades, d1.record.trades, dB.record.trades].join("/"));
   ok(def.body.markets.map((m) => m.sym).join() === "MGC=F,MCL=F,MHG=F" && def.body.markets.every((m) => m.kind === "futures" && !m.error), "default futures are Micro Gold, Crude and Copper (no silver) (falling back to the full-size prices if Yahoo has no micro data)", def.body.markets.map((m) => m.sym + (m.error ? " " + m.error : "")).join());
-  { // Yahoo sends micro crude just 1 daily candle: the daily comes from full-size crude (same price, years of history).
-    const fy = fakeYahoo((x) => YF[x]), oneDay = async (u) => {
-      const d = decodeURIComponent(String(u));
-      if (/chart\/MCL=F/.test(d) && /interval=1d/.test(d)) { const j = load("yahoo_daily_CL.json"), r = j.chart.result[0], q = r.indicators.quote[0], k = r.timestamp.length - 1; r.timestamp = r.timestamp.slice(k); Object.keys(q).forEach((f) => { q[f] = q[f].slice(k); }); return { ok: true, status: 200, json: async () => j }; }
-      return fy(u);
-    };
-    const mcl = (await call("api/trades.js", "/api/trades?s=MCL=F", oneDay)).body.markets[0];
-    ok(mcl.dailyBars > 2000 && !mcl.error, "a micro that Yahoo sends almost no daily candles for uses its full-size contract's daily history", String(mcl.dailyBars));
-  }
   ok(def.body.markets.map((m) => m.pointValue).join() === "10,100,2500", "micro contract values: gold $10, crude $100, copper $2,500 per 1.00", def.body.markets.map((m) => m.pointValue).join());
   ok(JSON.stringify(M.find((m) => m.sym === "MGC=F").signals.map((x) => x.t)) === JSON.stringify(M.find((m) => m.sym === "GC=F").signals.map((x) => x.t)), "Micro Gold callouts match gold's chart");
   const t0 = Date.now(), a1 = scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { now: NOW }), ms = Date.now() - t0;
