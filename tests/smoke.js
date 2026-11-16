@@ -583,6 +583,8 @@ async function pageTests(browser, body, optBody, scanBody) {
     return [n([60, 200, 315]), n([5, 200, 315])];
   });
   const lvm = await page.evaluate(() => levelMarks([{ p: 100, n: 5, side: "R" }, { p: 100.2, n: 3, side: "R" }, { p: 50, n: 4, side: "S" }, { p: 500, n: 9, side: "R" }], (v) => 300 - v, 0, 600, 0, 200));
+  const srn = await page.evaluate(() => srNote([{ p: 4266.57, n: 6, side: "R" }, { p: 4077.9, n: 5, side: "S" }, { p: 4383.68, n: 5, side: "R" }], 1));
+  ok(/S\/R levels: .*R 4,383\.7.*×5.*R 4,266\.6.*×6.*S 4,077\.9.*×5/.test(srn.replace(/<[^>]+>/g, "")), "the S/R levels' prices are listed under the chart, highest first", srn.replace(/<[^>]+>/g, ""));
   ok((lvm.match(/<line/g) || []).length === 3 && (lvm.match(/<text/g) || []).length === 2 && /R ×5/.test(lvm) && /S ×4/.test(lvm) && !/×9/.test(lvm), "S/R levels: dashed lines in the chart's range, labeled with touches, no overlapping labels");
   const marks = await page.evaluate(() => [tapMark(1, 2, "#000", false), tapMark(1, 2, "#000", true)]);
   ok(/fill="#000"/.test(marks[0]) && /fill="none"/.test(marks[1]) && /stroke-dasharray/.test(marks[1]) && !/stroke-dasharray/.test(marks[0]), "real touches are solid dots, near misses hollow dashed rings");

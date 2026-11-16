@@ -295,6 +295,12 @@ function levelMarks(levels, Y, x0, x1, lo, hi) {
 // A tap on the chart: solid dot = the wick reached the line; hollow dashed ring = a near miss (came close, stopped short).
 const tapMark = (x, y, col, near) => near ? '<circle cx="' + x + '" cy="' + y + '" r="4.5" fill="none" stroke="' + col + '" stroke-width="1.6" stroke-dasharray="2 2"/>'
   : '<circle cx="' + x + '" cy="' + y + '" r="4" fill="' + col + '" stroke="var(--card)" stroke-width="1.5"/>';
+// The S/R levels' prices in one small line under a chart, highest first: "R 4,383.7 ×5 · R 4,266.6 ×6 · S 4,077.9 ×5".
+function srNote(levels, d) {
+  const lv = (levels || []).slice().sort((a, b) => b.p - a.p);
+  if (!lv.length) return "";
+  return '<div class="note mini srn">S/R levels: ' + lv.map((v) => '<b style="color:var(--warn)">' + v.side + " " + num(v.p, d) + "</b> ×" + v.n).join(" · ") + "</div>";
+}
 function chart(m, s) {
   const C = s.chart, B = C.bars, n = B.length, end = n - 1;
   // Start a few candles before the action line's first tap when it's in the data (up to ~300 candles), so every
@@ -340,7 +346,7 @@ function chart(m, s) {
   const d0 = etFmt.format(new Date(view[0][0] * 1000)).split(",").slice(0, 2).join(","), d1 = etFmt.format(new Date(view[view.length - 1][0] * 1000)).split(",").slice(0, 2).join(",");
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + esc(d0) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + esc(d1) + "</text>";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + TFNAME[s.tf] + " chart of " + esc(show(m.sym)) + ' with the trendlines">' + g + "</svg>" +
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line</span><span>● touch ◌ near miss</span>' + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div></div>";
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line</span><span>● touch ◌ near miss</span>' + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div>" + srNote(C.levels, m.digits) + "</div>";
 }
 
 const TFSHORT = { Monthly: "M", Weekly: "W", Daily: "D", "4-hour": "4H", "1-hour": "1H" };
@@ -382,7 +388,7 @@ function lineView(m, s, mode) {
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + d(B[0][0]) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + d(B[n - 1][0]) + "</text>";
   const what = mode === "mid" ? "Daily, 4-hour" + (s.tf === "1H" ? " and 1-hour" : "") + " lines · 4-hour candles, about 3 months" : "Every line · daily candles, about 2 years";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + (mode === "mid" ? "4-hour chart, 3 months" : "Daily chart, 2 years") + " of " + esc(show(m.sym)) + ' with trendlines">' + g + "</svg>" +
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>M W D 4H 1H = the chart each line comes from</span><span>Thick = action line, dashed = safety line</span><span>' + what + "</span></div>" +
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>M W D 4H 1H = the chart each line comes from</span><span>Thick = action line, dashed = safety line</span><span>' + what + "</span></div>" + srNote(C.levels, m.digits) +
     (lines.length ? "" : '<div class="note">No ' + (mode === "mid" ? "Daily or 4-hour" : "") + " lines on this market right now.</div>") + "</div>";
 }
 
