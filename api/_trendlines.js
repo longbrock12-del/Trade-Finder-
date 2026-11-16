@@ -393,18 +393,21 @@ function callout(s, e, last, live, px) {
 // Strong support/resistance levels for the charts: prices where the market turned 3+ times over about 2 years
 // of daily candles. Swing highs and swing lows both count (old resistance often becomes support). Nearby turns
 // (a zone at most about 0.6 of a day's ATR wide) are the same level. Up to 3 above and 3 below price, the most-touched first.
-const SR_MIN = 3, SR_DAYS = 500;
+// Strong support/resistance: every price zone where the market turned (a confirmed daily swing high or low) 4+
+// times over all the daily history we have (~10 years). Sent within 40% of today's price; each chart draws the
+// ones inside its own price range.
+const SR_MIN = 4, SR_FAR = 0.4;
 function srLevels(daily, live) {
-  const D = daily.slice(-SR_DAYS);
+  const D = daily;
   if (D.length < 30) return [];
   const sw = swings(D), A = atr(D)[D.length - 1], pts = [];
   D.forEach((d, i) => { if (sw.hi[i]) pts.push(d.h); if (sw.lo[i]) pts.push(d.l); });
   pts.sort((a, b) => a - b);
   const groups = [];
   pts.forEach((p) => { const g = groups[groups.length - 1]; if (g && p - g[0] <= 0.6 * A) g.push(p); else groups.push([p]); }); // a level is at most ~half a day's range wide
-  const lv = groups.filter((g) => g.length >= SR_MIN).map((g) => ({ p: g.reduce((a, x) => a + x, 0) / g.length, n: g.length }));
-  const pick = (side) => lv.filter(side).sort((a, b) => b.n - a.n || Math.abs(a.p - live) - Math.abs(b.p - live)).slice(0, 3);
-  return pick((x) => x.p >= live).concat(pick((x) => x.p < live)).map((x) => ({ p: x.p, n: x.n, side: x.p >= live ? "R" : "S" }));
+  return groups.filter((g) => g.length >= SR_MIN).map((g) => ({ p: g.reduce((a, x) => a + x, 0) / g.length, n: g.length }))
+    .filter((x) => Math.abs(x.p - live) <= SR_FAR * live)
+    .map((x) => ({ p: x.p, n: x.n, side: x.p >= live ? "R" : "S" }));
 }
 
 // Her optional take-profit (for quick wins instead of trailing): the nearest support/resistance in the trade's
