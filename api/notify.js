@@ -9,7 +9,7 @@ const { vapid, subjectOf } = require("./push.js");
 
 // Bump when the callout rules change, so open callouts sent under the old rules get re-checked (and dropped if
 // today's rules wouldn't make them). "2": a tap must hold for 2 candles.
-const RULES_VERSION = "2";
+const RULES_VERSION = "3";
 const FRESH = 6 * 3600;   // only callouts that fired in the last 6 hours are sent (never old ones on the first run)
 const ENTER_R = 0.5;      // same as the page: still within 0.5R of entry
 const keyOf = (m, s) => m.sym + "|" + s.tf + "|" + s.setup + "|" + s.dir + "|" + s.t;

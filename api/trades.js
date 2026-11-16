@@ -92,14 +92,15 @@ async function handler(req, res) {
   // ?stats=1: the futures' 2-year track records with the live rules (worked out once a day, cached 24 hours).
   const sq = new URL(req.url, "http://x").searchParams;
   if (sq.get("stats") === "1") {
-    // Tests only: roll=1 (crude back-adjusted for contract switches), exit=tp (take profit at her S/R target).
-    const roll = sq.get("roll") === "1", tpExit = sq.get("exit") === "tp", test = roll || tpExit;
+    // Tests only: roll=1 (crude back-adjusted for contract switches), exit=tp (take profit at her S/R target),
+    // exit=htf (take profit at a bigger-timeframe trendline).
+    const roll = sq.get("roll") === "1", exit = ["tp", "htf"].includes(sq.get("exit")) ? sq.get("exit") : null, test = roll || !!exit;
     const out = await Promise.all(list.map(async (sym) => { try {
       const args = await both(sym, "2y"), rolls = roll && /^M?CL=F$/.test(sym) ? rollAdjust(...args) : undefined;
-      const m = scan(...args, { sym, tfs: ["4H"], ...(tpExit ? { rules: { exit: "tp" } } : {}) });
+      const m = scan(...args, { sym, tfs: ["4H"], ...(exit ? { rules: { exit } } : {}) });
       return m.error ? { sym, error: m.error } : { sym, record: m.record, ...(rolls ? { rolls } : {}) };
     } catch (e) { return { sym, error: e.message || "failed" }; } }));
-    if (test) return send(res, 200, 1800, { at: Date.now(), years: 2, test: { roll, exit: tpExit ? "tp" : "trail" }, markets: out });
+    if (test) return send(res, 200, 1800, { at: Date.now(), years: 2, test: { roll, exit: exit || "trail" }, markets: out });
     const ok = out.filter((x) => x.record).length;
     return send(res, ok ? 200 : 502, ok === out.length ? 86400 : ok ? 1800 : 0, { at: Date.now(), years: 2, markets: out });
   }

@@ -302,7 +302,8 @@ function nearMiss(S, ln, x) {
 // always on the other side") and trails along it; and the trade ends when a finished candle closes through
 // the safety line. Both trail along the newest line of the safety chain and never loosen.
 // line0: safety line value at entry; room: distance of the stop order past the line.
-// tpPx (tests only, exit=tp): also take profit when a candle reaches that price.
+// tpPx (tests only): also take profit when a candle reaches that price (exit=tp), or a moving price, candle
+// by candle (exit=htf: a bigger-timeframe trendline).
 let TP_EXIT = false;
 function follow(S, long, from, last, line0, room, tpPx) {
   let line = line0, stop = long ? line0 - room : line0 + room;
@@ -311,7 +312,8 @@ function follow(S, long, from, last, line0, room, tpPx) {
     if (sl) { const v = val(sl, S.x0 + i); line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
     const c = S.bars[i];
     if (long ? c.l <= stop : c.h >= stop) return { status: "closed", at: i, px: long ? Math.min(c.o, stop) : Math.max(c.o, stop), stop, line, how: "stop order" }; // a gap past the stop fills at the open
-    if (tpPx != null && (long ? c.h >= tpPx : c.l <= tpPx)) return { status: "closed", at: i, px: long ? Math.max(c.o, tpPx) : Math.min(c.o, tpPx), stop, line, how: "take profit" };
+    const tg = typeof tpPx === "function" ? tpPx(i) : tpPx;
+    if (tg != null && (long ? c.h >= tg : c.l <= tg)) return { status: "closed", at: i, px: long ? Math.max(c.o, tg) : Math.min(c.o, tg), stop, line, how: "take profit" };
     if (long ? c.c < line : c.c > line) return { status: "closed", at: i, px: c.c, stop, line, how: "close through the line" };
   }
   const sl = long ? S.act[last + 1].up : S.act[last + 1].dn;
@@ -382,8 +384,9 @@ function callout(s, e, last, live, px) {
   const stop0 = e.long ? line0 - room : line0 + room, risk = e.long ? ent - stop0 : stop0 - ent;
   if (!(risk > 0) || (e.long ? ent <= line0 : ent >= line0)) return { ...c, status: "no-safety", note: "The safety line is on the wrong side of the entry." };
   // exit=tp test: her take-profit, set at entry from the candles up to then (no peeking ahead).
-  const tpAt = TP_EXIT ? takeProfit(s, e.long, ent, ent, from) : null;
-  const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : null);
+  const tpAt = TP_EXIT === "tp" ? takeProfit(s, e.long, ent, ent, from) : null;
+  const htf = TP_EXIT === "htf" ? htfTarget(s, e.long, from, ent) : null;
+  const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : htf ? (i) => val(htf, s.x0 + i) : null);
   const far = risk > FAR_ATR * s.A[from];
   const sign = e.long ? 1 : -1;
   const tp = out.status === "open" ? takeProfit(s, e.long, live, ent, last) : null;
@@ -420,6 +423,21 @@ function srLevels(daily, live) {
 // Her optional take-profit (for quick wins instead of trailing): the nearest support/resistance in the trade's
 // direction with as many touches as possible, close to current price, set slightly before the level.
 // Levels = clusters of swing highs (for longs) or lows (for shorts) on this chart over the last 3 months.
+// exit=htf test: her other exit, "price got to a higher time frame trendline". For a long, the nearest
+// Daily/Weekly/Monthly falling line above the entry (an older, flatter line of the falling chain, extended);
+// for a short, the nearest rising one below. Taken from the chains as they stood at entry.
+function htfTarget(s, long, from, entry) {
+  const ch = s.chainsBefore(from + 1), c = long ? ch.dn : ch.up, x = s.x0 + from;
+  let best = null, bestV = null;
+  for (let k = 1; k < c.length; k++) {
+    const ln = lineOf(c[k - 1], c[k]);
+    if (!ln.slope || TF_ORDER.indexOf(tfOfLine(ln, s.tf)) < 2) continue;
+    const v = val(ln, x);
+    if (long ? v > entry && (bestV == null || v < bestV) : v < entry && (bestV == null || v > bestV)) { best = ln; bestV = v; }
+  }
+  return best;
+}
+
 function takeProfit(s, long, price, entry, last) {
   const b = s.bars, sw = swings(b), A = s.A[last], from = b[last].t - 91 * DAY, pts = [];
   price = long ? Math.max(price, entry) : Math.min(price, entry); // the target must be past both price and entry
@@ -476,6 +494,28 @@ function record(hist) {
 
 const FUTURE_RULES = { trend: "bounce", once: false, setups: null };
 const STOCK_RULES = { trend: "bounce", once: false, setups: ["break"] };
+// Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
+// bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
+// in the 4 trading days up to the front contract's last day.
+const CRUDE_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], rollBlackout: true };
+const isCrude = (sym) => /^M?CL=F$/.test(sym || "");
+// Crude's last trading day for the contract that expires in this month: 3 business days before the 25th
+// (4 if the 25th is a weekend day). Holidays aren't counted.
+function crudeLastDay(y, m) {
+  const biz = (d) => { const w = d.getUTCDay(); return w !== 0 && w !== 6; };
+  const d = new Date(Date.UTC(y, m, 25));
+  let n = biz(d) ? 3 : 4;
+  while (n > 0) { d.setUTCDate(d.getUTCDate() - 1); if (biz(d)) n--; }
+  return d;
+}
+// True on the last day and the 3 trading days before it.
+function nearCrudeRoll(day) {
+  const [y, mo, dd] = day.split("-").map(Number), last = crudeLastDay(y, mo - 1), d = new Date(Date.UTC(y, mo - 1, dd));
+  if (d > last) return false;
+  let n = 0;
+  for (const q = new Date(last); q > d; q.setUTCDate(q.getUTCDate() - 1)) { const w = q.getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n <= 3;
+}
 
 // Her top-down trend (her playbook: "a top-down look at bigger timeframes, like the daily or weekly, helps
 // confirm the main trend direction"; "ranging markets provide few valid opportunities"). Clean structure:
@@ -548,7 +588,7 @@ function scanCore(hChart, dChart, opts = {}) {
   //            over 6 months, vs 20% break & retest and 16% bounces).
   //   trend: true = every setup goes with the trend, "bounce" = bounces only, false = off.
   //   once: one attempt per trendline for breaks (FX Replay's added rule, not hers: off by default).
-  const R = { ...(isFuture ? FUTURE_RULES : STOCK_RULES), ...(opts.rules || {}) };
+  const R = { ...(isFuture ? (isCrude(sym) ? CRUDE_RULES : FUTURE_RULES) : STOCK_RULES), ...(opts.rules || {}) };
   const trendAt = trendSeries(daily), useTrend = R.trend !== false, trendMode = R.trend, useOnce = R.once === true, setupsOk = R.setups;
   // opts.tfs: which charts to take callouts from (the site uses 4-hour by default). The 4-hour chart is always
   // set up, since the 3-month chart view uses it.
@@ -562,7 +602,8 @@ function scanCore(hChart, dChart, opts = {}) {
     const recentFrom = last - RECENT_DAYS * s.ppd + 1;
     const tried = new Set(); // trendlines whose break has already been traded (one attempt per line)
     events(s, opts.history === false ? recentFrom : WARMUP, last).forEach((e) => {
-      if (setupsOk && !setupsOk.includes(e.kind)) return; // stocks: breaks only
+      if (setupsOk && !setupsOk.includes(e.kind)) return; // stocks: breaks only; crude: breaks and retests
+      if (R.rollBlackout && nearCrudeRoll(et(b[e.at].t + 6 * HOUR).day)) return; // crude: contract switch coming up
       // against the trend, or choppy (rules.trend === "bounce": only bounces need the trend; breaks are reversals)
       if (useTrend && (trendMode !== "bounce" || e.kind === "bounce")) { const tr = trendAt(b[e.at].t); if (tr.dir !== (e.long ? "up" : "down")) return; }
       const c = callout(s, e, last, live, px);
@@ -701,9 +742,9 @@ function scan(hChart, dChart, opts = {}) {
     if (opts.rules.short != null) SHORT_ATR = opts.rules.short;
     if (opts.rules.hold != null) HOLD = opts.rules.hold;
     if (opts.rules.pivot != null) PIVOT = opts.rules.pivot;
-    TP_EXIT = opts.rules.exit === "tp";
+    TP_EXIT = opts.rules.exit === "tp" || opts.rules.exit === "htf" ? opts.rules.exit : false;
     return scanCore(hChart, dChart, opts);
   } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, TP_EXIT] = saved; }
 }
 
-module.exports = { trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
+module.exports = { nearCrudeRoll, crudeLastDay, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

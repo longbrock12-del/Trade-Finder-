@@ -146,7 +146,14 @@ async function scannerTests() {
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced"].includes(x.how))), "trades end on the safety line or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 31 && clr.totalR === 44.89, "crude's 6 months: 31 trades, +44.89R (taps must hold)", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 27 && clr.totalR === 41.7, "crude's 6 months: 27 trades, +41.7R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
+  { const TC = require(path.join(ROOT, "api/_trendlines.js")), cAll = TC.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
+    const gAll2 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true });
+    const dayOf = (t) => new Date((t + 6 * 3600) * 1000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    ok(cAll.signals.length > 0 && cAll.signals.every((x) => x.setup !== "bounce") && gAll2.signals.some((x) => x.setup === "bounce"), "crude takes only breaks and break & retests (her crude trades); gold still takes bounces", cAll.signals.map((x) => x.setup).join(","));
+    ok(cAll.signals.every((x) => !TC.nearCrudeRoll(dayOf(x.t))) && TC.crudeLastDay(2026, 10).toISOString().slice(0, 10) === "2026-11-20" && TC.nearCrudeRoll("2026-11-17") && !TC.nearCrudeRoll("2026-11-16") && !TC.nearCrudeRoll("2026-11-23"), "no new crude callouts in the 4 trading days up to the contract's last day (Nov 17-20, 2026)");
+    const htf = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: "htf" } });
+    ok(htf.signals.some((x) => x.exitHow === "take profit") && !gAll2.signals.some((x) => x.exitHow === "take profit"), "exit=htf test: take profit at a bigger-timeframe trendline (test only)"); }
   ok(recs.every((r) => Object.values(r.bySetup).reduce((a, b) => a + b.trades, 0) === r.trades) && recs.some((r) => r.bySetup.retest), "track record splits trades by setup (break, break & retest, bounce)");
   // Break & retest: found after a break, same line, entered later on a candle that touched the line from the other side.
   const rt = sigs.filter(({ s }) => s.setup === "break & retest");
@@ -773,10 +780,10 @@ async function alertTests() {
   await invoke("api/notify.js", "GET");
   const m3 = pushed.map((x) => open(x.body));
   ok(m3.length === 1 && m3[0].title === "Move stop: BUY MGC" && /New stop 1990 \(was 1985\)/.test(m3[0].body), "exit alerts: the phone is told when the stop trails to a new level", JSON.stringify(m3));
-  ok(ctAsks.length === 0 && JSON.parse(H("tf:live").values().next().value).rv === "2", "new callouts are stamped with today's rules (no re-check needed)");
+  ok(ctAsks.length === 0 && JSON.parse(H("tf:live").values().next().value).rv === "3", "new callouts are stamped with today's rules (no re-check needed)");
   H("tf:live").set("old|keep", JSON.stringify({ key: "MGC=F|4H|break|long|7", view: "4H", sym: "MGC=F", kind: "futures", tf: "4H", dir: "long", entry: 1990, stop: 1980, risk: 10, t: 7, status: "open", nowR: 0.1 }));
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
-  ok(ctAsks.length === 1 && /ct=7&cd=long/.test(ctAsks[0]) && JSON.parse(H("tf:live").get("old|keep")).rv === "2", "a callout sent under older rules is re-checked once and kept (marked) when today's rules still make it", ctAsks[0]);
+  ok(ctAsks.length === 1 && /ct=7&cd=long/.test(ctAsks[0]) && JSON.parse(H("tf:live").get("old|keep")).rv === "3", "a callout sent under older rules is re-checked once and kept (marked) when today's rules still make it", ctAsks[0]);
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   ok(ctAsks.length === 1, "once checked, a callout isn't checked again until the rules change");
   H("tf:live").delete("old|keep");
@@ -784,7 +791,7 @@ async function alertTests() {
   db.delete("tf:lastrun"); site.ct = { markets: [{ sym: "SBUX" }] }; // today's rules don't make this one
   const nd = await invoke("api/notify.js", "GET"); delete site.ct;
   ok(nd.body.dropped === 1 && !H("tf:live").has("old|SBUX") && H("tf:live").size === 1, "an open callout today's rules wouldn't make is dropped from tracking and the live record, even when the stock is no longer in the scan results", JSON.stringify(nd.body));
-  H("tf:live").set("4H|SBUX|4H|3-touch break|short|99", JSON.stringify({ key: "SBUX|4H|3-touch break|short|99", view: "4H", sym: "SBUX", kind: "stocks", dir: "short", entry: 100, stop: 101, risk: 1, t: 99, status: "open", rv: "2" }));
+  H("tf:live").set("4H|SBUX|4H|3-touch break|short|99", JSON.stringify({ key: "SBUX|4H|3-touch break|short|99", view: "4H", sym: "SBUX", kind: "stocks", dir: "short", entry: 100, stop: 101, risk: 1, t: 99, status: "open", rv: "3" }));
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   ok(!H("tf:live").has("4H|SBUX|4H|3-touch break|short|99"), "the open SBUX trade is deleted from tracking, even though it passed the re-check");
   db.delete("tf:lastrun"); pushed.length = 0;
