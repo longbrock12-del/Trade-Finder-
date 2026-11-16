@@ -71,7 +71,7 @@ async function stats(req, res, sp) {
 async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
   { const sp0 = new URL(req.url, "http://x").searchParams; if (sp0.get("stats") === "1" || sp0.get("ranks") === "1") return stats(req, res, sp0); }
-  const found = [], failed = [], recs = [], tfs = chartsFrom(req);
+  const found = [], failed = [], recs = [], older = [], last12 = [], tfs = chartsFrom(req);
   // Test-only rule settings: ?touch=0.15 (how far a wick may poke through the line, in ATR, 0.02-1) and/or ?gap=4 (shortest line in candles, 2-20).
   // Answers with just the 6-month record of all scanned stocks; live callouts and alerts never use these.
   const sp = new URL(req.url, "http://x").searchParams, num = (k, lo, hi) => { const v = sp.get(k); if (v == null || v === "") return null; const n = Number(v); return n >= lo && n <= hi ? n : NaN; };
@@ -80,23 +80,26 @@ async function handler(req, res) {
   const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1), hold = num("hold", 0, 6), pivot = num("pivot", 1, 5), trendOff = sp.get("trend") === "0", trendAll = sp.get("trend") === "1", onceOn = sp.get("once") === "1";
   // ?setups=break,retest,bounce (or all): which of her setups stocks take (the site: break).
   // ?exit=htf (take profit at the next bigger-timeframe trendline, the live exit) / tp (at a nearby S/R level) / trail (safety line only).
+  // ?cost=0.1 (R taken off every trade: commissions, slippage, option spreads) and ?split=1 (older year vs last 12 months).
+  const cost = num("cost", 0, 1), split = sp.get("split") === "1";
   const ex = sp.get("exit"), exit = ["htf", "tp", "trail"].includes(ex) ? ex : undefined;
   const st = sp.get("setups"), setups = st == null ? undefined : st === "all" ? null : st.split(",").filter((x) => ["break", "retest", "bounce"].includes(x));
-  const rules = touch != null || gap != null || short != null || hold != null || pivot != null || trendOff || trendAll || onceOn || setups !== undefined || exit !== undefined ? { touch, gap: gap == null ? null : Math.round(gap), short, hold: hold == null ? null : Math.round(hold), pivot: pivot == null ? null : Math.round(pivot), ...(trendOff ? { trend: false } : trendAll ? { trend: true } : {}), ...(onceOn ? { once: true } : {}), ...(setups !== undefined ? { setups } : {}), ...(exit !== undefined ? { exit: exit === "trail" ? null : exit } : {}) } : null;
+  const rules = touch != null || gap != null || short != null || hold != null || pivot != null || trendOff || trendAll || onceOn || setups !== undefined || exit !== undefined || cost != null ? { touch, gap: gap == null ? null : Math.round(gap), short, hold: hold == null ? null : Math.round(hold), pivot: pivot == null ? null : Math.round(pivot), ...(trendOff ? { trend: false } : trendAll ? { trend: true } : {}), ...(onceOn ? { once: true } : {}), ...(setups !== undefined ? { setups } : {}), ...(exit !== undefined ? { exit: exit === "trail" ? null : exit } : {}), ...(cost != null ? { cost } : {}) } : null;
   // Test mode replays 2 years by default (?years=0.5 / 1 / 2); ?market=futures tests a basket of futures instead of the stocks.
   const yr = sp.get("years"), years = yr == null ? 2 : Number(yr), range = { 0.5: "6mo", 1: "1y", 2: "2y" }[years];
   const futTest = sp.get("market") === "futures";
-  if ((rules || yr != null || futTest) && !range) return send(res, 400, 0, { error: "years must be 0.5, 1 or 2" });
-  const testMode = !!(rules || yr != null || futTest), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? range : "6mo";
-  if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold) || Number.isNaN(pivot))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles), pivot 1-5 (candles)" });
+  if ((rules || yr != null || futTest || split) && !range) return send(res, 400, 0, { error: "years must be 0.5, 1 or 2" });
+  const testMode = !!(rules || yr != null || futTest || split), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? range : "6mo";
+  if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold) || Number.isNaN(pivot) || Number.isNaN(cost))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles), pivot 1-5 (candles), cost 0-1 (R)" });
   let next = 0;
   async function worker() {
     while (next < list.length) {
       const sym = list[next++];
       try {
-        const m = { ...scan(...(await both(sym, hourRange)), { sym, tfs, rules: rules || undefined }), sym };
+        const m = { ...scan(...(await both(sym, hourRange)), { sym, tfs, rules: rules || undefined, split }), sym };
         if (m.error) { failed.push(sym); continue; }
         if (m.record) recs.push({ sym, ...m.record });
+        if (m.split) { older.push({ sym, ...m.split.older }); last12.push({ sym, ...m.split.last12 }); }
         if (m.signals.length || m.watch.length) found.push(m);
       } catch (e) { failed.push(sym); }
     }
@@ -105,7 +108,7 @@ async function handler(req, res) {
   const scanned = list.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
   const R = rules || {};
-  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["break", "retest"]) : R.setups || "all", exit: R.exit === undefined ? "htf" : R.exit || "trail" }, scanned, record: combine(recs) });
+  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["break", "retest"]) : R.setups || "all", exit: R.exit === undefined ? "htf" : R.exit || "trail", cost: R.cost || 0 }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 

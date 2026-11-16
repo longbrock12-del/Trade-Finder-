@@ -460,7 +460,9 @@ function takeProfit(s, long, price, entry, last) {
 // Track record: every callout you'd have taken over the window (3+ of 4 checklist rules, not skipped),
 // one position per market. A newer callout replaces the one you're in at its entry price, like the page shows;
 // otherwise a trade ends on its safety line. R = profit in multiples of the starting risk.
-function record(hist) {
+// w (tests only): cost = R taken off every trade (commissions, slippage, option spreads); from/to = count only
+// trades entered in that window (the positions are still worked out over the whole replay).
+function record(hist, w = {}) {
   const rank = (x) => (x.tf === "4H" ? 0 : 6) + (x.grade === "A+" ? 0 : 3) + (x.setup === "bounce" ? 2 : x.setup === "break & retest" ? 1 : 0);
   const take = hist.filter((x) => qualifies(x) && (x.status === "open" || x.status === "closed"))
     .sort((p, q) => p.entryT - q.entryT || rank(p) - rank(q));
@@ -476,6 +478,11 @@ function record(hist) {
   });
   let open = null;
   if (pos) { if (pos.exitT != null) done.push({ ...pos, r: pos.exitR, how: pos.exitHow === "take profit" ? "target line" : "safety line" }); else open = pos; }
+  if (w.cost || w.from != null || w.to != null) {
+    const kept = done.filter((x) => (w.from == null || x.entryT >= w.from) && (w.to == null || x.entryT < w.to)).map((x) => ({ ...x, r: r2(x.r - (w.cost || 0), 2) }));
+    done.length = 0; done.push(...kept);
+    if (open && w.to != null && open.entryT >= w.to) open = null;
+  }
   const rs = done.map((x) => x.r), tot = rs.reduce((a, r) => a + r, 0);
   // Size of wins and losses, and how long each was held (raw sums, so markets can be added together).
   const W = done.filter((x) => x.r > 0), Ls = done.filter((x) => x.r <= 0), hrs = (x) => Math.max(0, (x.exitT - x.entryT) / 3600);
@@ -734,7 +741,9 @@ function scanCore(hChart, dChart, opts = {}) {
   return {
     sym, name: meta.shortName || meta.longName || sym, kind: isFuture ? "futures" : "stocks",
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
-    dailyBars: daily.length, trend: trendAt(now), ...(isFuture ? { spark: b4.slice(Math.max(0, l4 - 29), l4 + 1).map((q) => px(q.c)) } : {}), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), ...(trade ? { trade } : {}), record: opts.history === false ? null : record(hist),
+    dailyBars: daily.length, trend: trendAt(now), ...(isFuture ? { spark: b4.slice(Math.max(0, l4 - 29), l4 + 1).map((q) => px(q.c)) } : {}), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), ...(trade ? { trade } : {}), record: opts.history === false ? null : record(hist, { cost: R.cost || 0 }),
+    // ?split=1 (tests): the same record for the older part of the replay and for the last 12 months.
+    ...(opts.split ? { split: { older: record(hist, { cost: R.cost || 0, to: now - 365 * DAY }), last12: record(hist, { cost: R.cost || 0, from: now - 365 * DAY }) } } : {}),
   };
 }
 
