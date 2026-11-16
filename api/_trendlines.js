@@ -497,8 +497,9 @@ function record(hist) {
 // exit "htf": her exit "price got to a higher time frame trendline": take profit at the nearest Daily, Weekly or
 // Monthly line in the trade's direction (2 years: gold +3.6% -> +6.2%, copper +7.3% -> +12.6%).
 const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htf" };
-// Stocks take the same bigger-timeframe exit (2 years, 112 stocks: -16.3% trailing only -> +4.7%, 33% -> 64% wins).
-const STOCK_RULES = { trend: "bounce", once: false, setups: ["break"], exit: "htf" };
+// Stocks take the same bigger-timeframe exit and her breaks and break & retests (2 years, 112 stocks, with that
+// exit: breaks +4.7%, retests +21.0%, both +15.1% over 356 trades; bounces -48%).
+const STOCK_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], exit: "htf" };
 // Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
 // bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
 // in the 4 trading days up to the front contract's last day.
@@ -608,7 +609,7 @@ function scanCore(hChart, dChart, opts = {}) {
     const recentFrom = last - RECENT_DAYS * s.ppd + 1;
     const tried = new Set(); // trendlines whose break has already been traded (one attempt per line)
     events(s, opts.history === false ? recentFrom : WARMUP, last).forEach((e) => {
-      if (setupsOk && !setupsOk.includes(e.kind)) return; // stocks: breaks only; crude: breaks and retests
+      if (setupsOk && !setupsOk.includes(e.kind)) return; // stocks and crude: breaks and retests
       if (R.rollBlackout && nearCrudeRoll(et(b[e.at].t + 6 * HOUR).day)) return; // crude: contract switch coming up
       // against the trend, or choppy (rules.trend === "bounce": only bounces need the trend; breaks are reversals)
       if (useTrend && (trendMode !== "bounce" || e.kind === "bounce")) { const tr = trendAt(b[e.at].t); if (tr.dir !== (e.long ? "up" : "down")) return; }

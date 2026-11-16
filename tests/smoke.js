@@ -312,13 +312,13 @@ async function scanTests() {
       fN++;
       if (x.setup === "bounce") { bounces++; if (tAt(x.t).dir !== (x.dir === "long" ? "up" : "down")) against++; }
       if (/=F$/.test(sym)) futKinds.add(x.setup === "bounce" ? "bounce" : x.setup === "break & retest" ? "retest" : "break");
-      else if (!/break$/.test(x.setup) || x.setup === "break & retest") stockNonBreak++;
+      else if (!/break$/.test(x.setup)) stockNonBreak++; // a break or a break & retest
     });
     ok(mk.trend && "dir" in mk.trend, sym + ": the market says its trend now (" + (mk.trend.dir || "none") + (mk.trend.from ? ", " + mk.trend.from : "") + ")");
   });
   ok(fN > 0 && bounces > 0 && !against, "futures: every bounce goes with her top-down trend (none when it's choppy)", bounces + " bounces, " + against + " against");
   ok(futKinds.has("break") && futKinds.has("bounce"), "futures: all of her setups trade (breaks need no trend: they're reversals)", [...futKinds].join());
-  ok(!stockNonBreak, "stocks: breaks only (her setup with the best win rate on stocks)", stockNonBreak + " other setups");
+  ok(!stockNonBreak, "stocks: breaks and break & retests only (no bounces)", stockNonBreak + " other setups");
   const once1 = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { once: true } }).record, live1 = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
   ok(once1.trades <= live1.trades && scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === live1.trades, "one attempt per trendline (not hers) is a test setting only", live1.trades + " / " + once1.trades);
   const must = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { short: 0.05 } }).record;
