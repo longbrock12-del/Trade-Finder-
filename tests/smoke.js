@@ -764,10 +764,10 @@ async function alertTests() {
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   ok(ctAsks.length === 1, "once checked, a callout isn't checked again until the rules change");
   H("tf:live").delete("old|keep");
-  H("tf:live").set("old|SBUX", JSON.stringify({ key: "SBUX|4H|3-touch break|short|5", view: "4H", sym: "MGC=F", kind: "futures", tf: "4H", dir: "short", entry: 2000, stop: 2010, risk: 10, t: 5, status: "open", nowR: 0.1 }));
-  db.delete("tf:lastrun"); site.ct = { markets: [{ sym: "MGC=F" }] }; // today's rules don't make this one
+  H("tf:live").set("old|SBUX", JSON.stringify({ key: "SBUX|4H|3-touch break|short|5", view: "4H", sym: "SBUX", kind: "stocks", tf: "4H", dir: "short", entry: 100, stop: 101, risk: 1, t: 5, status: "open", nowR: 0.1 }));
+  db.delete("tf:lastrun"); site.ct = { markets: [{ sym: "SBUX" }] }; // today's rules don't make this one
   const nd = await invoke("api/notify.js", "GET"); delete site.ct;
-  ok(nd.body.dropped === 1 && !H("tf:live").has("old|SBUX") && H("tf:live").size === 1, "an open callout today's rules wouldn't make is dropped from tracking and the live record", JSON.stringify(nd.body));
+  ok(nd.body.dropped === 1 && !H("tf:live").has("old|SBUX") && H("tf:live").size === 1, "an open callout today's rules wouldn't make is dropped from tracking and the live record, even when the stock is no longer in the scan results", JSON.stringify(nd.body));
   db.delete("tf:lastrun"); pushed.length = 0;
   site = { trades: { markets: [mk(1999, { ...sig, nowR: 0.4, stop: 1990.5 })] } };
   await invoke("api/notify.js", "GET");

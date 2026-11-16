@@ -93,15 +93,17 @@ module.exports = async function handler(req, res) {
     let dropped = 0;
     for (const [lk, x] of Object.entries(await S.hgetallJSON("tf:live"))) {
       if (x.status !== "open") continue;
-      const view = x.view || "4H", m = (byTf[view] || []).find((q) => q.sym === x.sym);
-      if (!m) continue;
+      const view = x.view || "4H";
       // Rules changed since this callout went out? Check once per rules version that today's rules still make it
       // (the replay has it). If not, e.g. a 3rd "tap" that was really the start of the break, drop it from tracking.
+      // Done before anything else: a stock that's no longer in the scan's results still gets checked.
       if (x.rv !== RULES_VERSION) {
         const chk = await get("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=" + view + "&ct=" + x.t + "&cd=" + x.dir), cm = (chk.markets || [])[0];
         if (cm && !cm.error && !cm.trade) { await S.hdel("tf:live", lk); dropped++; continue; }
-        if (cm && cm.trade) x.rv = RULES_VERSION;
+        if (cm && cm.trade) { x.rv = RULES_VERSION; await S.hsetJSON("tf:live", lk, x); }
       }
+      const m = (byTf[view] || []).find((q) => q.sym === x.sym);
+      if (!m) continue;
       const s = (m.signals || []).find((q) => keyOf(m, q) === x.key), sign = x.dir === "long" ? 1 : -1;
       const toView = (q) => ((q.prefs && q.prefs.tf) || "4H") === view, name = actionOf(m, x) + " " + show(x.sym);
       if (s && s.status === "closed") {
