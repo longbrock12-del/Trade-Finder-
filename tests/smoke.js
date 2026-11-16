@@ -290,6 +290,8 @@ async function scanTests() {
   const askedF = [], fg = fakeYahoo((x) => YF[x]), spyF = async (u) => { askedF.push(decodeURIComponent(String(u))); return fg(u); };
   const fs2 = await call("api/trades.js", "/api/trades?stats=1", spyF);
   ok(fs2.status === 200 && fs2.body.years === 2 && fs2.body.markets.length === 3 && fs2.body.markets.every((m) => m.record && !m.signals) && askedF.some((u) => /interval=60m&range=2y/.test(u)), "/api/trades?stats=1: each future's 2-year track record", fs2.body.markets.map((m) => m.sym).join());
+  const sx = await call("api/scan.js", "/api/scan?exit=htf&years=0.5", fakeYahoo((x) => YF[x] || "AAPL"), AMZN_NOW * 1000);
+  ok(sx.status === 200 && sx.body.test.exit === "htf" && sx.body.record && sx.body.record.trades >= 0, "stocks test: ?exit=htf runs the stock scan with the bigger-timeframe target exit", JSON.stringify(sx.body.test || sx.body));
   const fs3 = await call("api/trades.js", "/api/trades?stats=1&roll=1&exit=tp", fakeYahoo((x) => YF[x]));
   const crude = fs3.body.markets.find((m) => m.sym === "MCL=F"), gold = fs3.body.markets.find((m) => m.sym === "MGC=F");
   ok(fs3.status === 200 && fs3.body.test.roll && fs3.body.test.exit === "tp" && crude.record && crude.rolls && crude.rolls.length > 20 && gold.record && !gold.rolls, "2-year test settings: roll=1 back-adjusts crude for contract switches, exit=tp takes profit at her S/R target", JSON.stringify({ rolls: crude.rolls && crude.rolls.length }));
