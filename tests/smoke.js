@@ -651,12 +651,15 @@ async function alertTests() {
     if (c === "SADD") { const st = db.get(k) || new Set(); db.set(k, st); if (st.has(a[0])) return 0; st.add(a[0]); return 1; }
     throw new Error("cmd " + c);
   };
-  let site = {};
+  let site = {}; const ctAsks = [];
   const fetcher = async (u, o = {}) => {
     u = String(u);
     if (u.startsWith("https://kv.test/pipeline")) { const out = JSON.parse(o.body).map((c) => ({ result: run(c) })); return { ok: true, status: 200, json: async () => out }; }
     if (u.startsWith("https://push.test/")) { pushed.push({ u, h: o.headers, body: o.body }); return { ok: true, status: 201 }; }
-    if (u.startsWith("https://tf.test/api/")) { const k = /\/api\/scan/.test(u) ? "scan" : /&s=/.test(u) ? "extra" : "trades"; return { ok: true, status: 200, json: async () => site[k] || { markets: [] } }; }
+    if (u.startsWith("https://tf.test/api/")) {
+      if (/&ct=/.test(u)) { ctAsks.push(u); return { ok: true, status: 200, json: async () => site.ct || { markets: [{ sym: "MGC=F", trade: { t: 1 } }] } }; } // by default today's rules still make the callout
+      const k = /\/api\/scan/.test(u) ? "scan" : /&s=/.test(u) ? "extra" : "trades"; return { ok: true, status: 200, json: async () => site[k] || { markets: [] } };
+    }
     return { ok: false, status: 404 };
   };
   const T = NOW - 3600;
@@ -714,6 +717,17 @@ async function alertTests() {
   await invoke("api/notify.js", "GET");
   const m3 = pushed.map((x) => open(x.body));
   ok(m3.length === 1 && m3[0].title === "Move stop: BUY MGC" && /New stop 1990 \(was 1985\)/.test(m3[0].body), "exit alerts: the phone is told when the stop trails to a new level", JSON.stringify(m3));
+  ok(ctAsks.length === 0 && JSON.parse(H("tf:live").values().next().value).rv === "2", "new callouts are stamped with today's rules (no re-check needed)");
+  H("tf:live").set("old|keep", JSON.stringify({ key: "MGC=F|4H|break|long|7", view: "4H", sym: "MGC=F", kind: "futures", tf: "4H", dir: "long", entry: 1990, stop: 1980, risk: 10, t: 7, status: "open", nowR: 0.1 }));
+  db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+  ok(ctAsks.length === 1 && /ct=7&cd=long/.test(ctAsks[0]) && JSON.parse(H("tf:live").get("old|keep")).rv === "2", "a callout sent under older rules is re-checked once and kept (marked) when today's rules still make it", ctAsks[0]);
+  db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+  ok(ctAsks.length === 1, "once checked, a callout isn't checked again until the rules change");
+  H("tf:live").delete("old|keep");
+  H("tf:live").set("old|SBUX", JSON.stringify({ key: "SBUX|4H|3-touch break|short|5", view: "4H", sym: "MGC=F", kind: "futures", tf: "4H", dir: "short", entry: 2000, stop: 2010, risk: 10, t: 5, status: "open", nowR: 0.1 }));
+  db.delete("tf:lastrun"); site.ct = { markets: [{ sym: "MGC=F" }] }; // today's rules don't make this one
+  const nd = await invoke("api/notify.js", "GET"); delete site.ct;
+  ok(nd.body.dropped === 1 && !H("tf:live").has("old|SBUX") && H("tf:live").size === 1, "an open callout today's rules wouldn't make is dropped from tracking and the live record", JSON.stringify(nd.body));
   db.delete("tf:lastrun"); pushed.length = 0;
   site = { trades: { markets: [mk(1999, { ...sig, nowR: 0.4, stop: 1990.5 })] } };
   await invoke("api/notify.js", "GET");

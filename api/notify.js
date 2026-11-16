@@ -7,6 +7,9 @@
 const S = require("./_store.js"), P = require("./_push.js");
 const { vapid, subjectOf } = require("./push.js");
 
+// Bump when the callout rules change, so open callouts sent under the old rules get re-checked (and dropped if
+// today's rules wouldn't make them). "2": a tap must hold for 2 candles.
+const RULES_VERSION = "2";
 const FRESH = 6 * 3600;   // only callouts that fired in the last 6 hours are sent (never old ones on the first run)
 const ENTER_R = 0.5;      // same as the page: still within 0.5R of entry
 const keyOf = (m, s) => m.sym + "|" + s.tf + "|" + s.setup + "|" + s.dir + "|" + s.t;
@@ -59,7 +62,7 @@ module.exports = async function handler(req, res) {
           if (s.status !== "open" || s.liveThrough || s.nowR == null || s.nowR > ENTER_R || now - s.t > FRESH) continue;
           const k = keyOf(m, s);
           if (!(await S.one("SADD", "tf:sent:" + tf, k))) continue; // already sent
-          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null });
+          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION });
           live[tf + "|" + k] = { status: "open" };
           notified += await sendAll((x) => ((x.prefs && x.prefs.tf) || "4H") === tf, {
             title: actionOf(m, s) + " " + show(m.sym), tag: k, url: "/",
@@ -87,10 +90,18 @@ module.exports = async function handler(req, res) {
     // Exit alerts too: when the stop trails to a new level (0.1R or more), and when the trade closes.
     const R1 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "%"; // account % at 1% risk per trade, like the page
     let exits = 0;
+    let dropped = 0;
     for (const [lk, x] of Object.entries(await S.hgetallJSON("tf:live"))) {
       if (x.status !== "open") continue;
       const view = x.view || "4H", m = (byTf[view] || []).find((q) => q.sym === x.sym);
       if (!m) continue;
+      // Rules changed since this callout went out? Check once per rules version that today's rules still make it
+      // (the replay has it). If not, e.g. a 3rd "tap" that was really the start of the break, drop it from tracking.
+      if (x.rv !== RULES_VERSION) {
+        const chk = await get("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=" + view + "&ct=" + x.t + "&cd=" + x.dir), cm = (chk.markets || [])[0];
+        if (cm && !cm.error && !cm.trade) { await S.hdel("tf:live", lk); dropped++; continue; }
+        if (cm && cm.trade) x.rv = RULES_VERSION;
+      }
       const s = (m.signals || []).find((q) => keyOf(m, q) === x.key), sign = x.dir === "long" ? 1 : -1;
       const toView = (q) => ((q.prefs && q.prefs.tf) || "4H") === view, name = actionOf(m, x) + " " + show(x.sym);
       if (s && s.status === "closed") {
@@ -113,7 +124,7 @@ module.exports = async function handler(req, res) {
       } else x.nowR = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
       await S.hsetJSON("tf:live", lk, x);
     }
-    reply(res, { ran: true, notified, alerted, exits, phones: Object.keys(subs).length });
+    reply(res, { ran: true, notified, alerted, exits, dropped, phones: Object.keys(subs).length });
   } catch (e) {
     reply(res, { ran: false, error: e.message || "failed" });
   }
