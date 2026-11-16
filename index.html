@@ -280,6 +280,18 @@ function notifyNew() {
 
 // 4-hour or 1-hour candles with her chains: green = rising lines under the lows, red = falling lines over the
 // highs. The action line is drawn thick, the safety line dashed.
+// Strong support/resistance levels (3+ turns over ~2 years): faint dashed lines across the chart, labeled with
+// how many times price turned there. Only the ones inside the chart's price range are drawn.
+function levelMarks(levels, Y, x0, x1, lo, hi) {
+  const shown = (levels || []).filter((v) => v.p > lo && v.p < hi), placed = [];
+  // Labels go to the strongest levels first; one that would sit on top of another label is left off.
+  shown.slice().sort((a, b) => b.n - a.n).forEach((v) => { const y = Y(v.p); if (placed.every((q) => Math.abs(q - y) >= 11)) { placed.push(y); v._lab = true; } });
+  return shown.map((v) => {
+    const y = Y(v.p), lab = v._lab; delete v._lab;
+    return '<line x1="' + x0 + '" x2="' + x1 + '" y1="' + y + '" y2="' + y + '" stroke="var(--warn)" stroke-width="1" stroke-dasharray="6 5" opacity=".55"/>' +
+      (lab ? '<text x="' + (x0 + 3) + '" y="' + (y - 3) + '" font-size="10" fill="var(--warn)" opacity=".85">' + (v.side === "R" ? "R" : "S") + " ×" + v.n + "</text>" : "");
+  }).join("");
+}
 // A tap on the chart: solid dot = the wick reached the line; hollow dashed ring = a near miss (came close, stopped short).
 const tapMark = (x, y, col, near) => near ? '<circle cx="' + x + '" cy="' + y + '" r="4.5" fill="none" stroke="' + col + '" stroke-width="1.6" stroke-dasharray="2 2"/>'
   : '<circle cx="' + x + '" cy="' + y + '" r="4" fill="' + col + '" stroke="var(--card)" stroke-width="1.5"/>';
@@ -299,6 +311,7 @@ function chart(m, s) {
   const X = (i) => L + (i - from + 0.5) * cw, Y = (p) => T + ((hi - p) / (hi - lo)) * (H - T - Bm);
   const GREEN = "#1fa463", RED = "#d64545";
   let g = '<defs><clipPath id="cp"><rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - Bm) + '"/></clipPath></defs><g clip-path="url(#cp)">';
+  g += levelMarks(C.levels, Y, L, W - R, lo, hi);
   view.forEach((b, k) => {
     const i = from + k, up = b[4] >= b[1], col = up ? "var(--gd)" : "var(--bad)";
     g += '<line x1="' + X(i) + '" x2="' + X(i) + '" y1="' + Y(b[2]) + '" y2="' + Y(b[3]) + '" stroke="' + col + '" stroke-width="1" opacity=".75"/>';
@@ -325,7 +338,7 @@ function chart(m, s) {
   const d0 = etFmt.format(new Date(view[0][0] * 1000)).split(",").slice(0, 2).join(","), d1 = etFmt.format(new Date(view[view.length - 1][0] * 1000)).split(",").slice(0, 2).join(",");
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + esc(d0) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + esc(d1) + "</text>";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + TFNAME[s.tf] + " chart of " + esc(show(m.sym)) + ' with the trendlines">' + g + "</svg>" +
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line</span><span>● touch ◌ near miss</span>' + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div></div>";
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Thick = action line</span><span>● touch ◌ near miss</span>' + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + (C.safety ? "<span>Dashed = safety line</span>" : "") + (C.closedAt != null ? "<span>○ = exit</span>" : "") + "<span>" + TFNAME[s.tf] + " candles</span></div></div>";
 }
 
 const TFSHORT = { Monthly: "M", Weekly: "W", Daily: "D", "4-hour": "4H", "1-hour": "1H" };
@@ -345,6 +358,7 @@ function lineView(m, s, mode) {
   const X = (x) => L + ((x - Xa) / (Xb - Xa)) * (W - L - R), Y = (p) => T + ((hi - p) / (hi - lo)) * (H - T - Bm);
   const GREEN = "#1fa463", RED = "#d64545", cw = (W - L - R) / (n + 4);
   let g = '<defs><clipPath id="zc' + mode + '"><rect x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - Bm) + '"/></clipPath></defs><g clip-path="url(#zc' + mode + ')">';
+  g += levelMarks(C.levels, Y, L, W - R, lo, hi);
   B.forEach((b, i) => {
     const x = X(V.X0 + (i + 0.5) * V.dX), col = b[4] >= b[1] ? "var(--gd)" : "var(--bad)";
     g += '<line x1="' + x + '" x2="' + x + '" y1="' + Y(b[2]) + '" y2="' + Y(b[3]) + '" stroke="' + col + '" stroke-width="1" opacity=".6"/>';

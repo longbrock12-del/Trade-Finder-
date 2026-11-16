@@ -246,6 +246,8 @@ async function scanTests() {
   const rF = await call("api/scan.js", "/api/scan?market=futures", fakeYahoo(() => "GC"), NOW * 1000);
   ok(rF.status === 200 && rF.body.market === "futures" && rF.body.scanned === 12 && rF.body.test.setups === "all", "?market=futures tests a basket of 12 futures with her full strategy", JSON.stringify({ s: rF.body.scanned, t: rF.body.test }));
   ok((await call("api/scan.js", "/api/scan?years=3", fy, AMZN_NOW * 1000)).status === 400, "only 0.5, 1 or 2 years");
+  const lvAll = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }), lvs = lvAll.signals.slice(-1)[0].chart.levels, gp = lvAll.price;
+  ok(lvs.length >= 2 && lvs.length <= 6 && lvs.every((v) => v.n >= 3 && (v.side === "R" ? v.p >= gp : v.p < gp)) && lvs.filter((v) => v.side === "R").length <= 3 && lvs.filter((v) => v.side === "S").length <= 3, "charts carry strong support/resistance levels: 3+ turns, up to 3 above and 3 below price", JSON.stringify(lvs));
   const pv2 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { pivot: 2 } }).record, pv3 = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
   const rp = await call("api/scan.js", "/api/scan?pivot=2&market=futures", fakeYahoo(() => "GC"), NOW * 1000);
   ok(pv2.trades !== pv3.trades && rp.status === 200 && rp.body.test.pivot === 2 && TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === pv3.trades, "?pivot=2 (a swing confirmed after 2 candles, not 3) is a test setting; the live scan is unchanged", pv3.trades + " → " + pv2.trades);
@@ -532,6 +534,8 @@ async function pageTests(browser, body, optBody, scanBody) {
     const n = (taps) => (chart({ sym: "X", digits: 2, price: 100 }, { tf: "4H", chart: C(taps), status: "watch" }).match(/<circle/g) || []).length;
     return [n([60, 200, 315]), n([5, 200, 315])];
   });
+  const lvm = await page.evaluate(() => levelMarks([{ p: 100, n: 5, side: "R" }, { p: 100.2, n: 3, side: "R" }, { p: 50, n: 4, side: "S" }, { p: 500, n: 9, side: "R" }], (v) => 300 - v, 0, 600, 0, 200));
+  ok((lvm.match(/<line/g) || []).length === 3 && (lvm.match(/<text/g) || []).length === 2 && /R ×5/.test(lvm) && /S ×4/.test(lvm) && !/×9/.test(lvm), "S/R levels: dashed lines in the chart's range, labeled with touches, no overlapping labels");
   const marks = await page.evaluate(() => [tapMark(1, 2, "#000", false), tapMark(1, 2, "#000", true)]);
   ok(/fill="#000"/.test(marks[0]) && /fill="none"/.test(marks[1]) && /stroke-dasharray/.test(marks[1]) && !/stroke-dasharray/.test(marks[0]), "real touches are solid dots, near misses hollow dashed rings");
   ok(circ[0] === 3 && circ[1] === 2, "the 4-hour chart starts before the line's first tap (up to ~300 candles back), so every tap is circled", circ.join());

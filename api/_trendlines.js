@@ -390,6 +390,23 @@ function callout(s, e, last, live, px) {
     note: far ? "Break closed too far from the safety line (risk over " + FAR_ATR + " ATR). Her rule: skip it." : c.late ? "Safety line formed after the break. Entry is that later close." : null };
 }
 
+// Strong support/resistance levels for the charts: prices where the market turned 3+ times over about 2 years
+// of daily candles. Swing highs and swing lows both count (old resistance often becomes support). Nearby turns
+// (a zone at most about 0.6 of a day's ATR wide) are the same level. Up to 3 above and 3 below price, the most-touched first.
+const SR_MIN = 3, SR_DAYS = 500;
+function srLevels(daily, live) {
+  const D = daily.slice(-SR_DAYS);
+  if (D.length < 30) return [];
+  const sw = swings(D), A = atr(D)[D.length - 1], pts = [];
+  D.forEach((d, i) => { if (sw.hi[i]) pts.push(d.h); if (sw.lo[i]) pts.push(d.l); });
+  pts.sort((a, b) => a - b);
+  const groups = [];
+  pts.forEach((p) => { const g = groups[groups.length - 1]; if (g && p - g[0] <= 0.6 * A) g.push(p); else groups.push([p]); }); // a level is at most ~half a day's range wide
+  const lv = groups.filter((g) => g.length >= SR_MIN).map((g) => ({ p: g.reduce((a, x) => a + x, 0) / g.length, n: g.length }));
+  const pick = (side) => lv.filter(side).sort((a, b) => b.n - a.n || Math.abs(a.p - live) - Math.abs(b.p - live)).slice(0, 3);
+  return pick((x) => x.p >= live).concat(pick((x) => x.p < live)).map((x) => ({ p: x.p, n: x.n, side: x.p >= live ? "R" : "S" }));
+}
+
 // Her optional take-profit (for quick wins instead of trailing): the nearest support/resistance in the trade's
 // direction with as many touches as possible, close to current price, set slightly before the level.
 // Levels = clusters of swing highs (for longs) or lows (for shorts) on this chart over the last 3 months.
@@ -608,6 +625,7 @@ function scanCore(hChart, dChart, opts = {}) {
       }) : [],
       at: x.at - off, from: x.from == null ? null : x.from - off, closedAt: x.closedAt == null ? null : x.closedAt - off,
       chains: edges(ch.up, true).concat(edges(ch.dn, false)),
+      levels: srLevels(daily, live).map((x) => ({ ...x, p: px(x.p) })),
       lines, zoom: daily.slice(zoff).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
       // Middle view: about 3 months of 4-hour candles. X of candle k = X0 + k * dX (same daily-candle units as the lines).
       mid: (() => {
