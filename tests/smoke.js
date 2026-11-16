@@ -249,6 +249,13 @@ async function scanTests() {
   const asked3 = [], spy3 = async (u) => { asked3.push(decodeURIComponent(String(u))); return fy(u); };
   const rk2 = await call("api/scan.js", "/api/scan?ranks=1", spy3, AMZN_NOW * 1000);
   ok(rk2.status === 200 && rk2.body.years === 2 && Array.isArray(rk2.body.ranks) && !rk2.body.markets && asked3.some((u) => /interval=60m&range=2y/.test(u)), "?ranks=1: the Respects trendlines list from 2 years of the live rules", JSON.stringify({ y: rk2.body.years, n: (rk2.body.ranks || []).length }));
+  const st2 = await call("api/scan.js", "/api/scan?stats=1", fy, AMZN_NOW * 1000), pt1 = await call("api/scan.js", "/api/scan?stats=1&part=1", fy, AMZN_NOW * 1000);
+  ok(st2.status === 200 && st2.body.years === 2 && st2.body.scanned === U.length && st2.body.record && st2.body.record.stocks >= 1 && Array.isArray(st2.body.ranks), "?stats=1: the stocks' 2-year track record and ranking, all 4 parts added up", JSON.stringify({ s: st2.body.scanned, n: st2.body.record && st2.body.record.stocks }));
+  ok(pt1.status === 200 && pt1.body.part === 1 && pt1.body.scanned === Math.ceil(U.length / 4) && Array.isArray(pt1.body.recs), "?stats=1&part=1: a quarter of the stocks (so each run finishes in time)", pt1.body.scanned);
+  ok((await call("api/scan.js", "/api/scan?stats=1&part=9", fy, AMZN_NOW * 1000)).status === 400, "parts only 0-3");
+  const askedF = [], fg = fakeYahoo((x) => YF[x]), spyF = async (u) => { askedF.push(decodeURIComponent(String(u))); return fg(u); };
+  const fs2 = await call("api/trades.js", "/api/trades?stats=1", spyF);
+  ok(fs2.status === 200 && fs2.body.years === 2 && fs2.body.markets.length === 4 && fs2.body.markets.every((m) => m.record && !m.signals) && askedF.some((u) => /interval=60m&range=2y/.test(u)), "/api/trades?stats=1: each future's 2-year track record", fs2.body.markets.map((m) => m.sym).join());
   console.log("Her filters (on, like the live site)");
   const DAYs = 86400, mkDaily = (f) => Array.from({ length: 400 }, (_, i) => { const t = 1700000000 + i * DAYs, m = f(i); return { t, o: m, h: m + 1, l: m - 1, c: m }; });
   const upT = TLM.trendSeries(mkDaily((i) => 100 + i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);
@@ -818,6 +825,7 @@ async function rankPageTests(browser, body, scanBody) {
   const box = page.locator(".rkb");
   ok((await box.count()) === 1 && (await box.locator(".trr").count()) === 5 && /1\. /.test(await box.locator(".trr").first().textContent()) && /\+8\.2%/.test(await box.textContent()) && !/risking 1% on each trade/.test(await box.textContent()), "Stocks watch list: a ranked Respects trendlines box with the top 5");
   ok(/No line nearby/.test(await box.textContent()) && /(Callout now|Near a line)/.test(await box.textContent()), "each ranked stock says where it is now");
+  ok(/Respects trendlines · last 2 years/.test(await box.textContent()), "the ranking says it's from 2 years once the daily 2-year numbers load");
   await box.locator("[data-fold=ranks]").click();
   ok((await page.locator(".rkb").locator(".trr").count()) === 8, "Show all opens the whole list");
   await page.click("[data-k=futures]");

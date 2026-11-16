@@ -173,7 +173,7 @@ const signR = (r) => (r >= 0 ? "+" : "") + r.toFixed(1) + "%";
 
 // Futures (and your added symbols) and the stock scan load separately: each shows as soon as it arrives,
 // so futures don't wait for the stock scan.
-let futPart = null, stockPart = null, scanning = false, newsEvents = [], earnings = {}, ranks2y = null;
+let futPart = null, stockPart = null, scanning = false, newsEvents = [], earnings = {}, stats2y = null, fut2y = null;
 
 // Market hours (New York time; holidays aren't counted). Futures: Sunday 6 PM to Friday 5 PM, with a
 // 5-6 PM break each weekday. Stocks: 9:30 AM to 4 PM, Monday to Friday. Returns "" when open.
@@ -222,7 +222,10 @@ function merge() {
   const a = futPart || { markets: [] }, b = stockPart || {};
   const have = new Set((a.markets || []).map((m) => m.sym));
   data = { at: a.at || b.at || Date.now(), markets: (a.markets || []).concat((b.markets || []).filter((m) => !have.has(m.sym))),
-    scanned: b.scanned, scanErr: !!stockPart && !b.markets, scanning, stockRecord: b.record || null, stockRanks: ranks2y || b.ranks || null }; // 2-year ranking once it has loaded, else the scan's 6 months
+    scanned: b.scanned, scanErr: !!stockPart && !b.markets, scanning, stockRecord: b.record || null, stockRanks: (stats2y && stats2y.ranks) || b.ranks || null, stockRecord2y: !!(stats2y && stats2y.record) };
+  // 2-year track records (worked out once a day) replace the scan's 6 months once they've loaded.
+  if (stats2y && stats2y.record && stats2y.record.trades) data.stockRecord = stats2y.record;
+  if (fut2y) data.markets.forEach((m) => { if (m.kind === "futures" && fut2y[m.sym]) { m.record = fut2y[m.sym]; m.record2y = true; } });
 }
 async function load() {
   if (loading) return;
@@ -234,8 +237,12 @@ async function load() {
   const stk = fetch("/api/scan?tf=" + chartTF()).then((r) => r.json()).catch(() => ({ error: "scan failed" }))
     .then((b) => { stockPart = b; scanning = false; merge(); notifyNew(); render(); });
   const nws = fetch("/api/news").then((r) => r.json()).then((n) => { newsEvents = n.events || []; render(); }).catch(() => {});
-  // Respects trendlines: ranked on 2 years (worked out once a day on the server; slow the first time each day).
-  if (!ranks2y) fetch("/api/scan?ranks=1").then((r) => r.json()).then((j) => { if (j.ranks) { ranks2y = j.ranks; merge(); render(); } }).catch(() => {});
+  // Track records and the Respects trendlines list: 2 years, worked out once a day on the server (slow the first
+  // time each day; the 6-month numbers show until then).
+  if (!stats2y) fetch("/api/scan?stats=1").then((r) => r.json()).then((j) => { if (j.record) { stats2y = j; merge(); render(); } }).catch(() => {});
+  if (!fut2y) fetch("/api/trades?stats=1&tf=4H&s=" + encodeURIComponent(symbols().filter((x) => /=F$/.test(x)).join(","))).then((r) => r.json()).then((j) => {
+    const o = {}; (j.markets || []).forEach((x) => { if (x.record) o[x.sym] = x.record; }); if (Object.keys(o).length) { fut2y = o; merge(); render(); }
+  }).catch(() => {});
   const extraStocks = symbols().filter((x) => !/=F$/.test(x));
   fetch("/api/earnings" + (extraStocks.length ? "?s=" + encodeURIComponent(extraStocks.join(",")) : "")).then((r) => r.json()).then((n) => { earnings = n.earnings || {}; render(); }).catch(() => {});
   await Promise.all([fut, stk, nws]);
@@ -569,7 +576,7 @@ function trackBox() {
     '<div class="note" style="margin-top:4px">% = what the account made or lost, risking 1% on each trade. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
   return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
     sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins · " + Rs(sum.totalR) + ' total</div>' + liveLine + liveGraph + '</div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
-    (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last 6 months of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. Results are what the account would have made risking 1% on each trade (at 2% risk, double them). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
+    (open ? '<div style="margin-top:8px">' + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last ' + (kind === "futures" ? (data.markets.some((m) => m.record2y) ? "2 years" : "6 months") : data.stockRecord2y ? "2 years" : "6 months") + ' of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. Results are what the account would have made risking 1% on each trade (at 2% risk, double them). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
 }
 
 // Futures at a glance: price, change over the last 24 hours (6 four-hour candles), her trend and a small chart
@@ -654,7 +661,7 @@ function rankBox() {
     const w = (m.watch || []).slice().sort((a, b) => a.dist - b.dist)[0];
     return w ? "<b>Near a line</b> · " + away(m, w) : '<span class="mu">No line nearby</span>';
   };
-  return '<div class="c rkb"><div class="st">Respects trendlines · ' + (ranks2y ? "last 2 years" : "last 6 months") + '</div>' +
+  return '<div class="c rkb"><div class="st">Respects trendlines · ' + (stats2y ? "last 2 years" : "last 6 months") + '</div>' +
     '<div class="note" style="margin:2px 0 4px">The stocks that made the most following her rules, out of all ' + (data.scanned || "") + " scanned.</div>" +
     shown.map((r, i) => '<div class="trr"><span><b>' + (i + 1) + ". " + esc(r.sym) + '</b> <span class="note">' + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span></span><b class="ok">+' + r.totalR.toFixed(1) + "%</b></div>" +
       '<div class="note" style="margin:0 0 4px">' + where(r.sym) + "</div>").join("") +

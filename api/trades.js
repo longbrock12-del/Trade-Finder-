@@ -53,6 +53,12 @@ async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
   const q = new URL(req.url, "http://x").searchParams.get("s");
   const list = q ? [...new Set(q.toUpperCase().split(",").map((x) => x.trim()).filter((x) => SYM.test(x)))].slice(0, MAX) : FUTURES;
+  // ?stats=1: the futures' 2-year track records with the live rules (worked out once a day, cached 24 hours).
+  if (new URL(req.url, "http://x").searchParams.get("stats") === "1") {
+    const out = await Promise.all(list.map(async (sym) => { try { const m = scan(...(await both(sym, "2y")), { sym, tfs: ["4H"] }); return m.error ? { sym, error: m.error } : { sym, record: m.record }; } catch (e) { return { sym, error: e.message || "failed" }; } }));
+    const ok = out.filter((x) => x.record).length;
+    return send(res, ok ? 200 : 502, ok === out.length ? 86400 : ok ? 1800 : 0, { at: Date.now(), years: 2, markets: out });
+  }
   const sp = new URL(req.url, "http://x").searchParams, one = list.length === 1;
   // ?ct=<time>&cd=long|short: one callout the site sent earlier, with its chart (the tracking box).
   const ct = Number(sp.get("ct")), tradeAt = one && ct > 0 && ["long", "short"].includes(sp.get("cd")) ? { t: ct, dir: sp.get("cd") } : null;

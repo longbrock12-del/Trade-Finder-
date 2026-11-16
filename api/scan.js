@@ -34,8 +34,41 @@ function send(res, status, secs, obj) {
   res.end(JSON.stringify(obj));
 }
 
+// 2-year stats for the stocks (the track record and the Respects trendlines list), with the live rules.
+// One part = a quarter of the stocks, so each run finishes well within the time limit.
+const PARTS = 4;
+async function statsPart(part) {
+  const size = Math.ceil(UNIVERSE.length / PARTS), list = UNIVERSE.slice(part * size, (part + 1) * size), recs = [], failed = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const sym = list[next++];
+      try { const m = scan(...(await both(sym, "2y")), { sym, tfs: ["4H"] }); if (m.error) failed.push(sym); else if (m.record) recs.push({ sym, ...m.record }); } catch (e) { failed.push(sym); }
+    }
+  };
+  await Promise.all(Array.from({ length: 8 }, worker));
+  return { part, recs, failed, scanned: list.length - failed.length };
+}
+// ?stats=1: all 4 parts (each its own request, run side by side) added up. ?stats=1&part=0..3: one part.
+// Worked out once a day: cached 24 hours.
+async function stats(req, res, sp) {
+  if (sp.get("part") != null) {
+    const part = Number(sp.get("part"));
+    if (!(part >= 0 && part < PARTS && Number.isInteger(part))) return send(res, 400, 0, { error: "part must be 0-" + (PARTS - 1) });
+    const r = await statsPart(part);
+    return send(res, r.scanned ? 200 : 502, r.scanned ? 86400 : 0, { at: Date.now(), ...r });
+  }
+  const host = req.headers && (req.headers["x-forwarded-host"] || req.headers.host);
+  const parts = await Promise.all(Array.from({ length: PARTS }, (_, i) => host
+    ? fetch("https://" + host + "/api/scan?stats=1&part=" + i, { signal: AbortSignal.timeout(115000) }).then((r) => r.json()).catch(() => ({ recs: [], failed: [], scanned: 0 }))
+    : statsPart(i)));
+  const recs = parts.flatMap((x) => x.recs || []), scanned = parts.reduce((a, x) => a + (x.scanned || 0), 0), whole = parts.every((x) => x.scanned);
+  send(res, scanned ? 200 : 502, !scanned ? 0 : whole ? 86400 : 1800, { at: Date.now(), years: 2, scanned, failed: parts.flatMap((x) => x.failed || []), record: combine(recs), ranks: ranks(recs) });
+}
+
 async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, 0, { error: "GET only" });
+  { const sp0 = new URL(req.url, "http://x").searchParams; if (sp0.get("stats") === "1" || sp0.get("ranks") === "1") return stats(req, res, sp0); }
   const found = [], failed = [], recs = [], tfs = chartsFrom(req);
   // Test-only rule settings: ?touch=0.15 (how far a wick may poke through the line, in ATR, 0.02-1) and/or ?gap=4 (shortest line in candles, 2-20).
   // Answers with just the 6-month record of all scanned stocks; live callouts and alerts never use these.
@@ -49,10 +82,8 @@ async function handler(req, res) {
   // Test mode replays 2 years by default (?years=0.5 / 1 / 2); ?market=futures tests a basket of futures instead of the stocks.
   const yr = sp.get("years"), years = yr == null ? 2 : Number(yr), range = { 0.5: "6mo", 1: "1y", 2: "2y" }[years];
   const futTest = sp.get("market") === "futures";
-  // ?ranks=1: the Respects trendlines list from 2 years of the live rules, worked out once a day (cached 24 hours).
-  const ranksOnly = sp.get("ranks") === "1";
   if ((rules || yr != null || futTest) && !range) return send(res, 400, 0, { error: "years must be 0.5, 1 or 2" });
-  const testMode = !!(rules || yr != null || futTest || ranksOnly), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? (ranksOnly ? "2y" : range) : "6mo";
+  const testMode = !!(rules || yr != null || futTest), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? range : "6mo";
   if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles)" });
   let next = 0;
   async function worker() {
@@ -70,7 +101,6 @@ async function handler(req, res) {
   const scanned = list.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
   const R = rules || {};
-  if (ranksOnly) return send(res, scanned ? 200 : 502, scanned ? 86400 : 0, { at: Date.now(), years: 2, scanned, ranks: ranks(recs) });
   if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["break"]) : R.setups || "all" }, scanned, record: combine(recs) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }

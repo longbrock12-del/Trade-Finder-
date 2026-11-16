@@ -6,6 +6,9 @@
     },
     "api/notify.js": {
       "maxDuration": 120
+    },
+    "api/trades.js": {
+      "maxDuration": 60
     }
   }
 }
