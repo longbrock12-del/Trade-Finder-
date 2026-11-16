@@ -278,6 +278,12 @@ async function scanTests() {
   const askedF = [], fg = fakeYahoo((x) => YF[x]), spyF = async (u) => { askedF.push(decodeURIComponent(String(u))); return fg(u); };
   const fs2 = await call("api/trades.js", "/api/trades?stats=1", spyF);
   ok(fs2.status === 200 && fs2.body.years === 2 && fs2.body.markets.length === 3 && fs2.body.markets.every((m) => m.record && !m.signals) && askedF.some((u) => /interval=60m&range=2y/.test(u)), "/api/trades?stats=1: each future's 2-year track record", fs2.body.markets.map((m) => m.sym).join());
+  const fs3 = await call("api/trades.js", "/api/trades?stats=1&roll=1&exit=tp", fakeYahoo((x) => YF[x]));
+  const crude = fs3.body.markets.find((m) => m.sym === "MCL=F"), gold = fs3.body.markets.find((m) => m.sym === "MGC=F");
+  ok(fs3.status === 200 && fs3.body.test.roll && fs3.body.test.exit === "tp" && crude.record && crude.rolls && crude.rolls.length > 20 && gold.record && !gold.rolls, "2-year test settings: roll=1 back-adjusts crude for contract switches, exit=tp takes profit at her S/R target", JSON.stringify({ rolls: crude.rolls && crude.rolls.length }));
+  const T2 = require(path.join(ROOT, "api/_trendlines.js")), trail = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
+  const tpRun = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: "tp" } }), again = T2.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
+  ok(tpRun.signals.some((x) => x.exitHow === "take profit") && !trail.signals.some((x) => x.exitHow === "take profit") && JSON.stringify(again.record) === JSON.stringify(trail.record), "exit=tp only changes the test run (live exits still trail the safety line)");
   console.log("Her filters (on, like the live site)");
   const DAYs = 86400, mkDaily = (f) => Array.from({ length: 400 }, (_, i) => { const t = 1700000000 + i * DAYs, m = f(i); return { t, o: m, h: m + 1, l: m - 1, c: m }; });
   const upT = TLM.trendSeries(mkDaily((i) => 100 + i * 0.3 + 6 * Math.sin(i / 4)))(1700000000 + 399 * DAYs);

@@ -54,6 +54,32 @@ async function both(sym, hourRange = "6mo") {
 const dailyCount = (c) => { try { const q = c.chart.result[0].indicators.quote[0]; return (q.close || []).filter((x) => typeof x === "number" && isFinite(x)).length; } catch (e) { return 0; } };
 
 // ?tf=4H (default), 1H or both: which chart callouts come from.
+// roll=1 (tests only): back-adjust crude for its monthly contract switches. Yahoo's continuous price jumps when
+// it moves to the next contract; each jump is taken out by shifting every older price by it (today's prices stay).
+// A switch = the biggest open-vs-last-close gap between the 14th and 26th of each month (crude expires ~the 20th),
+// if it's over 3x a normal gap.
+function rollAdjust(hChart, dChart) {
+  const series = (c) => { const r = c.chart.result[0], q = r.indicators.quote[0]; return { r, q, t: r.timestamp }; };
+  const ok = (x) => typeof x === "number" && isFinite(x);
+  const D = series(dChart), gaps = [];
+  for (let i = 1; i < D.t.length; i++) if (ok(D.q.open[i]) && ok(D.q.close[i - 1])) gaps.push({ i, t: D.t[i], g: D.q.open[i] - D.q.close[i - 1] });
+  const med = gaps.map((x) => Math.abs(x.g)).sort((a, b) => a - b)[Math.floor(gaps.length / 2)] || 0;
+  const byMonth = {};
+  gaps.forEach((x) => { const d = new Date(x.t * 1000), day = d.getUTCDate(); if (day < 14 || day > 26) return; const k = d.getUTCFullYear() + "-" + d.getUTCMonth(); if (!byMonth[k] || Math.abs(x.g) > Math.abs(byMonth[k].g)) byMonth[k] = x; });
+  const rolls = Object.values(byMonth).filter((x) => Math.abs(x.g) > 3 * med).sort((a, b) => a.t - b.t);
+  const H = series(hChart), shift = (S, at, g) => { for (let i = 0; i < S.t.length; i++) if (S.t[i] < at) ["open", "high", "low", "close"].forEach((f) => { if (ok(S.q[f][i])) S.q[f][i] += g; }); };
+  const out = [];
+  rolls.forEach((x) => {
+    // Daily: shift every candle before the switch day. Hourly: find the switch's own gap in the hours around it.
+    shift(D, x.t, x.g);
+    let best = null;
+    for (let i = 1; i < H.t.length; i++) if (H.t[i] >= x.t - 36 * 3600 && H.t[i] <= x.t + 24 * 3600 && ok(H.q.open[i]) && ok(H.q.close[i - 1])) { const g = H.q.open[i] - H.q.close[i - 1]; if (!best || Math.abs(g) > Math.abs(best.g)) best = { t: H.t[i], g }; }
+    if (best) shift(H, best.t, best.g);
+    out.push({ day: new Date(x.t * 1000).toISOString().slice(0, 10), gap: Number(x.g.toFixed(3)) });
+  });
+  return out;
+}
+
 function chartsFrom(req) {
   const tf = new URL(req.url, "http://x").searchParams.get("tf");
   return tf === "1H" ? ["1H"] : tf === "both" ? ["4H", "1H"] : ["4H"];
@@ -64,8 +90,16 @@ async function handler(req, res) {
   const q = new URL(req.url, "http://x").searchParams.get("s");
   const list = q ? [...new Set(q.toUpperCase().split(",").map((x) => x.trim()).filter((x) => SYM.test(x)))].slice(0, MAX) : FUTURES;
   // ?stats=1: the futures' 2-year track records with the live rules (worked out once a day, cached 24 hours).
-  if (new URL(req.url, "http://x").searchParams.get("stats") === "1") {
-    const out = await Promise.all(list.map(async (sym) => { try { const m = scan(...(await both(sym, "2y")), { sym, tfs: ["4H"] }); return m.error ? { sym, error: m.error } : { sym, record: m.record }; } catch (e) { return { sym, error: e.message || "failed" }; } }));
+  const sq = new URL(req.url, "http://x").searchParams;
+  if (sq.get("stats") === "1") {
+    // Tests only: roll=1 (crude back-adjusted for contract switches), exit=tp (take profit at her S/R target).
+    const roll = sq.get("roll") === "1", tpExit = sq.get("exit") === "tp", test = roll || tpExit;
+    const out = await Promise.all(list.map(async (sym) => { try {
+      const args = await both(sym, "2y"), rolls = roll && /^M?CL=F$/.test(sym) ? rollAdjust(...args) : undefined;
+      const m = scan(...args, { sym, tfs: ["4H"], ...(tpExit ? { rules: { exit: "tp" } } : {}) });
+      return m.error ? { sym, error: m.error } : { sym, record: m.record, ...(rolls ? { rolls } : {}) };
+    } catch (e) { return { sym, error: e.message || "failed" }; } }));
+    if (test) return send(res, 200, 1800, { at: Date.now(), years: 2, test: { roll, exit: tpExit ? "tp" : "trail" }, markets: out });
     const ok = out.filter((x) => x.record).length;
     return send(res, ok ? 200 : 502, ok === out.length ? 86400 : ok ? 1800 : 0, { at: Date.now(), years: 2, markets: out });
   }

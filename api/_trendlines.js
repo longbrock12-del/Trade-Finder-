@@ -302,13 +302,16 @@ function nearMiss(S, ln, x) {
 // always on the other side") and trails along it; and the trade ends when a finished candle closes through
 // the safety line. Both trail along the newest line of the safety chain and never loosen.
 // line0: safety line value at entry; room: distance of the stop order past the line.
-function follow(S, long, from, last, line0, room) {
+// tpPx (tests only, exit=tp): also take profit when a candle reaches that price.
+let TP_EXIT = false;
+function follow(S, long, from, last, line0, room, tpPx) {
   let line = line0, stop = long ? line0 - room : line0 + room;
   for (let i = from + 1; i <= last; i++) {
     const sl = long ? S.act[i].up : S.act[i].dn;
     if (sl) { const v = val(sl, S.x0 + i); line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
     const c = S.bars[i];
     if (long ? c.l <= stop : c.h >= stop) return { status: "closed", at: i, px: long ? Math.min(c.o, stop) : Math.max(c.o, stop), stop, line, how: "stop order" }; // a gap past the stop fills at the open
+    if (tpPx != null && (long ? c.h >= tpPx : c.l <= tpPx)) return { status: "closed", at: i, px: long ? Math.max(c.o, tpPx) : Math.min(c.o, tpPx), stop, line, how: "take profit" };
     if (long ? c.c < line : c.c > line) return { status: "closed", at: i, px: c.c, stop, line, how: "close through the line" };
   }
   const sl = long ? S.act[last + 1].up : S.act[last + 1].dn;
@@ -378,7 +381,9 @@ function callout(s, e, last, live, px) {
   const ent = b[from].c, line0 = val(sl, s.x0 + from), room = STOP_ROOM * s.A[from];
   const stop0 = e.long ? line0 - room : line0 + room, risk = e.long ? ent - stop0 : stop0 - ent;
   if (!(risk > 0) || (e.long ? ent <= line0 : ent >= line0)) return { ...c, status: "no-safety", note: "The safety line is on the wrong side of the entry." };
-  const out = follow(s, e.long, from, last, line0, room);
+  // exit=tp test: her take-profit, set at entry from the candles up to then (no peeking ahead).
+  const tpAt = TP_EXIT ? takeProfit(s, e.long, ent, ent, from) : null;
+  const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : null);
   const far = risk > FAR_ATR * s.A[from];
   const sign = e.long ? 1 : -1;
   const tp = out.status === "open" ? takeProfit(s, e.long, live, ent, last) : null;
@@ -689,15 +694,16 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, TP_EXIT];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
     if (opts.rules.short != null) SHORT_ATR = opts.rules.short;
     if (opts.rules.hold != null) HOLD = opts.rules.hold;
     if (opts.rules.pivot != null) PIVOT = opts.rules.pivot;
+    TP_EXIT = opts.rules.exit === "tp";
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, TP_EXIT] = saved; }
 }
 
 module.exports = { trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
