@@ -858,6 +858,21 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.click(".ofold .omore");
   const om2 = await page.evaluate(() => [document.querySelectorAll(".ofold .trr").length, document.querySelector(".ofold .omore").textContent]);
   ok(om[0] === 1 && om[1] === "▾ Show 2 more" && om2[0] === 3 && om2[1] === "▴ Show less", "with more open callouts: one shows, tap Show 2 more to see the rest", JSON.stringify([om, om2]));
+  const dup = await page.evaluate(() => {
+    const m = data.markets.find((q) => !q.error && q.kind === kind && (q.signals || []).length);
+    if (!m) return null;
+    const sg = m.signals[0], keep = { ...sg };
+    Object.assign(sg, { status: "open", liveThrough: false, nowR: 0.1, t: Math.floor(Date.now() / 1000) - 3600 });
+    const key = m.sym + "|" + sg.tf + "|" + sg.setup + "|" + sg.dir + "|" + sg.t;
+    pushInfo.live = pushInfo.live.concat([{ key, view: chartTF(), sym: m.sym, kind: m.kind, tf: sg.tf, setup: sg.setup, dir: sg.dir, entry: sg.entry, stop: sg.stop, risk: sg.risk, t: sg.t, status: "open" }]);
+    render(); folds.openLive = true; render();
+    const inTrack = () => [...document.querySelectorAll(".ofold .trr")].some((r) => r.textContent.includes(show(m.sym)) && r.textContent.includes(String(sg.setup)));
+    const a = inTrack();
+    sg.nowR = 0.8; render(); const b = inTrack();
+    Object.assign(sg, keep); pushInfo.live = pushInfo.live.filter((x) => x.key !== key); render();
+    return [a, b];
+  });
+  ok(dup && dup[0] === false && dup[1] === true, "a callout still in Get In Now isn't also listed in tracking; it moves there once it's 0.5R past entry", JSON.stringify(dup));
   const gAll = TLM.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, all: true, tfs: ["4H"] }), withTrade = { ...gAll, sym: "MGC=F", trade: gAll.signals.slice(-1)[0] };
   let ctAsk = "";
   await page.route("**/api/trades**ct=**", (r) => { ctAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: { at: Date.now(), markets: [withTrade] } }); });

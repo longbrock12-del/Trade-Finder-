@@ -680,7 +680,10 @@ async function loadTradeChart(id) {
   render();
 }
 function openTrades() {
-  const ot = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "open" && x.kind === kind && (x.view || "4H") === chartTF()).sort((a, b) => b.t - a.t); // newest first
+  // A callout that's still in Get In Now isn't listed here too: it moves to tracking once it can't be entered
+  // (0.5R past entry, through the stop, or a day old).
+  const stillIn = (x) => { const m = data.markets.find((q) => q.sym === x.sym && !q.error), sg = m && (m.signals || []).find((s) => m.sym + "|" + s.tf + "|" + s.setup + "|" + s.dir + "|" + s.t === x.key); return !!(sg && canEnter(sg)); };
+  const ot = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "open" && x.kind === kind && (x.view || "4H") === chartTF() && !stillIn(x)).sort((a, b) => b.t - a.t); // newest first
   if (!ot.length) return "";
   const rows = ot.map((x) => {
     const m = data.markets.find((q) => q.sym === x.sym && !q.error), sign = x.dir === "long" ? 1 : -1, d = (m && m.digits) || 2;
