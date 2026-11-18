@@ -388,10 +388,10 @@ function callout(s, e, last, live, px) {
   const htf = mode === "htf" || mode === "htfsr" ? htfTarget(s, e.long, from, ent, (s.tmin || 0) * risk) : null;
   // exit=htfsr / sr tests: her other exit, a support/resistance level price has turned at 4+ times, using only the
   // daily candles before the entry day (the same levels the charts draw). htfsr = whichever comes first.
-  let srP = null;
+  let srP = null, srN = null;
   if ((mode === "htfsr" || mode === "sr") && s.lvDaily) {
     const lv = srLevels(s.lvDaily.filter((d) => d.t < b[from].t - DAY), ent).filter((v) => (e.long ? v.p > ent : v.p < ent)).sort((p, q) => Math.abs(p.p - ent) - Math.abs(q.p - ent))[0];
-    if (lv) srP = lv.p;
+    if (lv) { srP = lv.p; srN = lv.n; }
   }
   const tgtAt = htf || srP != null ? (i) => {
     const a = htf ? val(htf, s.x0 + i) : null;
@@ -404,7 +404,11 @@ function callout(s, e, last, live, px) {
   const tp = out.status === "open" ? takeProfit(s, e.long, live, ent, last) : null;
   return { ...c, from, stop0: px(stop0), risk: px(risk), stop: px(out.stop), line: px(out.line), exitHow: out.how || null, safety: out.safety || sl,
     tp: tp && { price: px(tp.price), touches: tp.touches, r: r2(((e.long ? 1 : -1) * (tp.price - ent)) / risk, 1) },
-    target: htf && out.status === "open" && !far ? { price: px(val(htf, s.x0 + last + 1)), tf: tfOfLine(htf, tf), r: r2(((e.long ? 1 : -1) * (val(htf, s.x0 + last + 1) - ent)) / risk, 1) } : null,
+    // The live target: the nearer of the bigger-timeframe line (as it stands now) and the S/R level.
+    target: (htf || srP != null) && out.status === "open" && !far ? (() => {
+      const lineV = htf ? val(htf, s.x0 + last + 1) : null, useSr = srP != null && (lineV == null || (e.long ? srP < lineV : srP > lineV)), p = useSr ? srP : lineV;
+      return { price: px(p), tf: useSr ? "S/R" : tfOfLine(htf, tf), ...(useSr ? { touches: srN } : {}), r: r2(((e.long ? 1 : -1) * (p - ent)) / risk, 1) };
+    })() : null,
     entryT: b[from].e, exitT: out.at == null ? null : b[out.at].e, entryRaw: ent, riskRaw: risk,
     status: far ? "too-far" : out.status, closedAt: out.at, exitPx: px(out.px), exitR: out.px == null ? null : r2((sign * (out.px - ent)) / risk, 2),
     nowR: r2((sign * (live - ent)) / risk, 2), liveThrough: out.status === "open" && (e.long ? live < out.stop : live > out.stop),
@@ -513,16 +517,17 @@ function record(hist, w = {}) {
   };
 }
 
-// exit "htf": her exit "price got to a higher time frame trendline": take profit at the nearest Daily, Weekly or
-// Monthly line in the trade's direction (2 years: gold +3.6% -> +6.2%, copper +7.3% -> +12.6%).
-const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htf" };
+// exit "htfsr" (futures, her exits exactly): take profit at the nearest bigger-timeframe (Daily, Weekly, Monthly)
+// trendline or support/resistance level (4+ turns), whichever price reaches first; else the safety line.
+// 2 years: +19.9% on the three futures (the trendline alone made +21.4%; her rule includes both).
+const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htfsr" };
 // Stocks take the same bigger-timeframe exit, and only her break & retests (2 years, 112 stocks, with that exit:
 // retests +21.0% over 182 trades, positive both years and after option costs; breaks +4.7%, bounces -48%).
 const STOCK_RULES = { trend: "bounce", once: false, setups: ["retest"], exit: "htf" };
 // Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
 // bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
 // in the 4 trading days up to the front contract's last day.
-const CRUDE_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], rollBlackout: true, exit: "htf" };
+const CRUDE_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], rollBlackout: true, exit: "htfsr" };
 const isCrude = (sym) => /^M?CL=F$/.test(sym || "");
 // Crude's last trading day for the contract that expires in this month: 3 business days before the 25th
 // (4 if the 25th is a weekend day). Holidays aren't counted.

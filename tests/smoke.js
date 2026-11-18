@@ -103,8 +103,8 @@ async function scannerTests() {
   ok(closed.length >= 3 && closed.every(({ s }) => s.exitR != null && (s.exitHow === "stop order" ? (s.dir === "long" ? s.exitPx <= s.stop + 1e-9 : s.exitPx >= s.stop - 1e-9) : s.exitHow === "take profit" ? (s.dir === "long" ? s.exitPx > s.entry : s.exitPx < s.entry) : s.exitHow === "close through the line" && (s.dir === "long" ? s.exitPx < s.line : s.exitPx > s.line))), "trades close on the stop order, a candle closing through the safety line, or (futures) at the bigger-timeframe target line");
   ok(priced.every(({ s }) => (s.dir === "long" ? s.stop < s.line : s.stop > s.line)), "the stop order sits past the safety line, never on it (her rule)");
   ok(closed.filter(({ s }) => s.exitHow === "stop order").length >= 1, "some trades are stopped out by the stop order (it's a real stop, not just a line)");
-  const badT = sigs.filter(({ s }) => !(s.target == null || (s.status === "open" && s.target.price > 0 && ["Daily", "Weekly", "Monthly"].includes(s.target.tf)))).map(({ s }) => s.status + " " + JSON.stringify(s.target));
-  ok(sigs.every(({ s }) => ["open", "closed", "too-far", "no-safety"].includes(s.status) && (s.target == null || (s.status === "open" && s.target.price > 0 && ["Daily", "Weekly", "Monthly"].includes(s.target.tf)))), "every callout has a known status; only open futures trades carry a target (a bigger-timeframe line)", badT.slice(0, 3).join(" | "));
+  const badT = sigs.filter(({ s }) => !(s.target == null || (s.status === "open" && s.target.price > 0 && ["Daily", "Weekly", "Monthly", "S/R"].includes(s.target.tf)))).map(({ s }) => s.status + " " + JSON.stringify(s.target));
+  ok(sigs.every(({ s }) => ["open", "closed", "too-far", "no-safety"].includes(s.status) && (s.target == null || (s.status === "open" && s.target.price > 0 && ["Daily", "Weekly", "Monthly", "S/R"].includes(s.target.tf)))), "every callout has a known status; only open trades carry a target (a bigger-timeframe line or, for futures, an S/R level)", badT.slice(0, 3).join(" | "));
   const aw = scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: AMZN_NOW }).watch;
   ok(aw.length >= 1 && watch.concat(aw.map((w) => ({ w }))).every(({ w }) => w.dist <= 1.5 && w.lineNow > 0 && ["4H", "1H"].includes(w.tf) && w.passed >= 3 && w.checks.taps && w.days >= 7), "watch list only holds callout-quality lines near price (AMZN has one): 3 of 4, 3+ taps, 1+ week; newest lines near price (AAPL has one)");
   ok(sigs.filter(({ s }) => s.mixed).every(({ m, s }) => m.signals.some((y) => y.t === s.t && y.dir !== s.dir)), "mixed-signal flag only where callouts disagree on a candle");
@@ -147,7 +147,7 @@ async function scannerTests() {
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced", "target line"].includes(x.how))), "trades end on the safety line, the target line, or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 27 && clr.totalR === 32.14, "crude's 6 months: 27 trades, +32.14R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 27 && clr.totalR === 14.34, "crude's 6 months: 27 trades, +14.34R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
   { const TC = require(path.join(ROOT, "api/_trendlines.js")), cAll = TC.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
     const gAll2 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true });
     const dayOf = (t) => new Date((t + 6 * 3600) * 1000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
