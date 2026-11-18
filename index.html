@@ -674,7 +674,9 @@ function tradeChart(x) {
 async function fillExitTo(x) {
   try {
     const m = ((await (await fetch("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=4H&ct=" + x.t + "&cd=" + x.dir)).json()).markets || [])[0];
-    if (m && m.trade && m.trade.exitTo) { x.exitTo = m.trade.exitTo; render(); }
+    // Only if today's replay exits this trade at the same price (rules can change after a trade closes).
+    const px = x.exitPx != null ? x.exitPx : x.entry + (x.dir === "long" ? 1 : -1) * x.exitR * x.risk, to = m && m.trade && m.trade.exitTo;
+    if (to && Math.abs(to.price - px) <= 0.003 * px) { x.exitTo = to; render(); }
   } catch (e) { /* keeps the general wording */ }
 }
 async function loadTradeChart(id) {
