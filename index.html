@@ -671,6 +671,12 @@ function tradeChart(x) {
   if (c.error) return h + '<div class="note bad">' + esc(c.error) + "</div>";
   return h + (zoomed[k] ? lineView(c.m, c.s, zoomed[k]) : chart(c.m, c.s)) + linesBlock(c.m, c.s, k);
 }
+async function fillExitTo(x) {
+  try {
+    const m = ((await (await fetch("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=4H&ct=" + x.t + "&cd=" + x.dir)).json()).markets || [])[0];
+    if (m && m.trade && m.trade.exitTo) { x.exitTo = m.trade.exitTo; render(); }
+  } catch (e) { /* keeps the general wording */ }
+}
 async function loadTradeChart(id) {
   const [sym, t, dir] = id.split("|"), k = "O" + id;
   wcharts[k] = { shown: true, loading: true }; render();
@@ -732,6 +738,8 @@ function recentTrades() {
   const head = '<button class="ohead rtog" data-fold="recentBox" aria-expanded="' + box + '"><span>' + (box ? "▾" : "▸") + " Recent trades (" + rows.length + ") · " + '<span class="' + (tot >= 0 ? "ok" : "bad") + '">' + pc(tot) + "</span>" + (oRows.length ? " · as options " + '<span class="' + (oTot >= 0 ? "ok" : "bad") + '">' + pc(oTot) + "</span>" : "") + "</span></button>";
   if (!box) return '<div class="c rtr">' + head + "</div>";
   const shown = open ? rows : rows.slice(0, 3);
+  // Older take-profit trades didn't save which line they hit: look each shown one up once (the replay has it).
+  done.slice(0, shown.length).forEach((x) => { if (x.how === "take profit" && !x.exitTo && !x._asked) { x._asked = true; fillExitTo(x); } });
   const more = rows.length > 3 ? '<button class="btn omore" data-fold="recent" aria-expanded="' + open + '">' + (open ? "▴ Show less" : "▾ Show " + (rows.length - 3) + " more") + "</button>" : "";
   return '<div class="c rtr">' + head + shown.map((x) => x.h).join("") + more + "</div>";
 }
