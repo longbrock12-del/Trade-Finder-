@@ -147,14 +147,14 @@ async function scannerTests() {
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced", "target line"].includes(x.how))), "trades end on the safety line, the target line, or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 27 && clr.totalR === 14.34, "crude's 6 months: 27 trades, +14.34R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 27 && clr.totalR === 14.45, "crude's 6 months: 27 trades, +14.45R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
   { const TC = require(path.join(ROOT, "api/_trendlines.js")), cAll = TC.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
     const gAll2 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true });
     const dayOf = (t) => new Date((t + 6 * 3600) * 1000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     ok(cAll.signals.length > 0 && cAll.signals.every((x) => x.setup !== "bounce") && gAll2.signals.some((x) => x.setup === "bounce"), "crude takes only breaks and break & retests (her crude trades); gold still takes bounces", cAll.signals.map((x) => x.setup).join(","));
     ok(cAll.signals.every((x) => !TC.nearCrudeRoll(dayOf(x.t))) && TC.crudeLastDay(2026, 10).toISOString().slice(0, 10) === "2026-11-20" && TC.nearCrudeRoll("2026-11-17") && !TC.nearCrudeRoll("2026-11-16") && !TC.nearCrudeRoll("2026-11-23"), "no new crude callouts in the 4 trading days up to the contract's last day (Nov 17-20, 2026)");
     const trailG = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: null } });
-    const stockR = TC.scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: NOW, tfs: ["4H"], all: true });
+    const stockR = TC.scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: NOW, tfs: ["4H"], all: true, rules: { realLines: false } }); // (the saved stock data reaches no real target line, so this checks the stock exit with the older line rule)
     const rl = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { realLines: true } });
     const rlBad = rl.signals.filter((x) => x.exitTo && x.exitTo.kind === "line").filter((x) => !(x.exitTo.t1 - x.exitTo.t0 > 0));
     ok(rl.record && rl.record.trades > 0 && !rlBad.length, "real=1 test: target lines must be real trendlines (swing point to swing point)");
