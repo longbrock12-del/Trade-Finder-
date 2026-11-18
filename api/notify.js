@@ -70,7 +70,7 @@ module.exports = async function handler(req, res) {
             const oc = await get("/api/options?sym=" + encodeURIComponent(m.sym) + "&dir=" + s.dir + "&entry=" + s.entry + "&stop=" + s.stop0 + tq), c = oc && oc.contracts && oc.contracts[0];
             if (c) opt = { contract: c.contract, type: c.type, strike: c.strike, expiry: c.expiry, dte: c.dte, mid: c.mid, delta: c.delta, gamma: c.gamma, theta: c.theta, iv: c.iv, spreadPct: c.spreadPct, atStop: c.atStop, price: oc.price };
           }
-          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}), ...(s.target ? { target: s.target } : {}) });
+          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}), ...(s.target ? { target: s.target } : {}), ...(s.chart && s.chart.levels ? { levels: s.chart.levels } : {}) });
           live[tf + "|" + k] = { status: "open" };
           notified += await sendAll((x) => ((x.prefs && x.prefs.tf) || "4H") === tf, {
             title: actionOf(m, s) + " " + show(m.sym), tag: k, url: "/",
@@ -123,6 +123,7 @@ module.exports = async function handler(req, res) {
       } else if (s) {
         x.nowR = s.nowR;
         if (s.target) x.target = s.target; // the latest target line (it moves with the line), for "why it exited"
+        if (s.chart && s.chart.levels) x.levels = s.chart.levels; // and the chart's S/R levels
         const was = x.stopNow != null ? x.stopNow : x.stop;
         if (s.stop != null && was != null && sign * (s.stop - was) >= 0.1 * x.risk) {
           x.stopNow = s.stop;

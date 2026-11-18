@@ -155,6 +155,8 @@ async function scannerTests() {
     ok(cAll.signals.every((x) => !TC.nearCrudeRoll(dayOf(x.t))) && TC.crudeLastDay(2026, 10).toISOString().slice(0, 10) === "2026-11-20" && TC.nearCrudeRoll("2026-11-17") && !TC.nearCrudeRoll("2026-11-16") && !TC.nearCrudeRoll("2026-11-23"), "no new crude callouts in the 4 trading days up to the contract's last day (Nov 17-20, 2026)");
     const trailG = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: null } });
     const stockR = TC.scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: NOW, tfs: ["4H"], all: true });
+    const hs = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: "htfsr" } });
+    ok(hs.record && hs.record.trades > 0 && hs.signals.some((x) => x.exitHow === "take profit") && JSON.stringify(hs.record) !== JSON.stringify(trailG.record), "exit=htfsr test: take profit at the target line or an S/R level, whichever comes first");
     const far1 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { tmin: 1 } });
     const tpR = (r) => r.signals.filter((x) => x.exitHow === "take profit").map((x) => x.exitR);
     ok(tpR(far1).every((r) => r >= 0.99) && tpR(gAll2).some((r) => r < 1), "tmin=1 test: target lines closer than 1R are skipped", tpR(far1).join(",") + " vs " + tpR(gAll2).join(","));
@@ -824,7 +826,7 @@ async function alertTests() {
     const keepSite = site; site = { scan: { markets: [{ sym: "XYZ", kind: "stocks", price: 100.2, signals: [stSig], watch: [] }] }, options: { price: 100.1, contracts: [{ contract: "XYZ261218C00100000", type: "call", strike: 100, expiry: "2026-12-18", dte: 31, mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, iv: 30, spreadPct: 3, atStop: 2.9 }] } };
     db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site = keepSite;
     const sx = [...H("tf:live").values()].map((v) => JSON.parse(v)).find((v) => v.sym === "XYZ");
-    ok(sx && sx.opt && sx.opt.mid === 4 && sx.opt.theta === -0.06 && sx.opt.atStop === 2.9 && sx.target && sx.target.tf === "Daily", "a stock callout saves its target line and the suggested option contract (price, delta, time decay, spread) for the recent-trades estimate", JSON.stringify(sx && sx.opt));
+    ok(sx && sx.opt && sx.opt.mid === 4 && sx.opt.theta === -0.06 && sx.opt.atStop === 2.9 && sx.target && sx.target.tf === "Daily", "a stock callout saves its target line, its chart's S/R levels and the suggested option contract (price, delta, time decay, spread) for the recent-trades estimate", JSON.stringify(sx && sx.opt));
     [...H("tf:live").keys()].filter((k) => k.includes("XYZ")).forEach((k) => H("tf:live").delete(k)); }
   db.delete("tf:lastrun"); pushed.length = 0;
   site = { trades: { markets: [mk(1999, { ...sig, nowR: 0.4, stop: 1990.5 })] } };
@@ -863,6 +865,8 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   ok(rtClosed && rtSaved === true, "recent trades start closed (just the title) and open from the title; remembered per browser");
   const rt = (await page.locator(".rtr").count()) ? await page.locator(".rtr").textContent() : "";
   ok(/Recent trades \(1\) · −1\.0%/.test(rt) && /MGC long/.test(rt) && /Entry 1,?995(\.0)? → Exit 1,?989(\.0)?Why it exited: price traded through the stop order at 1,?989(\.0)?\. The stop sits just past the safety line/.test(rt) && !/As an option/.test(rt), "recent trades: finished callouts with the entry and exit prices the site gave, how they ended and the result", rt.slice(0, 200));
+  const wx = await page.evaluate(() => [whyExit({ how: "take profit", dir: "short", levels: [{ p: 49.26, n: 4, side: "S" }, { p: 47.85, n: 7, side: "S" }] }, 49.12, 2), whyExit({ how: "take profit", dir: "short", target: { tf: "Weekly" }, levels: [{ p: 47.85, n: 7, side: "S" }] }, 49.12, 2)]);
+  ok(/^price hit support at 49\.26 \(price turned there 4 times\) at 49\.12, where the target trendline also was/.test(wx[0]) && /^price reached the target \(the Weekly trendline\) at 49\.12/.test(wx[1]), "why it exited: names the S/R level when the exit price is right at one", wx.join(" | "));
   const oe = await page.evaluate(() => optEst({ entry: 100, t: 0, closedAt: 3 * 86400 * 1000, opt: { mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, spreadPct: 3, atStop: 2.9 } }, 103));
   ok(oe && Math.abs(oe.move - (0.6 * 3 + 0.5 * 0.05 * 9) / 1.1) < 1e-6 && Math.abs(oe.decay + (0.06 * 3) / 1.1) < 1e-6 && Math.abs(oe.spread + 0.12 / 1.1) < 1e-6 && Math.abs(oe.total - (oe.move + oe.decay + oe.spread)) < 1e-6, "stock option estimate: the move (delta, gamma) minus time decay for the days held and the spread, as account % at 1% risk", JSON.stringify(oe));
   const box = page.locator(".ofold");

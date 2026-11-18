@@ -97,7 +97,7 @@ async function handler(req, res) {
     const tmin = sq.get("tmin") != null ? Number(sq.get("tmin")) : null, cost = sq.get("cost") != null ? Number(sq.get("cost")) : null, split = sq.get("split") === "1";
     if (cost != null && !(cost >= 0 && cost <= 1)) return send(res, 400, 0, { error: "cost must be 0-1 (R per trade)" });
     if (tmin != null && !(tmin >= 0 && tmin <= 5)) return send(res, 400, 0, { error: "tmin must be 0-5 (R)" });
-    const roll = sq.get("roll") === "1", exit = ["tp", "htf", "trail"].includes(sq.get("exit")) ? sq.get("exit") : null, test = roll || !!exit || tmin != null || cost != null || split;
+    const roll = sq.get("roll") === "1", exit = ["tp", "htf", "htfsr", "sr", "trail"].includes(sq.get("exit")) ? sq.get("exit") : null, test = roll || !!exit || tmin != null || cost != null || split;
     const out = await Promise.all(list.map(async (sym) => { try {
       const args = await both(sym, "2y"), rolls = roll && /^M?CL=F$/.test(sym) ? rollAdjust(...args) : undefined;
       const m = scan(...args, { sym, tfs: ["4H"], split, ...(exit || tmin != null || cost != null ? { rules: { ...(exit ? { exit: exit === "trail" ? null : exit } : {}), ...(tmin != null ? { tmin } : {}), ...(cost != null ? { cost } : {}) } } : {}) });

@@ -82,7 +82,7 @@ async function handler(req, res) {
   // ?exit=htf (take profit at the next bigger-timeframe trendline, the live exit) / tp (at a nearby S/R level) / trail (safety line only).
   // ?cost=0.1 (R taken off every trade: commissions, slippage, option spreads) and ?split=1 (older year vs last 12 months).
   const cost = num("cost", 0, 1), split = sp.get("split") === "1";
-  const ex = sp.get("exit"), exit = ["htf", "tp", "trail"].includes(ex) ? ex : undefined;
+  const ex = sp.get("exit"), exit = ["htf", "htfsr", "sr", "tp", "trail"].includes(ex) ? ex : undefined;
   const st = sp.get("setups"), setups = st == null ? undefined : st === "all" ? null : st.split(",").filter((x) => ["break", "retest", "bounce"].includes(x));
   const rules = touch != null || gap != null || short != null || hold != null || pivot != null || trendOff || trendAll || onceOn || setups !== undefined || exit !== undefined || cost != null ? { touch, gap: gap == null ? null : Math.round(gap), short, hold: hold == null ? null : Math.round(hold), pivot: pivot == null ? null : Math.round(pivot), ...(trendOff ? { trend: false } : trendAll ? { trend: true } : {}), ...(onceOn ? { once: true } : {}), ...(setups !== undefined ? { setups } : {}), ...(exit !== undefined ? { exit: exit === "trail" ? null : exit } : {}), ...(cost != null ? { cost } : {}) } : null;
   // Test mode replays 2 years by default (?years=0.5 / 1 / 2); ?market=futures tests a basket of futures instead of the stocks.

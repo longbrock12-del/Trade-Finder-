@@ -696,7 +696,10 @@ function optEst(x, exitPx) {
 // Why a finished trade ended, in plain words (her exit rules).
 function whyExit(x, exitPx, d) {
   const at = " at " + num(exitPx, d), tg = x.target && x.target.tf ? " (the " + esc(x.target.tf) + " trendline)" : "";
-  if (x.how === "take profit") return "price reached the target" + tg + at + ", the next bigger-timeframe trendline, where price often stalls or turns. She takes profit there.";
+  // An S/R level right at the exit price (within 0.4%): that's what price ran into on the chart.
+  const lv = (x.levels || []).filter((v) => Math.abs(v.p - exitPx) <= 0.004 * exitPx).sort((a, b) => Math.abs(a.p - exitPx) - Math.abs(b.p - exitPx))[0];
+  const sr = lv ? (x.dir === "long" ? "resistance" : "support") + " at " + num(lv.p, d) + " (price turned there " + lv.n + " times)" : null;
+  if (x.how === "take profit") return sr ? "price hit " + sr + at + ", where the target trendline" + tg + " also was. She takes profit there." : "price reached the target" + tg + at + ", the next bigger-timeframe trendline, where price often stalls or turns. She takes profit there.";
   if (x.how === "stop order") return "price traded through the stop order" + at + ". The stop sits just past the safety line, so the setup failed.";
   if (x.how === "close through the line") return "a " + esc(x.tf || "4H") + " candle closed through the safety line" + at + ". Her rule: once a candle closes past it, the trade is over.";
   if (/replaced/.test(x.how || "")) return "a newer callout on " + esc(show(x.sym)) + " replaced this one, closing it near" + at + ".";

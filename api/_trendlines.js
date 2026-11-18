@@ -385,8 +385,20 @@ function callout(s, e, last, live, px) {
   // exit=tp test: her take-profit, set at entry from the candles up to then (no peeking ahead).
   const mode = s.exit || null; // "htf" (futures), "tp" (test), none = trail only
   const tpAt = mode === "tp" ? takeProfit(s, e.long, ent, ent, from) : null;
-  const htf = mode === "htf" ? htfTarget(s, e.long, from, ent, (s.tmin || 0) * risk) : null;
-  const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : htf ? (i) => val(htf, s.x0 + i) : null);
+  const htf = mode === "htf" || mode === "htfsr" ? htfTarget(s, e.long, from, ent, (s.tmin || 0) * risk) : null;
+  // exit=htfsr / sr tests: her other exit, a support/resistance level price has turned at 4+ times, using only the
+  // daily candles before the entry day (the same levels the charts draw). htfsr = whichever comes first.
+  let srP = null;
+  if ((mode === "htfsr" || mode === "sr") && s.lvDaily) {
+    const lv = srLevels(s.lvDaily.filter((d) => d.t < b[from].t - DAY), ent).filter((v) => (e.long ? v.p > ent : v.p < ent)).sort((p, q) => Math.abs(p.p - ent) - Math.abs(q.p - ent))[0];
+    if (lv) srP = lv.p;
+  }
+  const tgtAt = htf || srP != null ? (i) => {
+    const a = htf ? val(htf, s.x0 + i) : null;
+    if (a == null) return srP; if (srP == null) return a;
+    return e.long ? Math.min(a, srP) : Math.max(a, srP);
+  } : null;
+  const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : tgtAt);
   const far = risk > FAR_ATR * s.A[from];
   const sign = e.long ? 1 : -1;
   const tp = out.status === "open" ? takeProfit(s, e.long, live, ent, last) : null;
@@ -609,7 +621,7 @@ function scanCore(hChart, dChart, opts = {}) {
     const b = sets[tf], use = !opts.tfs || opts.tfs.includes(tf);
     if (b.length < 30 || (!use && tf !== "4H")) return;
     const s = (S[tf] = setup(daily, b, isFuture, tf));
-    s.exit = R.exit || null; s.tmin = R.tmin || 0;
+    s.exit = R.exit || null; s.tmin = R.tmin || 0; s.lvDaily = lvDaily;
     const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
     s.last = last;
     if (!use) return;
