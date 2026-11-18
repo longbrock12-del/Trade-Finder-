@@ -106,6 +106,7 @@ input::placeholder{color:#55665c}
 .mtop{display:flex;justify-content:space-between;font-size:12px;font-family:"JetBrains Mono",monospace}.mpx{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mbot{display:flex;flex-direction:column;gap:2px;font-size:11px;margin-top:1px}.mbot svg{width:100%;height:20px}
 .nbar{height:4px;border-radius:3px;background:var(--soft);margin:5px 0 2px;overflow:hidden}.nbar i{display:block;height:100%;border-radius:3px}
+.rtr{padding:4px 12px}.rtr .note.mini{margin-bottom:6px}
 .lchart{margin-top:6px}.lchart svg{width:100%;height:64px;display:block}
 .ofold{padding:4px 12px}.ofold>.btn{width:100%;text-align:left;border:0;background:none;padding:8px 0;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ofold .note.mini{margin-bottom:8px}
 .ohead{padding:8px 0 4px;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.omore{width:100%;border:0;background:none;color:var(--ac);padding:6px 0 0;text-align:left;font-size:12.5px}
@@ -656,7 +657,7 @@ function renderCalls() {
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
     (folds.live ? "▾ " : "▸ ") + "Get In Now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
-  return marketStrip() + trackBox() + getInBox(live) + bar + openTrades(); // fresh callouts first, already-running ones under them
+  return marketStrip() + trackBox() + getInBox(live) + bar + openTrades() + recentTrades(); // fresh callouts first, already-running ones under them, then finished ones
 }
 
 // Callouts the site sent that are still open (from the live record), in a small bar that stays closed until
@@ -678,6 +679,42 @@ async function loadTradeChart(id) {
     wcharts[k] = m && m.trade && m.trade.chart ? { shown: true, m, s: m.trade } : { shown: true, error: "This callout's chart isn't available anymore (it's older than the 6 months the site replays)." };
   } catch (e) { wcharts[k] = { shown: true, error: "The chart didn't load. Try again in a minute." }; }
   render();
+}
+// A finished stock trade as an option, estimated from the contract the site saved when it sent the callout:
+// the stock's move (delta and gamma), time decay (theta per day held) and the bid-ask spread, each as account %
+// at 1% risk (1% = what the contract would lose at the stop). Null if no contract was saved.
+function optEst(x, exitPx) {
+  const o = x.opt;
+  if (!o || !(o.mid > 0) || !(o.mid > o.atStop)) return null;
+  const L = o.mid - o.atStop, dx = exitPx - x.entry, days = Math.max(0, ((x.closedAt || Date.now()) / 1000 - x.t) / 86400);
+  const move = Math.max(-o.mid, o.delta * dx + 0.5 * (o.gamma || 0) * dx * dx), decay = Math.abs(o.theta || 0) * days, spread = ((o.spreadPct || 0) / 100) * o.mid;
+  const tot = Math.max(-o.mid, move - decay - spread);
+  return { move: move / L, decay: -decay / L, spread: -spread / L, total: tot / L, days };
+}
+// Recent trades: the callouts the site sent that have finished, newest first: entry and exit prices, how it
+// ended, the result (account % at 1% risk) and, for stocks, an option estimate with decay and spread taken out.
+function recentTrades() {
+  const done = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "closed" && x.exitR != null && x.kind === kind && (x.view || "4H") === chartTF())
+    .sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0));
+  if (!done.length) return "";
+  const pc = (v, d = 1) => (Math.abs(v) < 0.5 * Math.pow(10, -d) ? "0." + "0".repeat(d) + "%" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d) + "%"), day = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const howTxt = { "take profit": "target line", "stop order": "stop hit", "close through the line": "safety line broke" };
+  const rows = done.map((x) => {
+    const m = data.markets.find((q) => q.sym === x.sym), d = (m && m.digits) || 2, sign = x.dir === "long" ? 1 : -1;
+    const exitPx = x.exitPx != null ? x.exitPx : x.entry + sign * x.exitR * x.risk, oe = x.kind === "stocks" ? optEst(x, exitPx) : null;
+    let h = '<div class="trr"><span><b>' + esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short") + '</b> <span class="note">' + esc(x.setup || "") + " · " + day(x.t * 1000) + (x.closedAt ? " → " + day(x.closedAt) : "") + "</span></span>" +
+      '<b class="' + (x.exitR >= 0 ? "ok" : "bad") + '">' + pc(x.exitR) + "</b></div>" +
+      '<div class="note mini">Entry <b>' + num(x.entry, d) + "</b> → Exit <b>" + num(exitPx, d) + "</b> · " + esc(howTxt[x.how] || x.how || "closed") + "</div>";
+    if (x.kind === "stocks") h += oe ? '<div class="note mini">As an option (est.): <b style="color:var(' + (oe.total >= 0 ? "--gd" : "--bad") + ')">' + pc(oe.total) + "</b> = move " + pc(oe.move, 2) + " · time decay " + pc(oe.decay, 2) + " · spread " + pc(oe.spread, 2) + (x.opt.contract ? " · " + esc(x.opt.type.toUpperCase()) + " " + x.opt.strike + " exp " + new Date(x.opt.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "") + "</div>"
+      : '<div class="note mini">No option contract was saved for this one, so there\u2019s no option estimate.</div>';
+    return { h, r: x.exitR, o: oe ? oe.total : null };
+  });
+  const tot = rows.reduce((a, x) => a + x.r, 0), oRows = rows.filter((x) => x.o != null), oTot = oRows.reduce((a, x) => a + x.o, 0), open = !!folds.recent;
+  const head = '<div class="ohead">Recent trades (' + rows.length + ") · " + '<span class="' + (tot >= 0 ? "ok" : "bad") + '">' + pc(tot) + "</span>" + (oRows.length ? " · as options " + '<span class="' + (oTot >= 0 ? "ok" : "bad") + '">' + pc(oTot) + "</span>" : "") + "</div>";
+  const shown = open ? rows : rows.slice(0, 3);
+  const more = rows.length > 3 ? '<button class="btn omore" data-fold="recent" aria-expanded="' + open + '">' + (open ? "▴ Show less" : "▾ Show " + (rows.length - 3) + " more") + "</button>" : "";
+  return '<div class="c rtr">' + head + shown.map((x) => x.h).join("") + more +
+    '<div class="note mini">Finished callouts the site sent, at the prices it gave. Results are account % at 1% risk per trade.' + (kind === "stocks" ? " The option estimate uses the contract suggested when the callout went out: its delta for the move, its daily time decay for the days held, and its bid-ask spread." : "") + "</div></div>";
 }
 function openTrades() {
   // A callout that's still in Get In Now isn't listed here too: it moves to tracking once it can't be entered

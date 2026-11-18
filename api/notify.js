@@ -62,7 +62,15 @@ module.exports = async function handler(req, res) {
           if (s.status !== "open" || s.liveThrough || s.nowR == null || s.nowR > ENTER_R || now - s.t > FRESH) continue;
           const k = keyOf(m, s);
           if (!(await S.one("SADD", "tf:sent:" + tf, k))) continue; // already sent
-          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION });
+          // Stocks: save the option contract the site would suggest right now (price, delta, daily time decay,
+          // spread), so the recent-trades list can estimate what the trade did as an option.
+          let opt = null;
+          if (m.kind === "stocks") {
+            const tq = s.target && s.target.price != null ? "&target=" + s.target.price : "";
+            const oc = await get("/api/options?sym=" + encodeURIComponent(m.sym) + "&dir=" + s.dir + "&entry=" + s.entry + "&stop=" + s.stop0 + tq), c = oc && oc.contracts && oc.contracts[0];
+            if (c) opt = { contract: c.contract, type: c.type, strike: c.strike, expiry: c.expiry, dte: c.dte, mid: c.mid, delta: c.delta, gamma: c.gamma, theta: c.theta, iv: c.iv, spreadPct: c.spreadPct, atStop: c.atStop, price: oc.price };
+          }
+          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}) });
           live[tf + "|" + k] = { status: "open" };
           notified += await sendAll((x) => ((x.prefs && x.prefs.tf) || "4H") === tf, {
             title: actionOf(m, s) + " " + show(m.sym), tag: k, url: "/",
@@ -109,7 +117,7 @@ module.exports = async function handler(req, res) {
       const s = (m.signals || []).find((q) => keyOf(m, q) === x.key), sign = x.dir === "long" ? 1 : -1;
       const toView = (q) => ((q.prefs && q.prefs.tf) || "4H") === view, name = actionOf(m, x) + " " + show(x.sym);
       if (s && s.status === "closed") {
-        Object.assign(x, { status: "closed", exitR: s.exitR, closedAt: Date.now(), how: s.exitHow });
+        Object.assign(x, { status: "closed", exitR: s.exitR, exitPx: s.exitPx, closedAt: Date.now(), how: s.exitHow });
         exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(s.exitR), tag: "exit-" + x.key, url: "/",
           body: (s.exitHow === "stop order" ? "Stop order hit" : s.exitHow === "take profit" ? "Target line reached (a bigger-timeframe trendline)" : "A " + x.tf + " candle closed through the safety line") + (s.exitPx != null ? " at " + s.exitPx : "") + ". Trade over: " + R1(s.exitR) + "." });
       } else if (s) {
@@ -122,7 +130,7 @@ module.exports = async function handler(req, res) {
         }
       } else if ((m.signals || []).length) {
         const r = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
-        Object.assign(x, { status: "closed", exitR: r, closedAt: Date.now(), how: "replaced by a newer callout" });
+        Object.assign(x, { status: "closed", exitR: r, exitPx: m.price, closedAt: Date.now(), how: "replaced by a newer callout" });
         exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(r), tag: "exit-" + x.key, url: "/",
           body: "A newer callout on " + show(x.sym) + " replaces this trade. Close it near " + m.price + " (" + R1(r) + ")." });
       } else x.nowR = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
