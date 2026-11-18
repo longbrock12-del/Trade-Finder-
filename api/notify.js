@@ -117,9 +117,11 @@ module.exports = async function handler(req, res) {
       const s = (m.signals || []).find((q) => keyOf(m, q) === x.key), sign = x.dir === "long" ? 1 : -1;
       const toView = (q) => ((q.prefs && q.prefs.tf) || "4H") === view, name = actionOf(m, x) + " " + show(x.sym);
       if (s && s.status === "closed") {
-        Object.assign(x, { status: "closed", exitR: s.exitR, exitPx: s.exitPx, closedAt: Date.now(), how: s.exitHow });
+        Object.assign(x, { status: "closed", exitR: s.exitR, exitPx: s.exitPx, closedAt: Date.now(), how: s.exitHow, ...(s.exitTo ? { exitTo: s.exitTo } : {}) });
+        const dd = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+        const hit = s.exitTo ? (s.exitTo.kind === "sr" ? (x.dir === "long" ? "Resistance" : "Support") + " reached at " + s.exitTo.price + " (price turned there " + s.exitTo.touches + " times)" : "The " + s.exitTo.tf + " trendline (" + dd(s.exitTo.t0) + " to " + dd(s.exitTo.t1) + ") reached") : null;
         exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(s.exitR), tag: "exit-" + x.key, url: "/",
-          body: (s.exitHow === "stop order" ? "Stop order hit" : s.exitHow === "take profit" ? "Target reached (a bigger-timeframe trendline" + (x.kind === "futures" ? " or support/resistance level" : "") + ")" : "A " + x.tf + " candle closed through the safety line") + (s.exitPx != null ? " at " + s.exitPx : "") + ". Trade over: " + R1(s.exitR) + "." });
+          body: (s.exitHow === "stop order" ? "Stop order hit" : s.exitHow === "take profit" ? hit || "Target reached (a bigger-timeframe trendline" + (x.kind === "futures" ? " or support/resistance level" : "") + ")" : "A " + x.tf + " candle closed through the safety line") + (s.exitPx != null ? " at " + s.exitPx : "") + ". Trade over: " + R1(s.exitR) + "." });
       } else if (s) {
         x.nowR = s.nowR;
         if (s.target) x.target = s.target; // the latest target line (it moves with the line), for "why it exited"

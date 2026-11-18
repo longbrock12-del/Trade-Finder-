@@ -699,6 +699,10 @@ function whyExit(x, exitPx, d) {
   // An S/R level right at the exit price (within 0.4%): that's what price ran into on the chart.
   const lv = (x.levels || []).filter((v) => Math.abs(v.p - exitPx) <= 0.004 * exitPx).sort((a, b) => Math.abs(a.p - exitPx) - Math.abs(b.p - exitPx))[0];
   const sr = lv ? (x.dir === "long" ? "resistance" : "support") + " at " + num(lv.p, d) + " (price turned there " + lv.n + " times)" : null;
+  const dd = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const to = x.exitTo;
+  if (x.how === "take profit" && to && to.kind === "line") return "price reached the " + esc(to.tf) + " trendline" + at + " (drawn from " + dd(to.t0) + " at " + num(to.p0, d) + " to " + dd(to.t1) + " at " + num(to.p1, d) + "), a bigger-timeframe line where price often stalls or turns. She takes profit there." + (sr ? " It lined up with " + sr + "." : "");
+  if (x.how === "take profit" && to && to.kind === "sr") return "price hit " + (x.dir === "long" ? "resistance" : "support") + at + ", a level price turned at " + to.touches + " times. She takes profit at support/resistance.";
   if (x.how === "take profit") return sr ? "price hit " + sr + at + ", where the target trendline" + tg + " also was. She takes profit there." : "price reached the target" + tg + at + ", the next bigger-timeframe trendline, where price often stalls or turns. She takes profit there.";
   if (x.how === "stop order") return "price traded through the stop order" + at + ". The stop sits just past the safety line, so the setup failed.";
   if (x.how === "close through the line") return "a " + esc(x.tf || "4H") + " candle closed through the safety line" + at + ". Her rule: once a candle closes past it, the trade is over.";

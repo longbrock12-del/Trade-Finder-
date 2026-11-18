@@ -399,6 +399,12 @@ function callout(s, e, last, live, px) {
     return e.long ? Math.min(a, srP) : Math.max(a, srP);
   } : null;
   const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : tgtAt);
+  // Which target the trade exited at: the bigger-timeframe trendline (its chart and its two points) or the S/R level.
+  let exitTo = null;
+  if (out.how === "take profit" && !tpAt) {
+    const lineV = htf ? val(htf, s.x0 + out.at) : null, bySr = srP != null && (lineV == null || (e.long ? srP <= lineV : srP >= lineV));
+    exitTo = bySr ? { kind: "sr", price: px(srP), touches: srN } : { kind: "line", tf: tfOfLine(htf, tf), price: px(lineV), t0: htf.a.t, p0: px(htf.a.p), t1: htf.b.t, p1: px(htf.b.p) };
+  }
   const far = risk > FAR_ATR * s.A[from];
   const sign = e.long ? 1 : -1;
   const tp = out.status === "open" ? takeProfit(s, e.long, live, ent, last) : null;
@@ -409,7 +415,7 @@ function callout(s, e, last, live, px) {
       const lineV = htf ? val(htf, s.x0 + last + 1) : null, useSr = srP != null && (lineV == null || (e.long ? srP < lineV : srP > lineV)), p = useSr ? srP : lineV;
       return { price: px(p), tf: useSr ? "S/R" : tfOfLine(htf, tf), ...(useSr ? { touches: srN } : {}), r: r2(((e.long ? 1 : -1) * (p - ent)) / risk, 1) };
     })() : null,
-    entryT: b[from].e, exitT: out.at == null ? null : b[out.at].e, entryRaw: ent, riskRaw: risk,
+    entryT: b[from].e, exitT: out.at == null ? null : b[out.at].e, entryRaw: ent, riskRaw: risk, exitTo,
     status: far ? "too-far" : out.status, closedAt: out.at, exitPx: px(out.px), exitR: out.px == null ? null : r2((sign * (out.px - ent)) / risk, 2),
     nowR: r2((sign * (live - ent)) / risk, 2), liveThrough: out.status === "open" && (e.long ? live < out.stop : live > out.stop),
     note: far ? "Break closed too far from the safety line (risk over " + FAR_ATR + " ATR). Her rule: skip it." : c.late ? "Safety line formed after the break. Entry is that later close." : null };
