@@ -857,6 +857,10 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.waitForTimeout(200);
   const tr = await page.locator(".trk").first().textContent();
   ok(/Live record since .*1 closed · 0% wins · −1\.0% · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
+  const rtClosed = (await page.locator(".rtr").count()) === 1 && (await page.locator(".rtr .trr").count()) === 0 && /Recent trades \(1\)/.test(await page.locator(".rtr").textContent());
+  await page.click(".rtr .rtog");
+  const rtSaved = await page.evaluate(() => store.get("recentOpen", false));
+  ok(rtClosed && rtSaved === true, "recent trades start closed (just the title) and open from the title; remembered per browser");
   const rt = (await page.locator(".rtr").count()) ? await page.locator(".rtr").textContent() : "";
   ok(/Recent trades \(1\) · −1\.0%/.test(rt) && /MGC long/.test(rt) && /Entry 1,?995(\.0)? → Exit 1,?989(\.0)? · stop hit/.test(rt) && !/As an option/.test(rt), "recent trades: finished callouts with the entry and exit prices the site gave, how they ended and the result", rt.slice(0, 200));
   const oe = await page.evaluate(() => optEst({ entry: 100, t: 0, closedAt: 3 * 86400 * 1000, opt: { mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, spreadPct: 3, atStop: 2.9 } }, 103));

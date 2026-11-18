@@ -106,7 +106,7 @@ input::placeholder{color:#55665c}
 .mtop{display:flex;justify-content:space-between;font-size:12px;font-family:"JetBrains Mono",monospace}.mpx{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mbot{display:flex;flex-direction:column;gap:2px;font-size:11px;margin-top:1px}.mbot svg{width:100%;height:20px}
 .nbar{height:4px;border-radius:3px;background:var(--soft);margin:5px 0 2px;overflow:hidden}.nbar i{display:block;height:100%;border-radius:3px}
-.rtr{padding:4px 12px}.rtr .note.mini{margin-bottom:6px}
+.rtr{padding:4px 12px}.rtr .note.mini{margin-bottom:6px}.rtog{display:block;width:100%;border:0;background:none;text-align:left;cursor:pointer;padding:8px 0}
 .lchart{margin-top:6px}.lchart svg{width:100%;height:64px;display:block}
 .ofold{padding:4px 12px}.ofold>.btn{width:100%;text-align:left;border:0;background:none;padding:8px 0;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ofold .note.mini{margin-bottom:8px}
 .ohead{padding:8px 0 4px;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.omore{width:100%;border:0;background:none;color:var(--ac);padding:6px 0 0;text-align:left;font-size:12.5px}
@@ -710,7 +710,11 @@ function recentTrades() {
     return { h, r: x.exitR, o: oe ? oe.total : null };
   });
   const tot = rows.reduce((a, x) => a + x.r, 0), oRows = rows.filter((x) => x.o != null), oTot = oRows.reduce((a, x) => a + x.o, 0), open = !!folds.recent;
-  const head = '<div class="ohead">Recent trades (' + rows.length + ") · " + '<span class="' + (tot >= 0 ? "ok" : "bad") + '">' + pc(tot) + "</span>" + (oRows.length ? " · as options " + '<span class="' + (oTot >= 0 ? "ok" : "bad") + '">' + pc(oTot) + "</span>" : "") + "</div>";
+  // The whole box opens and closes from its title (closed by default; remembered per browser).
+  if (folds.recentBox == null) folds.recentBox = store.get("recentOpen", false);
+  const box = !!folds.recentBox;
+  const head = '<button class="ohead rtog" data-fold="recentBox" aria-expanded="' + box + '"><span>' + (box ? "▾" : "▸") + " Recent trades (" + rows.length + ") · " + '<span class="' + (tot >= 0 ? "ok" : "bad") + '">' + pc(tot) + "</span>" + (oRows.length ? " · as options " + '<span class="' + (oTot >= 0 ? "ok" : "bad") + '">' + pc(oTot) + "</span>" : "") + "</span></button>";
+  if (!box) return '<div class="c rtr">' + head + "</div>";
   const shown = open ? rows : rows.slice(0, 3);
   const more = rows.length > 3 ? '<button class="btn omore" data-fold="recent" aria-expanded="' + open + '">' + (open ? "▴ Show less" : "▾ Show " + (rows.length - 3) + " more") + "</button>" : "";
   return '<div class="c rtr">' + head + shown.map((x) => x.h).join("") + more +
@@ -1005,7 +1009,7 @@ document.addEventListener("click", (e) => {
     data.markets.forEach((m) => (m.signals || []).forEach((s) => { if (keyOf(m, s) === k) loadOptions(m, s, k); }));
     return;
   }
-  if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; if (t.dataset.fold === "live") store.set("liveOpen", folds.live); render(); }
+  if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; if (t.dataset.fold === "live") store.set("liveOpen", folds.live); if (t.dataset.fold === "recentBox") store.set("recentOpen", folds.recentBox); render(); }
   else if (t.dataset.tab) { tab = t.dataset.tab; render(); }
   else if (t.dataset.k && t.closest("#kinds")) { kind = t.dataset.k; store.set("kind", kind); render(); }
   else if (t.dataset.rm) { const s = t.dataset.rm; extra = extra.filter((x) => x !== s); if (!removed.includes(s) && (DEF.futures.includes(s) || DEF.stocks.includes(s))) removed.push(s); store.set("extra", extra); store.set("removed", removed); render(); load(); }
