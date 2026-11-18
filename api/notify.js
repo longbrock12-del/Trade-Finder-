@@ -70,7 +70,7 @@ module.exports = async function handler(req, res) {
             const oc = await get("/api/options?sym=" + encodeURIComponent(m.sym) + "&dir=" + s.dir + "&entry=" + s.entry + "&stop=" + s.stop0 + tq), c = oc && oc.contracts && oc.contracts[0];
             if (c) opt = { contract: c.contract, type: c.type, strike: c.strike, expiry: c.expiry, dte: c.dte, mid: c.mid, delta: c.delta, gamma: c.gamma, theta: c.theta, iv: c.iv, spreadPct: c.spreadPct, atStop: c.atStop, price: oc.price };
           }
-          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}) });
+          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}), ...(s.target ? { target: s.target } : {}) });
           live[tf + "|" + k] = { status: "open" };
           notified += await sendAll((x) => ((x.prefs && x.prefs.tf) || "4H") === tf, {
             title: actionOf(m, s) + " " + show(m.sym), tag: k, url: "/",
@@ -122,6 +122,7 @@ module.exports = async function handler(req, res) {
           body: (s.exitHow === "stop order" ? "Stop order hit" : s.exitHow === "take profit" ? "Target line reached (a bigger-timeframe trendline)" : "A " + x.tf + " candle closed through the safety line") + (s.exitPx != null ? " at " + s.exitPx : "") + ". Trade over: " + R1(s.exitR) + "." });
       } else if (s) {
         x.nowR = s.nowR;
+        if (s.target) x.target = s.target; // the latest target line (it moves with the line), for "why it exited"
         const was = x.stopNow != null ? x.stopNow : x.stop;
         if (s.stop != null && was != null && sign * (s.stop - was) >= 0.1 * x.risk) {
           x.stopNow = s.stop;

@@ -824,7 +824,7 @@ async function alertTests() {
     const keepSite = site; site = { scan: { markets: [{ sym: "XYZ", kind: "stocks", price: 100.2, signals: [stSig], watch: [] }] }, options: { price: 100.1, contracts: [{ contract: "XYZ261218C00100000", type: "call", strike: 100, expiry: "2026-12-18", dte: 31, mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, iv: 30, spreadPct: 3, atStop: 2.9 }] } };
     db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site = keepSite;
     const sx = [...H("tf:live").values()].map((v) => JSON.parse(v)).find((v) => v.sym === "XYZ");
-    ok(sx && sx.opt && sx.opt.mid === 4 && sx.opt.theta === -0.06 && sx.opt.atStop === 2.9, "a stock callout saves the suggested option contract (price, delta, time decay, spread) for the recent-trades estimate", JSON.stringify(sx && sx.opt));
+    ok(sx && sx.opt && sx.opt.mid === 4 && sx.opt.theta === -0.06 && sx.opt.atStop === 2.9 && sx.target && sx.target.tf === "Daily", "a stock callout saves its target line and the suggested option contract (price, delta, time decay, spread) for the recent-trades estimate", JSON.stringify(sx && sx.opt));
     [...H("tf:live").keys()].filter((k) => k.includes("XYZ")).forEach((k) => H("tf:live").delete(k)); }
   db.delete("tf:lastrun"); pushed.length = 0;
   site = { trades: { markets: [mk(1999, { ...sig, nowR: 0.4, stop: 1990.5 })] } };
@@ -862,7 +862,7 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   const rtSaved = await page.evaluate(() => store.get("recentOpen", false));
   ok(rtClosed && rtSaved === true, "recent trades start closed (just the title) and open from the title; remembered per browser");
   const rt = (await page.locator(".rtr").count()) ? await page.locator(".rtr").textContent() : "";
-  ok(/Recent trades \(1\) · −1\.0%/.test(rt) && /MGC long/.test(rt) && /Entry 1,?995(\.0)? → Exit 1,?989(\.0)? · stop hit/.test(rt) && !/As an option/.test(rt), "recent trades: finished callouts with the entry and exit prices the site gave, how they ended and the result", rt.slice(0, 200));
+  ok(/Recent trades \(1\) · −1\.0%/.test(rt) && /MGC long/.test(rt) && /Entry 1,?995(\.0)? → Exit 1,?989(\.0)?Why it exited: price traded through the stop order at 1,?989(\.0)?\. The stop sits just past the safety line/.test(rt) && !/As an option/.test(rt), "recent trades: finished callouts with the entry and exit prices the site gave, how they ended and the result", rt.slice(0, 200));
   const oe = await page.evaluate(() => optEst({ entry: 100, t: 0, closedAt: 3 * 86400 * 1000, opt: { mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, spreadPct: 3, atStop: 2.9 } }, 103));
   ok(oe && Math.abs(oe.move - (0.6 * 3 + 0.5 * 0.05 * 9) / 1.1) < 1e-6 && Math.abs(oe.decay + (0.06 * 3) / 1.1) < 1e-6 && Math.abs(oe.spread + 0.12 / 1.1) < 1e-6 && Math.abs(oe.total - (oe.move + oe.decay + oe.spread)) < 1e-6, "stock option estimate: the move (delta, gamma) minus time decay for the days held and the spread, as account % at 1% risk", JSON.stringify(oe));
   const box = page.locator(".ofold");
