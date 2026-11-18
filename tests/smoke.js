@@ -155,6 +155,9 @@ async function scannerTests() {
     ok(cAll.signals.every((x) => !TC.nearCrudeRoll(dayOf(x.t))) && TC.crudeLastDay(2026, 10).toISOString().slice(0, 10) === "2026-11-20" && TC.nearCrudeRoll("2026-11-17") && !TC.nearCrudeRoll("2026-11-16") && !TC.nearCrudeRoll("2026-11-23"), "no new crude callouts in the 4 trading days up to the contract's last day (Nov 17-20, 2026)");
     const trailG = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: null } });
     const stockR = TC.scan(load("yahoo_AMZN.json"), load("yahoo_daily_AMZN.json"), { sym: "AMZN", now: NOW, tfs: ["4H"], all: true });
+    const rl = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { realLines: true } });
+    const rlBad = rl.signals.filter((x) => x.exitTo && x.exitTo.kind === "line").filter((x) => !(x.exitTo.t1 - x.exitTo.t0 > 0));
+    ok(rl.record && rl.record.trades > 0 && !rlBad.length, "real=1 test: target lines must be real trendlines (swing point to swing point)");
     const hs = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: "htfsr" } });
     const tpx = gAll2.signals.filter((x) => x.exitHow === "take profit");
     ok(tpx.length && tpx.every((x) => x.exitTo && (x.exitTo.kind === "sr" ? x.exitTo.touches >= 4 : ["Daily", "Weekly", "Monthly"].includes(x.exitTo.tf) && x.exitTo.t0 && x.exitTo.t1)), "take-profit exits say which target they hit: the trendline (chart and points) or the S/R level", JSON.stringify(tpx.map((x) => x.exitTo)).slice(0, 200));

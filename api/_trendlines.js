@@ -453,9 +453,12 @@ function srLevels(daily, live) {
 function htfTarget(s, long, from, entry, minDist = 0) {
   const ch = s.chainsBefore(from + 1), c = long ? ch.dn : ch.up, x = s.x0 + from;
   let best = null, bestV = null;
+  // s.realLines (real=1 test): only real trendlines, like every other line she trades: both points confirmed swing
+  // points, 6+ candles apart (not a line ending at the newest low that isn't a swing yet).
   for (let k = 1; k < c.length; k++) {
     const ln = lineOf(c[k - 1], c[k]);
     if (!ln.slope || TF_ORDER.indexOf(tfOfLine(ln, s.tf)) < 2) continue;
+    if (s.realLines && !(c[k - 1].piv && c[k].piv && c[k].x - c[k - 1].x >= MIN_GAP)) continue;
     const v = val(ln, x);
     if (long ? v > entry + minDist && (bestV == null || v < bestV) : v < entry - minDist && (bestV == null || v > bestV)) { best = ln; bestV = v; }
   }
@@ -632,7 +635,7 @@ function scanCore(hChart, dChart, opts = {}) {
     const b = sets[tf], use = !opts.tfs || opts.tfs.includes(tf);
     if (b.length < 30 || (!use && tf !== "4H")) return;
     const s = (S[tf] = setup(daily, b, isFuture, tf));
-    s.exit = R.exit || null; s.tmin = R.tmin || 0; s.lvDaily = lvDaily;
+    s.exit = R.exit || null; s.tmin = R.tmin || 0; s.lvDaily = lvDaily; s.realLines = !!R.realLines;
     const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
     s.last = last;
     if (!use) return;
