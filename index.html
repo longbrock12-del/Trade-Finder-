@@ -634,7 +634,9 @@ function trackBox() {
   }
   const open = !!folds.track;
   // Live record: callouts saved as they were sent (phone alerts), for this chart and market type.
-  const lv = ((pushInfo && pushInfo.live) || []).filter((x) => (x.view || "4H") === chartTF() && x.kind === kind);
+  // (stock trades with an option count the option's result: time decay and spread taken out)
+  const lv = ((pushInfo && pushInfo.live) || []).filter((x) => (x.view || "4H") === chartTF() && x.kind === kind)
+    .map((x) => { const m = data.markets.find((q) => q.sym === x.sym && !q.error), r = tradeR(x, m); return x.status === "closed" ? { ...x, exitR: r } : { ...x, nowR: r }; });
   const lvDone = lv.filter((x) => x.status === "closed" && x.exitR != null), lvR = lvDone.reduce((a, x) => a + x.exitR, 0);
   const liveLine = lv.length ? '<div class="note" style="margin-top:4px"><b>Live record</b> since ' + since(Math.min(...lv.map((x) => x.t))) + ": " + lvDone.length + " closed · " +
     (lvDone.length ? Math.round((100 * lvDone.filter((x) => x.exitR > 0).length) / lvDone.length) + '% wins · <b class="' + (lvR >= 0 ? "ok" : "bad") + '">' + (lvR >= 0 ? "+" : "−") + Math.abs(lvR).toFixed(1) + "%</b> · " : "") + (lv.length - lvDone.length) + " open</div>" : "";
@@ -722,6 +724,18 @@ async function loadTradeChart(id) {
 // A finished stock trade as an option, estimated from the contract the site saved when it sent the callout:
 // the stock's move (delta and gamma), time decay (theta per day held) and the bid-ask spread, each as account %
 // at 1% risk (1% = what the contract would lose at the stop). Null if no contract was saved.
+// A live-record trade's result as account % at 1% risk: open trades at today's price, closed ones at their exit.
+// Stock trades with an option count the option (move minus time decay and spread); everything else the price move.
+function tradeR(x, m) {
+  const sign = x.dir === "long" ? 1 : -1;
+  if (x.status === "closed") {
+    if (x.kind === "stocks" && x.opt && x.exitR != null) { const o = optEst(x, x.exitPx != null ? x.exitPx : x.entry + sign * x.exitR * x.risk); if (o) return o.total; }
+    return x.exitR;
+  }
+  const price = m && m.price > 0 ? m.price : x.nowR != null && x.risk ? x.entry + sign * x.nowR * x.risk : null;
+  if (x.kind === "stocks" && x.opt && price != null) { const o = optEst(x, price); if (o) return o.total; }
+  return m && m.price > 0 && x.risk ? (sign * (m.price - x.entry)) / x.risk : x.nowR;
+}
 function optEst(x, exitPx) {
   const o = x.opt;
   if (!o || !(o.mid > 0) || !(o.mid > o.atStop)) return null;
@@ -785,7 +799,7 @@ function optName(x) {
 // An open stock trade's option contract (the row above already shows the trade's result; the option breakdown
 // shows in Recent trades once it closes).
 function openOpt(x) {
-  return x.kind === "stocks" && x.opt ? '<div class="note mini">Option: <b class="on">' + optName(x) + "</b></div>" : "";
+  return x.kind === "stocks" && x.opt ? '<div class="note mini">Option: <b class="on">' + optName(x) + '</b> · % is the option, after time decay and spread</div>' : "";
 }
 function openTrades() {
   // A callout that's still in Get In Now isn't listed here too: it moves to tracking once it can't be entered
@@ -795,10 +809,11 @@ function openTrades() {
   if (!ot.length) return "";
   const rows = ot.map((x) => {
     const m = data.markets.find((q) => q.sym === x.sym && !q.error), sign = x.dir === "long" ? 1 : -1, d = (m && m.digits) || 2;
-    const r = m && x.risk ? (sign * (m.price - x.entry)) / x.risk : x.nowR;
+    // Stock trades with an option: the option's result (after time decay and spread), since that's what's held.
+    const r = tradeR(x, m);
     const stop = x.stopNow != null ? x.stopNow : x.stop, act = esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short"); // a status, not an order: these are already running
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · entry " + num(x.entry, d) + (stop != null ? " · stop " + num(stop, d) : "") + "</span></span>" +
-      '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + openOpt(x, m) + tradeChart(x) };
+      '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + openOpt(x, m) + tradeChart(x) };
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
   // One box: the title, the newest open trade always showing, and a button for the rest.
