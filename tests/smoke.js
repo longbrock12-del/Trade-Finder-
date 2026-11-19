@@ -451,6 +451,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".foot").count()) === 0 && !/Callouts are made by a computer/.test(await page.textContent("body")), "no explanation text at the bottom of the page");
   ok((await page.locator("[data-fold=done]").count()) === 0 && !/Finished/.test(await page.locator("#out").textContent()), "no Finished list (closed trades only count in the track record)");
   ok((await page.locator(".cl .note", { hasText: "Size:" }).count()) === 0, "no position size until you enter an account size");
+  await page.evaluate(() => { document.getElementById("mine").open = true; }); // settings are tucked in a closed box
   await page.fill("#acct", "10,000"); await page.fill("#riskP", "1"); await page.click("#sizeF button");
   const mgcLive = body.markets.find((m) => m.sym === "MGC=F").signals[0], perC = mgcLive.risk * 10, nC = Math.floor(100 / perC);
   const sizeTxt = await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().locator(".note", { hasText: "Size:" }).textContent();
@@ -568,7 +569,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(wantFut.length >= 2 && wantFut.every((x) => futSyms.includes(x)), "futures watch list always shows every futures market (MGC and MCL on the site)", futSyms.join() + " vs " + wantFut.join());
   const nb = page.locator("#out article.wc", { has: page.locator("[data-nch]") });
   if (await nb.count()) {
-    ok(/(Rising|Falling) .* line/.test(await nb.first().textContent()) && /away/.test(await nb.first().textContent()) && /(Passes her checklist|Doesn't pass her checklist)/.test(await nb.first().textContent()), "a future without a near line shows its nearest line, distance and why it isn't listed");
+    ok(/(Rising|Falling) .* line/.test(await nb.first().textContent()) && /away/.test(await nb.first().textContent()) && /(Passes her checklist|Not callout-quality yet)/.test(await nb.first().textContent()), "a future without a near line shows its nearest line, distance and why it isn't listed");
   }
   await page.unroute("**/api/trades**"); await page.route("**/api/trades**", (r) => { asked.push(decodeURIComponent(r.request().url())); r.fulfill({ json: body }); });
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
@@ -621,6 +622,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Track record: stocks" }).count() + await page.locator(".gi.none", { hasText: "No Valid Entries Yet" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
   await page.evaluate(() => localStorage.setItem("tl:tf", '"1H"')); await page.reload(); await page.waitForTimeout(500);
   ok(asked[asked.length - 1].includes("tf=4H"), "an old 1-hour choice on the phone is ignored: still the 4-hour chart");
+  await page.evaluate(() => { document.getElementById("mine").open = true; });
   await page.fill("#addIn", "amd"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
   ok(asked.some((u) => u.includes("AMD")), "adding a symbol rescans with it");
   await page.fill("#addIn", "gc"); await page.press("#addIn", "Enter"); await page.waitForTimeout(300);
@@ -922,7 +924,10 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.locator(".ofold [data-och]").first().click();
   ok((await page.locator(".ofold .chart").count()) === 0, "tapping again hides it");
   await page.unroute("**/api/trades**ct=**");
-  ok((await page.locator(".trk .lchart svg polyline").count()) === 1 && /Live callouts: 1 closed, dashed = open now/.test(tr), "the track record charts the live callouts (closed ones, open one dashed)");
+  if (!(await page.evaluate(() => !!folds.track))) await page.click("[data-fold=track]"); // the live chart is under Details
+  const trD = await page.locator(".trk").textContent();
+  ok((await page.locator(".trk .lchart svg polyline").count()) === 1 && /Live callouts: 1 closed, dashed = open now/.test(trD), "the track record charts the live callouts under Details (closed ones, open one dashed)");
+  await page.click("[data-fold=track]");
   const lc = await page.evaluate(() => [liveChart([{ status: "closed", exitR: 2, closedAt: 1 }, { status: "closed", exitR: -1, closedAt: 2 }]), liveChart([{ status: "open", nowR: 0.5 }])]);
   ok((lc[0].match(/<circle/g) || []).length === 2 && /var\(--gd\)/.test(lc[0]) && /starts when the first callout closes/.test(lc[1]), "live chart: one dot per closed callout, green when ahead; waits for the first closed one");
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
