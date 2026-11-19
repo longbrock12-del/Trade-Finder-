@@ -358,6 +358,7 @@ function events(S, from, last) {
   return out;
 }
 
+const g0 = (x) => (x == null ? null : x);
 const r2 = (x, a) => (x == null ? null : Number(x.toFixed(a)));
 const WARMUP = 30; // candles before the replay starts (ATR and swing points need some history)
 
@@ -523,6 +524,8 @@ function record(hist, w = {}) {
     totalR: r2(tot, 2), avgR: done.length ? r2(tot / done.length, 2) : null, bestR: rs.length ? Math.max(...rs) : null, worstR: rs.length ? Math.min(...rs) : null,
     maxDrawdownR: r2(dd, 2), openR: open ? open.nowR : null, ...sizes,
     recent: done.slice(-10).reverse().map((x) => ({ t: x.entryT, out: x.exitT, tf: x.tf, dir: x.dir, setup: x.setup, grade: x.grade, r: x.r, how: x.how })),
+    // list=1 (pattern study): every trade with what it looked like at entry.
+    ...(w.list ? { list: done.map((x) => ({ t: x.entryT, out: x.exitT, dir: x.dir, setup: x.setup, grade: x.grade, passed: x.passed, taps: x.taps, real: x.real, days: x.days, angle: x.angle, lineTF: x.lineTF, r: x.r, how: x.how, ...(x.feat || {}) })) } : {}),
   };
 }
 
@@ -647,6 +650,12 @@ function scanCore(hChart, dChart, opts = {}) {
       // against the trend, or choppy (rules.trend === "bounce": only bounces need the trend; breaks are reversals)
       if (useTrend && (trendMode !== "bounce" || e.kind === "bounce")) { const tr = trendAt(b[e.at].t); if (tr.dir !== (e.long ? "up" : "down")) return; }
       const c = callout(s, e, last, live, px);
+      if (opts.tradeList) { // pattern study (tests): what each trade looked like when it was taken
+        const tr = trendAt(b[e.at].t), from = c.from != null ? c.from : e.at, A = s.A[from] || s.A[e.at];
+        c.feat = { trend: tr.dir ? (tr.dir === (e.long ? "up" : "down") ? "with" : "against") : "none", riskAtr: c.riskRaw ? r2(c.riskRaw / A, 2) : null,
+          hourET: et(b[from].t).h, wd: et(b[from].t).wd, lineDays: g0(c.days), slopeAtr: r2(Math.abs(e.action.slope) / A, 3), late: !!c.late,
+          ext20: r2((b[from].c - b.slice(Math.max(0, from - 20), from + 1).reduce((a, q) => a + q.c, 0) / Math.min(21, from + 1)) / A * (e.long ? 1 : -1), 2) };
+      }
       if (useOnce && e.kind !== "bounce" && qualifies(c)) {
         const k = e.action.a.t + ":" + e.action.b.t;
         if (tried.has(k)) return;
@@ -772,7 +781,7 @@ function scanCore(hChart, dChart, opts = {}) {
   return {
     sym, name: meta.shortName || meta.longName || sym, kind: isFuture ? "futures" : "stocks",
     pointValue: POINT_VALUE[sym] || null, price: px(live), chg: r2(((b4[l4].c - prev) / prev) * 100, 2), digits: tick,
-    dailyBars: daily.length, trend: trendAt(now), ...(isFuture ? { spark: b4.slice(Math.max(0, l4 - 29), l4 + 1).map((q) => px(q.c)) } : {}), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), ...(trade ? { trade } : {}), record: opts.history === false ? null : record(hist, { cost: R.cost || 0 }),
+    dailyBars: daily.length, trend: trendAt(now), ...(isFuture ? { spark: b4.slice(Math.max(0, l4 - 29), l4 + 1).map((q) => px(q.c)) } : {}), signals: sigs.map(clean), watch: wl.slice(0, 4), ...(look ? { look } : {}), ...(trade ? { trade } : {}), record: opts.history === false ? null : record(hist, { cost: R.cost || 0, list: !!opts.tradeList }),
     // ?split=1 (tests): the same record for the older part of the replay and for the last 12 months.
     ...(opts.split ? { split: { older: record(hist, { cost: R.cost || 0, to: now - 365 * DAY }), last12: record(hist, { cost: R.cost || 0, from: now - 365 * DAY }) } } : {}),
   };
