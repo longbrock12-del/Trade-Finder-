@@ -729,7 +729,7 @@ function recentTrades() {
       '<b class="' + (x.exitR >= 0 ? "ok" : "bad") + '">' + pc(x.exitR) + "</b></div>" +
       '<div class="note mini">Entry <b>' + num(x.entry, d) + "</b> → Exit <b>" + num(exitPx, d) + "</b></div>" +
       '<div class="note mini">Why it exited: ' + whyExit(x, exitPx, d) + "</div>";
-    if (x.kind === "stocks") h += oe ? '<div class="note mini">As an option (est.): <b style="color:var(' + (oe.total >= 0 ? "--gd" : "--bad") + ')">' + pc(oe.total) + "</b> = move " + pc(oe.move, 2) + " · time decay " + pc(oe.decay, 2) + " · spread " + pc(oe.spread, 2) + (x.opt.contract ? " · " + esc(x.opt.type.toUpperCase()) + " " + x.opt.strike + " exp " + new Date(x.opt.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "") + "</div>"
+    if (x.kind === "stocks") h += oe ? '<div class="note mini">As an option (est.): <b style="color:var(' + (oe.total >= 0 ? "--gd" : "--bad") + ')">' + pc(oe.total) + "</b> = move " + pc(oe.move, 2) + " · time decay " + pc(oe.decay, 2) + " · spread " + pc(oe.spread, 2) + "</div>" + '<div class="note mini">Option: <b>' + optName(x) + "</b></div>"
       : '<div class="note mini">No option contract was saved for this one, so there\u2019s no option estimate.</div>';
     return { h, r: x.exitR, o: oe ? oe.total : null };
   });
@@ -746,12 +746,20 @@ function recentTrades() {
   return '<div class="c rtr">' + head + shown.map((x) => x.h).join("") + more + "</div>";
 }
 // An open stock trade's option, estimated at today's price (same model as Recent trades).
+// The option on a stock trade, written out ("BAC Dec 18 $50 put · bought at 1.85").
+function optName(x) {
+  const o = x.opt, exp = new Date(o.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return esc(show(x.sym)) + " " + exp + " $" + o.strike + " " + esc(o.type) + " · " + (o.manual ? "bought" : "priced") + " at " + Number(o.mid).toFixed(2);
+}
+// An open stock trade's option: the contract, always, and its estimate at today's price (same model as Recent
+// trades). The price comes from the scan, or from the trade's own tracked result when the scan doesn't have it.
 function openOpt(x, m) {
-  if (x.kind !== "stocks" || !x.opt || !m || !(m.price > 0)) return "";
-  const oe = optEst(x, m.price);
-  if (!oe) return "";
+  if (x.kind !== "stocks" || !x.opt) return "";
+  const price = m && m.price > 0 ? m.price : x.nowR != null && x.risk ? x.entry + (x.dir === "long" ? 1 : -1) * x.nowR * x.risk : null;
+  const oe = price != null ? optEst(x, price) : null;
   const pc = (v, d = 1) => (Math.abs(v) < 0.5 * Math.pow(10, -d) ? "0." + "0".repeat(d) + "%" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d) + "%");
-  return '<div class="note mini">As an option now (est.): <b style="color:var(' + (oe.total >= 0 ? "--gd" : "--bad") + ')">' + pc(oe.total) + "</b> = move " + pc(oe.move, 2) + " · time decay " + pc(oe.decay, 2) + " · spread " + pc(oe.spread, 2) + " · " + esc(x.opt.type.toUpperCase()) + " " + x.opt.strike + " at " + x.opt.mid + "</div>";
+  return '<div class="note mini">Option: <b>' + optName(x) + "</b></div>" +
+    (oe ? '<div class="note mini">As an option now (est.): <b style="color:var(' + (oe.total >= 0 ? "--gd" : "--bad") + ')">' + pc(oe.total) + "</b> = move " + pc(oe.move, 2) + " · time decay " + pc(oe.decay, 2) + " · spread " + pc(oe.spread, 2) + "</div>" : "");
 }
 function openTrades() {
   // A callout that's still in Get In Now isn't listed here too: it moves to tracking once it can't be entered
