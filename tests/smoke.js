@@ -827,6 +827,11 @@ async function alertTests() {
   H("tf:live").set("4H|SBUX|4H|3-touch break|short|99", JSON.stringify({ key: "SBUX|4H|3-touch break|short|99", view: "4H", sym: "SBUX", kind: "stocks", dir: "short", entry: 100, stop: 101, risk: 1, t: 99, status: "open", rv: "3" }));
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   ok(!H("tf:live").has("4H|SBUX|4H|3-touch break|short|99"), "the open SBUX trade is deleted from tracking, even though it passed the re-check");
+  H("tf:live").set("4H|BAC|4H|break & retest|short|1794940200", JSON.stringify({ key: "BAC|4H|break & retest|short|1794940200", view: "4H", sym: "BAC", kind: "stocks", tf: "4H", setup: "break & retest", dir: "short", entry: 49.45, stop: 50.974, risk: 1.524, t: 1794940200, status: "closed", exitR: 0.22, how: "take profit", closedAt: 1, rv: "3" }));
+  db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+  const bacR = JSON.parse(H("tf:live").get("4H|BAC|4H|break & retest|short|1794940200"));
+  ok(bacR.status === "open" && bacR.entry === 49.45 && bacR.exitR == null && !bacR.how && bacR.reopened, "the BAC short that closed on a fake target line is reopened once at the same entry", JSON.stringify(bacR));
+  H("tf:live").delete("4H|BAC|4H|break & retest|short|1794940200");
   { const stSig = { tf: "4H", setup: "break & retest", grade: "A+", dir: "long", entry: 100, stop0: 98, stop: 98, risk: 2, t: NOW - 1800, status: "open", nowR: 0.1, target: { price: 105, tf: "Daily", r: 2.5 } };
     const keepSite = site; site = { scan: { markets: [{ sym: "XYZ", kind: "stocks", price: 100.2, signals: [stSig], watch: [] }] }, options: { price: 100.1, contracts: [{ contract: "XYZ261218C00100000", type: "call", strike: 100, expiry: "2026-12-18", dte: 31, mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, iv: 30, spreadPct: 3, atStop: 2.9 }] } };
     db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site = keepSite;

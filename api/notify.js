@@ -100,6 +100,13 @@ module.exports = async function handler(req, res) {
     let exits = 0;
     let dropped = 0;
     for (const [lk, x] of Object.entries(await S.hgetallJSON("tf:live"))) {
+      // One-time fix: the BAC short closed early on a target "line" that wasn't a real trendline (fixed since).
+      // Today's rules still have it open at the same entry, so it goes back to open and keeps running.
+      if (x.key === "BAC|4H|break & retest|short|1794940200" && x.status === "closed" && x.how === "take profit" && !x.reopened) {
+        ["exitR", "exitPx", "closedAt", "how", "exitTo"].forEach((k) => delete x[k]);
+        Object.assign(x, { status: "open", reopened: true });
+        await S.hsetJSON("tf:live", lk, x);
+      }
       if (x.status !== "open") continue;
       // One-time cleanup: the SBUX short from the false 3rd tap (the break candle) is taken off tracking for good.
       if (x.sym === "SBUX") { await S.hdel("tf:live", lk); dropped++; continue; }
