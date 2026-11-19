@@ -12,9 +12,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Trade Finder">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#050605">
+<meta name="theme-color" content="#0b0f0e">
 <style>
-:root{color-scheme:dark;--bg:#050605;--card:#0e1110;--tx:#d3e6d9;--mu:#71857a;--bd:#1a231e;--ac:#e0a22a;--gd:#2fd47a;--bad:#f0565a;--warn:#e0a22a;--soft:#141a17;--line:#e0a22a;--safe:#e0a22a}
+:root{color-scheme:dark;--bg:#0b0f0e;--card:#131a18;--tx:#dde8e3;--mu:#839690;--bd:#24302c;--ac:#34d399;--on:#04140c;--gd:#34d399;--bad:#f26b6b;--warn:#e7a93b;--soft:#1a2320;--line:#e7a93b;--safe:#e7a93b}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 "IBM Plex Sans",Inter,-apple-system,system-ui,Segoe UI,Roboto,sans-serif;font-feature-settings:"tnum" 1;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
 button,input{font-family:inherit;font-size:inherit;color:inherit}button{cursor:pointer;touch-action:manipulation}
@@ -122,6 +122,23 @@ h2 .btn[data-fold=live]{color:var(--gd)!important;border-color:var(--gd)}
 details[open] .setsum{color:var(--tx);margin-bottom:6px}
 .trk .big{font-size:22px}
 .note.mini b.on{font-family:inherit;font-weight:600}
+
+/* Palette A (graphite + mint): one accent for buttons and tabs; green/red = money and direction; amber = warnings and S/R. */
+.tabs button.on,.btn.on,.chips button.on{background:var(--ac)!important;color:var(--on)!important;border-color:transparent!important;box-shadow:0 4px 14px rgba(52,211,153,.22)!important}
+h2{color:var(--mu)}.ohead,.setsum{color:var(--tx)}.stick{background:var(--bg)}
+.note.stn{background:rgba(52,211,153,.08)}
+/* Eye-catching, in a few places only. */
+@keyframes glow{0%,100%{box-shadow:0 0 0 1px rgba(52,211,153,.55),0 0 14px rgba(52,211,153,.18)}50%{box-shadow:0 0 0 1px rgba(52,211,153,.9),0 0 26px rgba(52,211,153,.38)}}
+.golive,#out>.golive{border-color:transparent!important;animation:rise .35s ease-out both,glow 2.6s ease-in-out .35s infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(52,211,153,.7)}80%,100%{box-shadow:0 0 0 7px rgba(52,211,153,0)}}
+.ldot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gd);margin:0 8px 1px 2px;vertical-align:middle;animation:ping 1.8s ease-out infinite}
+@keyframes flup{0%{background:rgba(52,211,153,.30)}100%{background:var(--card)}}@keyframes fldn{0%{background:rgba(242,107,107,.30)}100%{background:var(--card)}}
+.mcard.flup{animation:flup 1.4s ease-out}.mcard.fldn{animation:fldn 1.4s ease-out}
+.trk .big.ok{text-shadow:0 0 18px rgba(52,211,153,.45)}.trk .big.bad{text-shadow:0 0 18px rgba(242,107,107,.4)}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+#out>*{animation:rise .35s ease-out both}#out>*:nth-child(2){animation-delay:.04s}#out>*:nth-child(3){animation-delay:.08s}#out>*:nth-child(4){animation-delay:.12s}#out>*:nth-child(n+5){animation-delay:.16s}
+.tabs button,.chips button{transition:background .25s,color .25s,box-shadow .25s}
+@media (prefers-reduced-motion:reduce){.golive,.ldot,.mcard.flup,.mcard.fldn,#out>*{animation:none!important}.golive{box-shadow:0 0 0 1px rgba(52,211,153,.7),0 0 16px rgba(52,211,153,.25)}}
 </style></head>
 <body><div class="w">
 <header>
@@ -652,11 +669,14 @@ function marketStrip() {
     if (!pts || pts.length < 2) return "";
     const lo = Math.min(...pts), hi = Math.max(...pts), W = 64, H = 22, x = (i) => (i / (pts.length - 1)) * W, y = (v) => H - 2 - ((v - lo) / (hi - lo || 1)) * (H - 4);
     const col = pts[pts.length - 1] >= pts[0] ? "var(--gd)" : "var(--bad)";
-    return '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true"><polyline fill="none" stroke="' + col + '" stroke-width="1.6" stroke-linejoin="round" points="' + pts.map((v, i) => x(i).toFixed(1) + "," + y(v).toFixed(1)).join(" ") + '"/></svg>';
+    const P = pts.map((v, i) => x(i).toFixed(1) + "," + y(v).toFixed(1)).join(" "), gid = "sg" + (++sparkN);
+    return '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true"><defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + col + '" stop-opacity=".35"/><stop offset="1" stop-color="' + col + '" stop-opacity="0"/></linearGradient></defs>' +
+      '<polygon fill="url(#' + gid + ')" points="0,' + H + " " + P + " " + W + "," + H + '"/><polyline fill="none" stroke="' + col + '" stroke-width="1.6" stroke-linejoin="round" points="' + P + '"/></svg>';
   };
   return '<div class="mstrip">' + fm.map((m) => {
-    const up = m.chg >= 0, tr = m.trend && m.trend.dir;
-    return '<div class="mcard"><div class="mtop"><b>' + esc(show(m.sym)) + "</b>" + (tr ? '<span class="' + (tr === "up" ? "ok" : "bad") + '" title="Her top-down trend">' + (tr === "up" ? "↑" : "↓") + "</span>" : '<span class="mu" title="No clear trend">–</span>') + "</div>" +
+    const up = m.chg >= 0, tr = m.trend && m.trend.dir, was = lastPx[m.sym], fl = was != null && m.price !== was ? (m.price > was ? " flup" : " fldn") : "";
+    lastPx[m.sym] = m.price;
+    return '<div class="mcard' + fl + '"><div class="mtop"><b>' + esc(show(m.sym)) + "</b>" + (tr ? '<span class="' + (tr === "up" ? "ok" : "bad") + '" title="Her top-down trend">' + (tr === "up" ? "↑" : "↓") + "</span>" : '<span class="mu" title="No clear trend">–</span>') + "</div>" +
       '<div class="mpx">' + num(m.price, m.digits) + '</div><div class="mbot"><span class="' + (up ? "ok" : "bad") + '">' + (up ? "+" : "−") + Math.abs(m.chg).toFixed(2) + "%</span>" + spark(m.spark) + "</div></div>";
   }).join("") + "</div>";
 }
@@ -667,7 +687,7 @@ function renderCalls() {
   const live = callouts().filter(({ s }) => canEnter(s));
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
-    (folds.live ? "▾ " : "▸ ") + "Get In Now (" + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s)).join("") : "") : "";
+    (folds.live ? "▾ " : "▸ ") + '<span class="ldot"></span>Get In Now (' + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s).replace('<article class="c cl', '<article class="c cl golive')).join("") : "") : "";
   return marketStrip() + trackBox() + getInBox(live) + bar + openTrades() + recentTrades(); // fresh callouts first, already-running ones under them, then finished ones
 }
 
@@ -789,7 +809,7 @@ function openTrades() {
   // One box: the title, the newest open trade always showing, and a button for the rest.
   const note = '<div class="note mini">Already running callout(s) the site sent earlier. Do not enter into the trade(s) if it’s too far from the entry points. <b>*ENTER AT OWN RISK*</b></div>';
   const more = rows.length > 1 ? '<button class="btn omore" data-fold="openLive" aria-expanded="' + open + '">' + (open ? "▴ Show less" : "▾ Show " + (rows.length - 1) + " more") + "</button>" : "";
-  return '<div class="c ofold"><div class="ohead">Open (' + ot.length + ') · tracking · <span class="' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + "%</span></div>" +
+  return '<div class="c ofold"><div class="ohead"><span class="ldot"></span>Open (' + ot.length + ') · tracking · <span class="' + (tot >= 0 ? "ok" : "bad") + '">' + (tot >= 0 ? "+" : "−") + Math.abs(tot).toFixed(1) + "%</span></div>" +
     rows[0].html + (open ? rows.slice(1).map((x) => x.html).join("") : "") + more + note + "</div>";
 }
 
@@ -1108,7 +1128,7 @@ $("add").addEventListener("submit", (e) => {
 
 // Alerts: phone alerts (Web Push) when the site's database is set up - they arrive even when the site is closed.
 // Otherwise (or if the phone can't), alerts only work while the page is open.
-let pushInfo = null; // GET /api/push: { configured, publicKey, live }
+let pushInfo = null, sparkN = 0; const lastPx = {}; // sparkline gradient ids; last prices, to flash a tile when its price changes // GET /api/push: { configured, publicKey, live }
 async function pushSub() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
   const reg = await navigator.serviceWorker.ready;
