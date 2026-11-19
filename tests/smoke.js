@@ -297,6 +297,8 @@ async function scanTests() {
   const askedF = [], fg = fakeYahoo((x) => YF[x]), spyF = async (u) => { askedF.push(decodeURIComponent(String(u))); return fg(u); };
   const fs2 = await call("api/trades.js", "/api/trades?stats=1", spyF);
   ok(fs2.status === 200 && fs2.body.years === 2 && fs2.body.markets.length === 3 && fs2.body.markets.every((m) => m.record && !m.signals) && askedF.some((u) => /interval=60m&range=2y/.test(u)), "/api/trades?stats=1: each future's 2-year track record", fs2.body.markets.map((m) => m.sym).join());
+  const pt = await call("api/scan.js", "/api/scan?pattern=1&setups=all&years=0.5", fakeYahoo((x) => YF[x] || "AAPL"), AMZN_NOW * 1000);
+  ok(pt.status === 200 && pt.body.pattern && pt.body.pattern.all && pt.body.pattern.all.overall.n > 0 && pt.body.pattern.all.trend && !pt.body.list, "pattern=1: trades grouped by their entry details, per setup (pattern study)", JSON.stringify(pt.body.pattern && pt.body.pattern.all && pt.body.pattern.all.overall));
   const sx = await call("api/scan.js", "/api/scan?exit=htf&years=0.5", fakeYahoo((x) => YF[x] || "AAPL"), AMZN_NOW * 1000);
   ok(sx.status === 200 && sx.body.test.exit === "htf" && sx.body.record && sx.body.record.trades >= 0, "stocks test: ?exit=htf runs the stock scan with the bigger-timeframe target exit", JSON.stringify(sx.body.test || sx.body));
   { const TT = require(path.join(ROOT, "api/_trendlines.js")), cc = TT.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }).signals.slice(-1)[0].chart;
