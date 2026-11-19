@@ -81,25 +81,25 @@ async function handler(req, res) {
   // ?setups=break,retest,bounce (or all): which of her setups stocks take (the site: break).
   // ?exit=htf (take profit at the next bigger-timeframe trendline, the live exit) / tp (at a nearby S/R level) / trail (safety line only).
   // ?cost=0.1 (R taken off every trade: commissions, slippage, option spreads) and ?split=1 (older year vs last 12 months).
-  const cost = num("cost", 0, 1), split = sp.get("split") === "1", real = sp.get("real") === "1", list = sp.get("list") === "1"; // list=1: every trade with its entry details (pattern study); real=1: target lines must be real trendlines
+  const cost = num("cost", 0, 1), split = sp.get("split") === "1", real = sp.get("real") === "1", listOn = sp.get("list") === "1"; // list=1: every trade with its entry details (pattern study); real=1: target lines must be real trendlines
   const ex = sp.get("exit"), exit = ["htf", "htfsr", "sr", "tp", "trail"].includes(ex) ? ex : undefined;
   const st = sp.get("setups"), setups = st == null ? undefined : st === "all" ? null : st.split(",").filter((x) => ["break", "retest", "bounce"].includes(x));
   const rules = touch != null || gap != null || short != null || hold != null || pivot != null || trendOff || trendAll || onceOn || setups !== undefined || exit !== undefined || cost != null || real ? { touch, gap: gap == null ? null : Math.round(gap), short, hold: hold == null ? null : Math.round(hold), pivot: pivot == null ? null : Math.round(pivot), ...(trendOff ? { trend: false } : trendAll ? { trend: true } : {}), ...(onceOn ? { once: true } : {}), ...(setups !== undefined ? { setups } : {}), ...(exit !== undefined ? { exit: exit === "trail" ? null : exit } : {}), ...(cost != null ? { cost } : {}), ...(real ? { realLines: true } : {}) } : null;
   // Test mode replays 2 years by default (?years=0.5 / 1 / 2); ?market=futures tests a basket of futures instead of the stocks.
   const yr = sp.get("years"), years = yr == null ? 2 : Number(yr), range = { 0.5: "6mo", 1: "1y", 2: "2y" }[years];
   const futTest = sp.get("market") === "futures";
-  if ((rules || yr != null || futTest || split || list) && !range) return send(res, 400, 0, { error: "years must be 0.5, 1 or 2" });
-  const testMode = !!(rules || yr != null || futTest || split || list), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? range : "6mo";
+  if ((rules || yr != null || futTest || split || listOn) && !range) return send(res, 400, 0, { error: "years must be 0.5, 1 or 2" });
+  const testMode = !!(rules || yr != null || futTest || split || listOn), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? range : "6mo";
   if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold) || Number.isNaN(pivot) || Number.isNaN(cost))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles), pivot 1-5 (candles), cost 0-1 (R)" });
   let next = 0;
   async function worker() {
     while (next < list.length) {
       const sym = list[next++];
       try {
-        const m = { ...scan(...(await both(sym, hourRange)), { sym, tfs, rules: rules || undefined, split, tradeList: list }), sym };
+        const m = { ...scan(...(await both(sym, hourRange)), { sym, tfs, rules: rules || undefined, split, tradeList: listOn }), sym };
         if (m.error) { failed.push(sym); continue; }
         if (m.record) recs.push({ sym, ...m.record });
-        if (list && m.record && m.record.list) m.record.list.forEach((x) => lists.push({ sym, ...x }));
+        if (listOn && m.record && m.record.list) m.record.list.forEach((x) => lists.push({ sym, ...x }));
         if (m.split) { older.push({ sym, ...m.split.older }); last12.push({ sym, ...m.split.last12 }); }
         if (m.signals.length || m.watch.length) found.push(m);
       } catch (e) { failed.push(sym); }
@@ -109,7 +109,7 @@ async function handler(req, res) {
   const scanned = list.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
   const R = rules || {};
-  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["retest"]) : R.setups || "all", exit: R.exit === undefined ? "htf" : R.exit || "trail", cost: R.cost || 0, realLines: !!R.realLines }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}), ...(list ? { list: lists } : {}) });
+  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["retest"]) : R.setups || "all", exit: R.exit === undefined ? "htf" : R.exit || "trail", cost: R.cost || 0, realLines: !!R.realLines }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}), ...(listOn ? { list: lists } : {}) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 
