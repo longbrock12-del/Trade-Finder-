@@ -830,6 +830,7 @@ async function alertTests() {
   H("tf:live").set("4H|BAC|4H|break & retest|short|1794940200", JSON.stringify({ key: "BAC|4H|break & retest|short|1794940200", view: "4H", sym: "BAC", kind: "stocks", tf: "4H", setup: "break & retest", dir: "short", entry: 49.45, stop: 50.974, risk: 1.524, t: 1794940200, status: "closed", exitR: 0.22, how: "take profit", closedAt: 1, rv: "3" }));
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   const bacR = JSON.parse(H("tf:live").get("4H|BAC|4H|break & retest|short|1794940200"));
+  ok(bacR.opt && bacR.opt.mid === 1.85 && bacR.opt.strike === 50 && bacR.opt.type === "put" && bacR.opt.expiry === "2026-12-18", "the BAC trade gets the option you took on it (Dec 18 $50 put at 1.85)", JSON.stringify(bacR.opt));
   ok(bacR.status === "open" && bacR.entry === 49.45 && bacR.exitR == null && !bacR.how && bacR.reopened, "the BAC short that closed on a fake target line is reopened once at the same entry", JSON.stringify(bacR));
   H("tf:live").delete("4H|BAC|4H|break & retest|short|1794940200");
   { const stSig = { tf: "4H", setup: "break & retest", grade: "A+", dir: "long", entry: 100, stop0: 98, stop: 98, risk: 2, t: NOW - 1800, status: "open", nowR: 0.1, target: { price: 105, tf: "Daily", r: 2.5 } };
@@ -885,6 +886,8 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   const bf = await page.evaluate(() => (document.querySelector(".rtr") || {}).textContent || "");
   ok(/price reached the Weekly trendline at 2,?010(\.0)? \(drawn from/.test(bf), "older take-profit trades look up which trendline they hit", bf.slice(0, 200));
   await page.evaluate(() => { pushInfo.live = pushInfo.live.filter((x) => x.t !== 555); render(); });
+  const oo = await page.evaluate(() => openOpt({ kind: "stocks", entry: 49.45, t: Math.floor(Date.now() / 1000) - 2 * 86400, opt: { type: "put", strike: 50, mid: 1.85, delta: -0.576, gamma: 0.1044, theta: -0.023, spreadPct: 3.6, atStop: 1.09 } }, { price: 48.91 }).replace(/<[^>]+>/g, ""));
+  ok(/^As an option now \(est\.\): \+\d+\.\d% = move \+\d+\.\d\d% · time decay −0\.\d\d% · spread −0\.\d\d% · PUT 50 at 1\.85$/.test(oo), "tracking shows an open stock trade's option estimate at today's price", oo);
   const oe = await page.evaluate(() => optEst({ entry: 100, t: 0, closedAt: 3 * 86400 * 1000, opt: { mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, spreadPct: 3, atStop: 2.9 } }, 103));
   ok(oe && Math.abs(oe.move - (0.6 * 3 + 0.5 * 0.05 * 9) / 1.1) < 1e-6 && Math.abs(oe.decay + (0.06 * 3) / 1.1) < 1e-6 && Math.abs(oe.spread + 0.12 / 1.1) < 1e-6 && Math.abs(oe.total - (oe.move + oe.decay + oe.spread)) < 1e-6, "stock option estimate: the move (delta, gamma) minus time decay for the days held and the spread, as account % at 1% risk", JSON.stringify(oe));
   const box = page.locator(".ofold");

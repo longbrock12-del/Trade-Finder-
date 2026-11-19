@@ -745,6 +745,14 @@ function recentTrades() {
   const more = rows.length > 3 ? '<button class="btn omore" data-fold="recent" aria-expanded="' + open + '">' + (open ? "▴ Show less" : "▾ Show " + (rows.length - 3) + " more") + "</button>" : "";
   return '<div class="c rtr">' + head + shown.map((x) => x.h).join("") + more + "</div>";
 }
+// An open stock trade's option, estimated at today's price (same model as Recent trades).
+function openOpt(x, m) {
+  if (x.kind !== "stocks" || !x.opt || !m || !(m.price > 0)) return "";
+  const oe = optEst(x, m.price);
+  if (!oe) return "";
+  const pc = (v, d = 1) => (Math.abs(v) < 0.5 * Math.pow(10, -d) ? "0." + "0".repeat(d) + "%" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d) + "%");
+  return '<div class="note mini">As an option now (est.): <b style="color:var(' + (oe.total >= 0 ? "--gd" : "--bad") + ')">' + pc(oe.total) + "</b> = move " + pc(oe.move, 2) + " · time decay " + pc(oe.decay, 2) + " · spread " + pc(oe.spread, 2) + " · " + esc(x.opt.type.toUpperCase()) + " " + x.opt.strike + " at " + x.opt.mid + "</div>";
+}
 function openTrades() {
   // A callout that's still in Get In Now isn't listed here too: it moves to tracking once it can't be entered
   // (0.5R past entry, through the stop, or a day old).
@@ -756,7 +764,7 @@ function openTrades() {
     const r = m && x.risk ? (sign * (m.price - x.entry)) / x.risk : x.nowR;
     const stop = x.stopNow != null ? x.stopNow : x.stop, act = esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short"); // a status, not an order: these are already running
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · entry " + num(x.entry, d) + (stop != null ? " · stop " + num(stop, d) : "") + "</span></span>" +
-      '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + tradeChart(x) };
+      '<b class="' + (r >= 0 ? "ok" : "bad") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + openOpt(x, m) + tradeChart(x) };
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
   // One box: the title, the newest open trade always showing, and a button for the rest.

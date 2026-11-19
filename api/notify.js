@@ -107,6 +107,12 @@ module.exports = async function handler(req, res) {
         Object.assign(x, { status: "open", reopened: true });
         await S.hsetJSON("tf:live", lk, x);
       }
+      // The option contract you took on it (BAC Dec 18 $50 put at 1.85; the site didn't save one back then).
+      // Delta, gamma, time decay and spread from the Nov 19 Cboe quote, with delta worked back to the 49.45 entry.
+      if (x.key === "BAC|4H|break & retest|short|1794940200" && !x.opt) {
+        x.opt = { contract: "BAC261218P00050000", type: "put", strike: 50, expiry: "2026-12-18", dte: 31, mid: 1.85, delta: -0.576, gamma: 0.1044, theta: -0.023, iv: 26.5, spreadPct: 3.6, atStop: 1.09, price: 49.45, manual: true };
+        await S.hsetJSON("tf:live", lk, x);
+      }
       if (x.status !== "open") continue;
       // One-time cleanup: the SBUX short from the false 3rd tap (the break candle) is taken off tracking for good.
       if (x.sym === "SBUX") { await S.hdel("tf:live", lk); dropped++; continue; }
