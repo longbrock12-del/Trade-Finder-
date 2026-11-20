@@ -18,6 +18,12 @@ const BUCKETS = {
   hourET: (x) => (x.hourET == null ? "?" : x.hourET >= 18 || x.hourET < 2 ? "a 6pm-2am" : x.hourET < 9 ? "b 2-9am" : x.hourET < 12 ? "c 9am-noon" : x.hourET < 16 ? "d noon-4pm" : "e 4-6pm"),
   weekday: (x) => x.wd,
   lateSafety: (x) => (x.late ? "safety line formed after" : "safety line at break"),
+  signalCandle: (x) => (x.bodyAtr == null ? "?" : x.bodyAtr < 0 ? "a moved against the trade" : x.bodyAtr < 0.5 ? "b small (<0.5 ATR)" : x.bodyAtr < 1 ? "c medium (0.5-1 ATR)" : "d big (1+ ATR)"),
+  closedAt: (x) => (x.closePos == null ? "?" : x.closePos < 0.33 ? "a weak end" : x.closePos < 0.67 ? "b middle" : "c strong end"),
+  coilBefore: (x) => (x.squeezeAtr == null ? "?" : x.squeezeAtr < 2 ? "a tight (<2 ATR)" : x.squeezeAtr < 3.5 ? "b normal (2-3.5 ATR)" : "c wide (3.5+ ATR)"),
+  approach: (x) => (x.approachAtr == null ? "?" : x.approachAtr < -1 ? "a ran the other way >1 ATR" : x.approachAtr < 0 ? "b drifted the other way" : x.approachAtr < 1 ? "c drifted the trade's way" : "d ran the trade's way >1 ATR"),
+  pressure: (x) => (x.hugs == null ? "?" : x.hugs <= 1 ? "a 0-1 candles near the line" : x.hugs <= 4 ? "b 2-4 candles" : "c 5+ candles hugging it"),
+  retestGap: (x) => (x.retestGap == null ? "n/a" : x.retestGap <= 3 ? "a 1-3 candles" : x.retestGap <= 8 ? "b 4-8 candles" : "c 9+ candles"),
 };
 function stats(arr) {
   const n = arr.length, w = arr.filter((x) => x.r > 0).length, tot = arr.reduce((a, x) => a + x.r, 0);

@@ -655,6 +655,16 @@ function scanCore(hChart, dChart, opts = {}) {
         c.feat = { trend: tr.dir ? (tr.dir === (e.long ? "up" : "down") ? "with" : "against") : "none", riskAtr: c.riskRaw ? r2(c.riskRaw / A, 2) : null,
           hourET: et(b[from].t).h, wd: et(b[from].t).wd, lineDays: g0(c.days), slopeAtr: r2(Math.abs(e.action.slope) / A, 3), late: !!c.late,
           ext20: r2((b[from].c - b.slice(Math.max(0, from - 20), from + 1).reduce((a, q) => a + q.c, 0) / Math.min(21, from + 1)) / A * (e.long ? 1 : -1), 2) };
+        // What price did right before the entry (the signal candle and the candles leading into it).
+        const k = e.at, q = b[k], sg = e.long ? 1 : -1, rng = q.h - q.l || 1e-9, pre = b.slice(Math.max(0, k - 10), k);
+        Object.assign(c.feat, {
+          bodyAtr: r2((sg * (q.c - q.o)) / A, 2),                                  // signal candle: + = moved the trade's way
+          closePos: r2(e.long ? (q.c - q.l) / rng : (q.h - q.c) / rng, 2),            // 1 = closed at the trade's end of the candle
+          squeezeAtr: pre.length ? r2((Math.max(...pre.map((x) => x.h)) - Math.min(...pre.map((x) => x.l))) / A, 2) : null, // range of the 10 candles before
+          approachAtr: k >= 6 ? r2((sg * (b[k - 1].c - b[k - 6].c)) / A, 2) : null, // last 5 candles: + = already moving the trade's way
+          hugs: pre.filter((x, j) => Math.abs(x.c - val(e.action, s.x0 + k - pre.length + j)) <= 0.5 * A).length, // candles closing near the line
+          retestGap: e.brk != null ? k - e.brk : null,                               // candles from the break to the retest
+        });
       }
       if (useOnce && e.kind !== "bounce" && qualifies(c)) {
         const k = e.action.a.t + ":" + e.action.b.t;
