@@ -613,52 +613,21 @@ function liveChart(lv) {
   if (tail != null) g += '<line x1="' + X(pts.length - 1) + '" y1="' + Y(end) + '" x2="' + X(pts.length) + '" y2="' + Y(tail) + '" stroke="' + col + '" stroke-width="2" stroke-dasharray="4 3"/>';
   return '<div class="lchart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Growth of the live callouts">' + g + '</svg><div class="note mini">Live callouts: ' + done.length + " closed" + (anyOpen ? ", dashed = open now" : "") + "</div></div>";
 }
+// The Live record: the callouts the site actually sent, for this market type (stock trades with an option count
+// the option's result). The 2-year replays still run behind the scenes (the 2-yr tags, the Rules tab).
 function trackBox() {
-  const pct = (r) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%", Rs = (r, d = 1) => (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(d) + "%";
-  const since = (t) => (t ? new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
-  let sum, rows = "", name;
-  if (kind === "futures") {
-    const fm = data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades);
-    if (!fm.length) return "";
-    sum = fm.reduce((a, m) => ({ trades: a.trades + m.record.trades, wins: a.wins + m.record.wins, totalR: a.totalR + m.record.totalR, from: Math.min(a.from, m.record.from) }), { trades: 0, wins: 0, totalR: 0, from: Infinity });
-    name = "futures";
-    rows = fm.map((m) => { const r = m.record; return '<div class="trr"><b>' + esc(show(m.sym)) + "</b><span>" + r.trades + " trades · " + Math.round((100 * r.wins) / r.trades) + '% wins</span><b class="' + (r.totalR >= 0 ? "ok" : "bad") + '">' + pct(r.totalR) + "</b></div>" +
-      '<div class="note" style="margin:0 0 6px">Avg ' + Rs(r.avgR, 2) + " per trade · best " + Rs(r.bestR) + " · worst " + Rs(r.worstR) + " · deepest dip " + Rs(r.maxDrawdownR) + (r.openR != null ? " · open trade now " + Rs(r.openR) : "") + "</div>"; }).join("");
-  } else {
-    const r = data.stockRecord;
-    if (!r || !r.trades) return "";
-    sum = r; name = "stocks";
-    const list = (l) => l.map((x) => esc(x.sym) + " " + Rs(x.totalR)).join(" · ");
-    rows = '<div class="note" style="margin:0 0 4px">All ' + r.stocks + " scanned stocks added up. Avg " + Rs(r.avgR, 2) + " per trade.</div>" +
-      '<div class="note" style="margin:0 0 4px"><b class="ok">Best:</b> ' + list(r.best) + '</div><div class="note" style="margin:0 0 6px"><b class="bad">Worst:</b> ' + list(r.worst) + "</div>";
-  }
-  const open = !!folds.track;
-  // Live record: callouts saved as they were sent (phone alerts), for this chart and market type.
-  // (stock trades with an option count the option's result: time decay and spread taken out)
+  const pct = (r) => (Math.abs(r) < 0.05 ? "0.0%" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%");
+  const since = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const name = kind === "futures" ? "futures" : "stocks";
   const lv = ((pushInfo && pushInfo.live) || []).filter((x) => (x.view || "4H") === chartTF() && x.kind === kind)
     .map((x) => { const m = data.markets.find((q) => q.sym === x.sym && !q.error), r = tradeR(x, m); return x.status === "closed" ? { ...x, exitR: r } : { ...x, nowR: r }; });
-  const lvDone = lv.filter((x) => x.status === "closed" && x.exitR != null), lvR = lvDone.reduce((a, x) => a + x.exitR, 0);
-  const liveLine = lv.length ? '<div class="note" style="margin-top:4px"><b>Live record</b> since ' + since(Math.min(...lv.map((x) => x.t))) + ": " + lvDone.length + " closed · " +
-    (lvDone.length ? Math.round((100 * lvDone.filter((x) => x.exitR > 0).length) / lvDone.length) + '% wins · <b class="' + (lvR >= 0 ? "ok" : "bad") + '">' + (lvR >= 0 ? "+" : "−") + Math.abs(lvR).toFixed(1) + "%</b> · " : "") + (lv.length - lvDone.length) + " open</div>" : "";
-  const liveGraph = lv.length ? liveChart(lv) : "";
-  // Wins vs losses, in plain words. Sums across the futures markets (or all scanned stocks).
-  const parts = kind === "futures" ? data.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record) : [data.stockRecord];
-  const add = (k) => parts.reduce((a, r) => a + (r[k] || 0), 0), nW = add("nWin"), nL = add("nLoss");
-  const days = (h) => { const d = h / 24; return d < 1 ? "less than a day" : "about " + (d < 1.5 ? "1 day" : Math.round(d) + " days"); };
-  const bs = {};
-  parts.forEach((r) => Object.entries(r.bySetup || {}).forEach(([k, v]) => { const b = (bs[k] = bs[k] || { trades: 0, wins: 0, totalR: 0 }); b.trades += v.trades; b.wins += v.wins; b.totalR += v.totalR; }));
-  const NAMES = { break: "Breaks", retest: "Break & retest", bounce: "Bounces" };
-  const bySetup = Object.keys(bs).length ? '<div class="wl"><div class="st">By setup (she says to track these separately)</div>' + ["break", "retest", "bounce"].filter((k) => bs[k]).map((k) =>
-    "<div>" + NAMES[k] + ": " + bs[k].trades + " trades · " + Math.round((100 * bs[k].wins) / bs[k].trades) + '% wins · <b class="' + (bs[k].totalR >= 0 ? "ok" : "bad") + '">' + Rs(bs[k].totalR) + "</b></div>").join("") + "</div>" : "";
-  const sizes = nW && nL ? '<div class="wl"><div class="st">How the wins and losses look</div>' +
-    "<div>Average win <b class=\"ok\">+" + (add("winSum") / nW).toFixed(1) + "%</b> · average loss <b class=\"bad\">−" + (add("lossSum") / nL).toFixed(1) + "%</b></div>" +
-    "<div>Wins are <b>" + (add("winSum") / nW / (add("lossSum") / nL)).toFixed(1) + "×</b> bigger than losses</div>" +
-    "<div>For every $1 lost, <b>$" + (add("winSum") / add("lossSum")).toFixed(2) + "</b> was made</div>" +
-    "<div>Winners held " + days(add("winHrs") / nW) + ", losers " + days(add("lossHrs") / nL) + "</div>" +
-    '<div class="note" style="margin-top:4px">% = what the account made or lost, risking 1% on each trade. If you risk $100 a trade, the average win is about $' + Math.round((100 * add("winSum")) / nW) + " and the average loss about $" + Math.round((100 * add("lossSum")) / nL) + ".</div></div>" : "";
-  return '<div class="c trk"><div class="top"><div><div class="st">Track record: ' + name + ", since " + since(sum.from) + '</div><div class="big ' + (sum.totalR >= 0 ? "ok" : "bad") + '">' + pct(sum.totalR) + '</div><div class="note" style="margin-top:0">at 1% risk per trade · ' +
-    sum.trades + " trades · " + Math.round((100 * sum.wins) / sum.trades) + "% wins</div>" + liveLine + '</div><button class="btn" data-fold="track" aria-expanded="' + open + '">' + (open ? "Less" : "Details") + "</button></div>" +
-    (open ? '<div style="margin-top:8px">' + liveGraph + sizes + bySetup + rows + '<div class="note">How this is worked out: the same rules replayed over the last ' + (kind === "futures" ? (data.markets.some((m) => m.record2y) ? "2 years" : "6 months") : data.stockRecord2y ? "2 years" : "6 months") + ' of prices. Every callout is taken whose line passes 3 of 4 checklist rules (always 3+ taps) and has at least a week of history. Callouts skipped as too far from the safety line, or with no safety line, aren\'t taken. One position per market: a newer callout replaces the one you\'re in. Otherwise you exit when the stop order just past the safety line is hit, or a candle closes through the safety line. Results are what the account would have made risking 1% on each trade (at 2% risk, double them). No commissions, slippage or contract rolls, and stock trades are measured on the stock, not the option. Past results don\'t promise future ones.</div></div>' : "") + "</div>";
+  if (!lv.length) return '<div class="c trk"><div class="st">Live record: ' + name + '</div><div class="note" style="margin-top:2px">No ' + name + " callouts sent yet. Each one the site sends shows up here as it plays out.</div></div>";
+  const done = lv.filter((x) => x.status === "closed" && x.exitR != null), open = lv.filter((x) => x.status === "open");
+  const tot = done.reduce((a, x) => a + x.exitR, 0), openR = open.reduce((a, x) => a + (x.nowR || 0), 0), wins = done.filter((x) => x.exitR > 0).length, shown = !!folds.track;
+  return '<div class="c trk"><div class="top"><div><div class="st">Live record: ' + name + ", since " + since(Math.min(...lv.map((x) => x.t))) + "</div>" +
+    '<div class="big ' + (tot >= 0 ? "ok" : "bad") + '">' + pct(tot) + "</div>" +
+    '<div class="note" style="margin-top:0">' + done.length + " closed" + (done.length ? " · " + Math.round((100 * wins) / done.length) + "% wins" : "") + " · " + open.length + " open" + (open.length ? ' (now <b class="' + (openR >= 0 ? "ok" : "bad") + '">' + pct(openR) + "</b>)" : "") + " · at 1% risk per trade</div></div>" +
+    '<button class="btn" data-fold="track" aria-expanded="' + shown + '">' + (shown ? "Hide" : "Chart") + "</button></div>" + (shown ? liveChart(lv) : "") + "</div>";
 }
 
 // Futures at a glance: price, change over the last 24 hours (6 four-hour candles), her trend and a small chart

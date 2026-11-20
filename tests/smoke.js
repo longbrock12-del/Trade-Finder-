@@ -431,19 +431,9 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.clock.setFixedTime(NOW * 1000); // the browser's "now" = when the saved data was taken
   await page.goto("http://127.0.0.1:" + PORT + "/");
   await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 8000 }).catch(() => {});
-  const futR = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).reduce((a, m) => a + m.record.totalR, 0);
   const trk = (await page.locator(".trk").textContent());
-  ok(await page.evaluate(() => { const f = document.getElementById("out").firstElementChild; return f.classList.contains("trk") || (f.classList.contains("mstrip") && f.nextElementSibling.classList.contains("trk")); }), "the track record box is at the top (under the futures strip)");
-  ok(!trk.includes("Overall") && !trk.includes("stocks") && trk.includes("Track record: futures") && trk.includes((futR >= 0 ? "+" : "−") + Math.abs(futR).toFixed(1) + "%") && trk.includes("at 1% risk per trade"), "futures tab shows only the futures ROI: total % at 1% risk per trade", trk.slice(0, 160));
-  await page.click("[data-fold=track]");
-  const fr = body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).map((m) => m.record), sum = (k) => fr.reduce((a, r) => a + r[k], 0);
-  const wlTxt = await page.locator(".trk .wl").first().textContent();
-  ok((await page.locator(".trk .wl", { hasText: "By setup" }).count()) === 1, "Details also shows results by setup");
-  ok(wlTxt.includes("Average win +" + (sum("winSum") / sum("nWin")).toFixed(1) + "%") && wlTxt.includes("average loss −" + (sum("lossSum") / sum("nLoss")).toFixed(1) + "%") &&
-    wlTxt.includes((sum("winSum") / sum("nWin") / (sum("lossSum") / sum("nLoss"))).toFixed(1) + "× bigger than losses") && wlTxt.includes("For every $1 lost, $" + (sum("winSum") / sum("lossSum")).toFixed(2)) && wlTxt.includes("Winners held"),
-    "Details shows average win and loss, how much bigger wins are, $ made per $1 lost, and time held", wlTxt);
-  ok((await page.locator(".trk .trr").count()) === body.markets.filter((m) => m.kind === "futures" && m.record && m.record.trades).length && (await page.locator(".trk", { hasText: "How this is worked out" }).count()) === 1, "Details lists each futures market and explains the replay");
-  await page.click("[data-fold=track]");
+  ok(await page.evaluate(() => { const f = document.getElementById("out").firstElementChild; return f.classList.contains("trk") || (f.classList.contains("mstrip") && f.nextElementSibling.classList.contains("trk")); }), "the Live record box is at the top (under the futures strip)");
+  ok(/^Live record: futures/.test(trk) && !/Track record|2 years|stocks/.test(trk), "futures tab shows the futures Live record only (the 2-year track record box is gone)", trk.slice(0, 160));
   const callTxt = await page.locator("#out").textContent();
   ok((await page.locator("[data-fold=live]").textContent()).includes("Get In Now (") && !/Live callouts|Waiting for a safety line|Skipped/.test(callTxt), "Callouts shows only \"Trades to get into now\": no Live callouts, Waiting or Skipped lists");
   ok((await page.locator(".cl").count()) === (await page.locator(".cl .st", { hasText: "GET IN NOW" }).count()), "every card on Callouts is a trade you can get into now");
@@ -624,7 +614,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
   await openFolds(page);
   ok((await page.locator(".gi.none").count()) === 0 || (await page.locator(".gi.none").textContent()) === "No Valid Entries Yet", "empty Callouts box just says No Valid Entries Yet");
-  ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Track record: stocks" }).count() + await page.locator(".gi.none", { hasText: "No Valid Entries Yet" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
+  ok((await page.locator(".cl .sym", { hasText: /^(M?GC|MCL|CL|PL|YM)$/ }).count()) === 0 && (await page.locator(".trk", { hasText: "Live record: stocks" }).count() + await page.locator(".gi.none", { hasText: "No Valid Entries Yet" }).count()) >= 1, "Stocks filter hides futures and shows the stocks view");
   await page.evaluate(() => localStorage.setItem("tl:tf", '"1H"')); await page.reload(); await page.waitForTimeout(500);
   ok(asked[asked.length - 1].includes("tf=4H"), "an old 1-hour choice on the phone is ignored: still the 4-hour chart");
   await page.evaluate(() => { document.getElementById("mine").open = true; });
@@ -640,9 +630,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   // Stocks found by the scan show up next to your own symbols.
   scanJson = { ...scanBody, markets: scanBody.markets.filter((m) => m.sym === "NVDA") }; // NVDA here carries AMZN's charts
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent)); await page.click("[data-tab=calls]"); await page.click("[data-k=stocks]");
-  const sr = scanBody.record, strk = await page.locator(".trk").textContent();
-  ok(!strk.includes("Overall") && !strk.includes("futures"), "stocks tab shows only the stocks ROI");
-  ok(strk.includes("Track record: stocks") && strk.includes(sr.trades + " trades") && strk.includes((sr.totalR >= 0 ? "+" : "−") + Math.abs(sr.totalR).toFixed(1) + "%"), "stocks track record shows all scanned stocks added up", strk.slice(0, 160));
+  const strk = await page.locator(".trk").textContent();
+  ok(/^Live record: stocks/.test(strk) && !/futures|Track record/.test(strk), "stocks tab shows the stocks Live record only", strk.slice(0, 160));
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
   await page.click("[data-tab=watch]");
   ok((await page.locator(".c .sym", { hasText: "NVDA" }).count()) >= 1, "stocks from the scan appear under Stocks (on the Watch list)");
@@ -876,7 +865,7 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent), null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(200);
   const tr = await page.locator(".trk").first().textContent();
-  ok(/Live record since .*1 closed · 0% wins · −1\.0% · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
+  ok(/Live record: futures, since .*−1\.0%.*1 closed · 0% wins · 1 open \(now [+−]\d+\.\d%\)/.test(tr), "the Live record box shows the callouts the site sent: closed result, wins, and the open ones now", tr.slice(0, 300));
   { let pushAsks = 0, tradeAsks = 0; const onReq = (q) => { if (/\/api\/push/.test(q.url())) pushAsks++; if (/\/api\/trades\?/.test(q.url()) && !/ct=|wchart|look=/.test(q.url())) tradeAsks++; };
     page.on("request", onReq);
     await page.evaluate(() => { lastRefresh = 0; document.dispatchEvent(new Event("visibilitychange")); });
@@ -940,9 +929,9 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.locator(".ofold [data-och]").first().click();
   ok((await page.locator(".ofold .chart").count()) === 0, "tapping again hides it");
   await page.unroute("**/api/trades**ct=**");
-  if (!(await page.evaluate(() => !!folds.track))) await page.click("[data-fold=track]"); // the live chart is under Details
+  if (!(await page.evaluate(() => !!folds.track))) await page.click("[data-fold=track]"); // the live chart opens from Chart
   const trD = await page.locator(".trk").textContent();
-  ok((await page.locator(".trk .lchart svg polyline").count()) === 1 && /Live callouts: 1 closed, dashed = open now/.test(trD), "the track record charts the live callouts under Details (closed ones, open one dashed)");
+  ok((await page.locator(".trk .lchart svg polyline").count()) === 1 && /Live callouts: 1 closed, dashed = open now/.test(trD), "the Live record's Chart button charts the live callouts (closed ones, open one dashed)");
   await page.click("[data-fold=track]");
   const lc = await page.evaluate(() => [liveChart([{ status: "closed", exitR: 2, closedAt: 1 }, { status: "closed", exitR: -1, closedAt: 2 }]), liveChart([{ status: "open", nowR: 0.5 }])]);
   ok((lc[0].match(/<circle/g) || []).length === 2 && /var\(--gd\)/.test(lc[0]) && /starts when the first callout closes/.test(lc[1]), "live chart: one dot per closed callout, green when ahead; waits for the first closed one");
