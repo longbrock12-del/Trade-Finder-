@@ -138,6 +138,8 @@ module.exports = async function handler(req, res) {
       } else if (s) {
         x.nowR = s.nowR;
         if (s.target) x.target = s.target; // the latest target line (it moves with the line), for "why it exited"
+        if (s.stop != null) x.stopLive = s.stop; // where the trailing stop is right now (stopNow only moves with an alert)
+        if (s.line != null) x.line = s.line; // the safety line right now (a candle closing past it ends the trade)
         if (s.chart && s.chart.levels) x.levels = s.chart.levels; // and the chart's S/R levels
         const was = x.stopNow != null ? x.stopNow : x.stop;
         if (s.stop != null && was != null && sign * (s.stop - was) >= 0.1 * x.risk) {

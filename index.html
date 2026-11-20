@@ -106,6 +106,7 @@ input::placeholder{color:#55665c}
 .mtop{display:flex;justify-content:space-between;font-size:12px;font-family:"JetBrains Mono",monospace}.mpx{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mbot{display:flex;flex-direction:column;gap:2px;font-size:11px;margin-top:1px}.mbot svg{width:100%;height:20px}
 .nbar{height:4px;border-radius:3px;background:var(--soft);margin:5px 0 2px;overflow:hidden}.nbar i{display:block;height:100%;border-radius:3px}
+.otg{margin:6px 0 4px}.otg div{font-size:13px}.otg small.was{display:block;font-size:10.5px;color:var(--mu);font-weight:500;margin-top:1px}
 .rtr{padding:4px 12px}.rtr .note.mini{margin-bottom:6px}.rtog{display:block;width:100%;border:0;background:none;text-align:left;cursor:pointer;padding:8px 0}
 .lchart{margin-top:6px}.lchart svg{width:100%;height:64px;display:block}
 .ofold{padding:4px 12px}.ofold>.btn{width:100%;text-align:left;border:0;background:none;padding:8px 0;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ac);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ofold .note.mini{margin-bottom:8px}
@@ -780,9 +781,19 @@ function openTrades() {
     const m = data.markets.find((q) => q.sym === x.sym && !q.error), sign = x.dir === "long" ? 1 : -1, d = (m && m.digits) || 2;
     // Stock trades with an option: the option's result (after time decay and spread), since that's what's held.
     const r = tradeR(x, m);
-    const stop = x.stopNow != null ? x.stopNow : x.stop, act = esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short"); // a status, not an order: these are already running
-    return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · entry " + num(x.entry, d) + (stop != null ? " · stop " + num(stop, d) : "") + "</span></span>" +
-      '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + openOpt(x, m) + tradeChart(x) };
+    // The live numbers: from today's scan when it has this callout, else what the alert check last saved.
+    const sg = m && (m.signals || []).find((q) => m.sym + "|" + q.tf + "|" + q.setup + "|" + q.dir + "|" + q.t === x.key);
+    const stop = sg && sg.stop != null ? sg.stop : x.stopLive != null ? x.stopLive : x.stopNow != null ? x.stopNow : x.stop, line = sg && sg.line != null ? sg.line : x.line, tg = (sg && sg.target) || x.target;
+    const price = m && m.price > 0 ? m.price : x.nowR != null && x.risk ? x.entry + sign * x.nowR * x.risk : null;
+    const act = esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short"), dayS = new Date(x.t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a status, not an order: these are already running
+    const moved = stop != null && x.stop != null && Math.abs(stop - x.stop) > 1e-9;
+    const tgName = tg ? (tg.tf === "S/R" ? (x.dir === "long" ? "resistance" : "support") + " level" : tg.tf + " trendline") : "";
+    const grid = '<div class="gr otg"><div><small>Entry</small>' + num(x.entry, d) + "</div><div><small>Now</small>" + (price != null ? num(price, d) : "—") + "</div>" +
+      '<div><small>Stop' + (moved ? " (trailing)" : "") + "</small>" + (stop != null ? num(stop, d) : "—") + (moved ? '<small class="was">was ' + num(x.stop, d) + "</small>" : "") + "</div>" +
+      '<div><small>Target</small>' + (tg ? num(tg.price, d) : "—") + (tg ? '<small class="was">' + esc(tgName) + "</small>" : "") + "</div></div>";
+    const exitWhen = '<div class="note mini">Exits when: price hits the stop' + (stop != null ? " (" + num(stop, d) + ")" : "") + (line != null ? " · a 4H candle closes " + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line)" : "") + (tg ? " · price reaches " + num(tg.price, d) + " (" + esc(tgName) + ")" : "") + ".</div>";
+    return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +
+      '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + grid + exitWhen + openOpt(x, m) + tradeChart(x) };
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
   // One box: the title, the newest open trade always showing, and a button for the rest.
