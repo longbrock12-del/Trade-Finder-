@@ -877,6 +877,15 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.waitForTimeout(200);
   const tr = await page.locator(".trk").first().textContent();
   ok(/Live record since .*1 closed · 0% wins · −1\.0% · 1 open/.test(tr), "the track record shows the live record of sent callouts", tr.slice(0, 300));
+  { let pushAsks = 0, tradeAsks = 0; const onReq = (q) => { if (/\/api\/push/.test(q.url())) pushAsks++; if (/\/api\/trades\?/.test(q.url()) && !/ct=|wchart|look=/.test(q.url())) tradeAsks++; };
+    page.on("request", onReq);
+    await page.evaluate(() => { lastRefresh = 0; document.dispatchEvent(new Event("visibilitychange")); });
+    await page.waitForTimeout(400);
+    const after1 = [pushAsks, tradeAsks];
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange"))); // again right away: skipped
+    await page.waitForTimeout(300);
+    page.off("request", onReq);
+    ok(after1[0] >= 1 && after1[1] >= 1 && pushAsks === after1[0], "reopening the site always refreshes prices, callouts, tracking and recent trades (not twice within 15 seconds)", JSON.stringify([after1, pushAsks])); }
   const rtClosed = (await page.locator(".rtr").count()) === 1 && (await page.locator(".rtr .trr").count()) === 0 && /Recent trades \(1\)/.test(await page.locator(".rtr").textContent());
   await page.click(".rtr .rtog");
   const rtSaved = await page.evaluate(() => store.get("recentOpen", false));

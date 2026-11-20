@@ -1113,7 +1113,7 @@ document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key ==
     if (dy > 20) { ptr.classList.add("on"); ptr.textContent = dy > PULL ? "Release to refresh" : "Pull to refresh"; }
   }, { passive: true });
   addEventListener("touchend", () => {
-    if (y0 != null && dy > PULL && !loading) { ptr.textContent = "Refreshing…"; load().then(() => ptr.classList.remove("on")); }
+    if (y0 != null && dy > PULL && !loading) { ptr.textContent = "Refreshing…"; refreshAll(true).then(() => ptr.classList.remove("on")); }
     else ptr.classList.remove("on");
     y0 = null; dy = 0;
   });
@@ -1188,10 +1188,21 @@ async function lineAlert(m, w) {
   store.set("lineAlerts", mine); render();
 }
 
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { document.title = "Trade Finder"; if (!data || Date.now() - data.at > REFRESH) load(); } });
+// Fresh data every time the site is opened again (switching back to it, or reopening the home-screen app) and on
+// pull to refresh: prices and callouts, plus the tracking and recent trades. Reopening within 15 seconds is skipped.
+let lastRefresh = 0;
+function loadPush() { return fetch("/api/push", { cache: "no-store" }).then((r) => r.json()).then((j) => { pushInfo = j; render(); }).catch(() => {}); }
+function refreshAll(force) {
+  if (!force && Date.now() - lastRefresh < 15000) return Promise.resolve();
+  lastRefresh = Date.now();
+  return Promise.all([loading ? Promise.resolve() : load(), loadPush()]);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { document.title = "Trade Finder"; refreshAll(); } });
+addEventListener("pageshow", (e) => { if (e.persisted) refreshAll(); }); // iPhone/Safari bring back a saved copy of the page
 setInterval(() => { if (!document.hidden) load(); }, REFRESH);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-fetch("/api/push").then((r) => r.json()).then((j) => {
+lastRefresh = Date.now();
+fetch("/api/push", { cache: "no-store" }).then((r) => r.json()).then((j) => {
   pushInfo = j; render();
   // Phones that picked 1-hour or Both before: back to the 4-hour chart, alerts included.
   if (store.get("tf", "4H") !== "4H") { store.set("tf", "4H"); if (store.get("push", false)) pushSub().then((sub) => sub && post({ action: "subscribe", sub: sub.toJSON(), prefs: { tf: "4H" } })).catch(() => {}); }
