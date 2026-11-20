@@ -788,10 +788,14 @@ function openTrades() {
     const act = esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short"), dayS = new Date(x.t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a status, not an order: these are already running
     const moved = stop != null && x.stop != null && Math.abs(stop - x.stop) > 1e-9;
     const tgName = tg ? (tg.tf === "S/R" ? (x.dir === "long" ? "resistance" : "support") + " level" : tg.tf + " trendline") : "";
+    // Her exits: ride the trailing stop / safety line; take profit if price reaches a big line or level on the way.
+    const sr = (x.levels || []).filter((v) => price != null && (x.dir === "long" ? v.p > price : v.p < price)).sort((p, q) => Math.abs(p.p - price) - Math.abs(q.p - price))[0];
+    const srName = x.dir === "long" ? "resistance" : "support";
     const grid = '<div class="gr otg"><div><small>Entry</small>' + num(x.entry, d) + "</div><div><small>Now</small>" + (price != null ? num(price, d) : "—") + "</div>" +
       '<div><small>Stop' + (moved ? " (trailing)" : "") + "</small>" + (stop != null ? num(stop, d) : "—") + (moved ? '<small class="was">was ' + num(x.stop, d) + "</small>" : "") + "</div>" +
-      '<div><small>Target</small>' + (tg ? num(tg.price, d) : "—") + (tg ? '<small class="was">' + esc(tgName) + "</small>" : "") + "</div></div>";
-    const exitWhen = '<div class="note mini">Exits when: price hits the stop' + (stop != null ? " (" + num(stop, d) + ")" : "") + (line != null ? " · a 4H candle closes " + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line)" : "") + (tg ? " · price reaches " + num(tg.price, d) + " (" + esc(tgName) + ")" : "") + ".</div>";
+      '<div><small>Nearest ' + srName + "</small>" + (sr ? num(sr.p, d) + '<small class="was">price turned there ' + sr.n + " times</small>" : "—") + "</div></div>";
+    const exitWhen = '<div class="note mini"><b>Main exit:</b> the trailing stop' + (stop != null ? " (" + num(stop, d) + ")" : "") + (line != null ? ", or a 4H candle closing " + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line)" : "") + ".</div>" +
+      (tg ? '<div class="note mini"><b>Take profit if price gets there:</b> ' + num(tg.price, d) + " (" + esc(tgName) + ")" + (x.kind === "stocks" && sr ? ". The " + srName + " at " + num(sr.p, d) + " is a level price may stall at first" : "") + ".</div>" : "");
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +
       '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + grid + exitWhen + openOpt(x, m) + tradeChart(x) };
   });

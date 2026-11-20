@@ -391,7 +391,8 @@ function callout(s, e, last, live, px) {
   // daily candles before the entry day (the same levels the charts draw). htfsr = whichever comes first.
   let srP = null, srN = null;
   if ((mode === "htfsr" || mode === "sr") && s.lvDaily) {
-    const lv = srLevels(s.lvDaily.filter((d) => d.t < b[from].t - DAY), ent).filter((v) => (e.long ? v.p > ent : v.p < ent)).sort((p, q) => Math.abs(p.p - ent) - Math.abs(q.p - ent))[0];
+    // srmin (R): skip levels closer to the entry than that (a level a few cents away isn't a target).
+    const lv = srLevels(s.lvDaily.filter((d) => d.t < b[from].t - DAY), ent).filter((v) => (e.long ? v.p > ent : v.p < ent) && Math.abs(v.p - ent) >= (s.srMin || 0) * risk).sort((p, q) => Math.abs(p.p - ent) - Math.abs(q.p - ent))[0];
     if (lv) { srP = lv.p; srN = lv.n; }
   }
   const tgtAt = htf || srP != null ? (i) => {
@@ -638,7 +639,7 @@ function scanCore(hChart, dChart, opts = {}) {
     const b = sets[tf], use = !opts.tfs || opts.tfs.includes(tf);
     if (b.length < 30 || (!use && tf !== "4H")) return;
     const s = (S[tf] = setup(daily, b, isFuture, tf));
-    s.exit = R.exit || null; s.tmin = R.tmin || 0; s.lvDaily = lvDaily; s.realLines = R.realLines !== false;
+    s.exit = R.exit || null; s.tmin = R.tmin || 0; s.lvDaily = lvDaily; s.realLines = R.realLines !== false; s.srMin = R.srMin || 0;
     const last = b[b.length - 1].live ? b.length - 2 : b.length - 1;
     s.last = last;
     if (!use) return;
