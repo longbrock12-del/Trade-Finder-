@@ -755,6 +755,7 @@ async function alertTests() {
     if (u.startsWith("https://push.test/")) { pushed.push({ u, h: o.headers, body: o.body }); return { ok: true, status: 201 }; }
     if (u.startsWith("https://tf.test/api/")) {
       if (/\/api\/options/.test(u)) return { ok: true, status: 200, json: async () => site.options || { contracts: [] } };
+      if (/&why=track/.test(u)) return { ok: true, status: 200, json: async () => site.track || { markets: [] } }; // an older trade looked up for tracking
       if (/&ct=/.test(u)) { ctAsks.push(u); return { ok: true, status: 200, json: async () => site.ct || { markets: [{ sym: "MGC=F", trade: { t: 1 } }] } }; } // by default today's rules still make the callout
       const k = /\/api\/scan/.test(u) ? "scan" : /&s=/.test(u) ? "extra" : "trades"; return { ok: true, status: 200, json: async () => site[k] || { markets: [] } };
     }
@@ -839,6 +840,22 @@ async function alertTests() {
   const bacR2 = JSON.parse(H("tf:live").get("4H|BAC|4H|break & retest|short|1794940200"));
   ok(bacR2.status === "open" && bacR2.reopened2 && bacR2.entry === 49.45 && !bacR2.exitTo, "BAC's close on the 19-cent S/R level is undone once", JSON.stringify(bacR2).slice(0, 160));
   H("tf:live").delete("4H|BAC|4H|break & retest|short|1794940200");
+  { // A rule change must not close an open trade in the past (BAC): an exit dated before it was last seen open is ignored.
+    const K = "4H|ZZZ|4H|break|long|" + (NOW - 5 * 86400), key = "ZZZ|4H|break|long|" + (NOW - 5 * 86400), t0 = NOW - 5 * 86400;
+    H("tf:live").set(K, JSON.stringify({ key, view: "4H", sym: "ZZZ", kind: "stocks", tf: "4H", setup: "break", dir: "long", entry: 100, stop: 98, stopLive: 99, risk: 2, t: t0, at: (NOW - 4 * 86400) * 1000, seen: NOW - 3600, status: "open", rv: "3", target: { price: 110, tf: "Weekly" } }));
+    const keep = site; site = { scan: { markets: [{ sym: "ZZZ", kind: "stocks", price: 104, signals: [{ tf: "4H", setup: "break", dir: "long", t: t0, status: "closed", exitR: 0.1, exitPx: 100.2, exitHow: "take profit", exitT: NOW - 4 * 86400, exitTo: { kind: "sr", price: 100.2, touches: 4 } }], watch: [] }] } };
+    db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+    const z1 = JSON.parse(H("tf:live").get(K));
+    site = { scan: { markets: [{ sym: "ZZZ", kind: "stocks", price: 98.8, signals: site.scan.markets[0].signals, watch: [] }] } };
+    db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+    const z2 = JSON.parse(H("tf:live").get(K));
+    site = { scan: { markets: [{ sym: "ZZZ", kind: "stocks", price: 105, signals: [], watch: [] }] }, track: { markets: [{ sym: "ZZZ", trade: { t: t0, status: "open", nowR: 2.5, stop: 101, line: 101.5, target: { price: 111, tf: "Weekly" } } }] } };
+    H("tf:live").set(K, JSON.stringify({ ...z1, status: "open", held: false, seen: NOW - 3600 }));
+    db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+    const z3 = JSON.parse(H("tf:live").get(K)); site = keep; H("tf:live").delete(K);
+    ok(z1.status === "open" && z1.held && z1.nowR === 2, "a rule change can't close an open trade in the past: it stays open, held on its own stop and target", JSON.stringify(z1).slice(0, 200));
+    ok(z2.status === "closed" && z2.exitPx === 99 && z2.how === "stop order", "a held trade still closes when price really reaches its stop", JSON.stringify(z2).slice(0, 200));
+    ok(z3.status === "open" && z3.stopLive === 101 && z3.line === 101.5 && z3.nowR === 2.5, "a trade older than the scan's recent days is looked up and keeps updating (stop, safety line)", JSON.stringify(z3).slice(0, 200)); }
   { const stSig = { tf: "4H", setup: "break & retest", grade: "A+", dir: "long", entry: 100, stop0: 98, stop: 98, risk: 2, t: NOW - 1800, status: "open", nowR: 0.1, target: { price: 105, tf: "Daily", r: 2.5 } };
     const keepSite = site; site = { scan: { markets: [{ sym: "XYZ", kind: "stocks", price: 100.2, signals: [stSig], watch: [] }] }, options: { price: 100.1, contracts: [{ contract: "XYZ261218C00100000", type: "call", strike: 100, expiry: "2026-12-18", dte: 31, mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, iv: 30, spreadPct: 3, atStop: 2.9 }] } };
     db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site = keepSite;

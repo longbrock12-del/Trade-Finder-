@@ -134,9 +134,28 @@ module.exports = async function handler(req, res) {
       }
       const m = (byTf[view] || []).find((q) => q.sym === x.sym);
       if (!m) continue;
-      const s = (m.signals || []).find((q) => keyOf(m, q) === x.key), sign = x.dir === "long" ? 1 : -1;
+      let s = (m.signals || []).find((q) => keyOf(m, q) === x.key);
+      const sign = x.dir === "long" ? 1 : -1;
+      // Older than the scan's few recent days: look the trade up in the replay (like the tracking chart does).
+      if (!s) { const lk2 = await get("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=" + view + "&ct=" + x.t + "&cd=" + x.dir + "&why=track"), tm = (lk2.markets || [])[0]; if (tm && tm.trade) s = tm.trade; }
       const toView = (q) => ((q.prefs && q.prefs.tf) || "4H") === view, name = actionOf(m, x) + " " + show(x.sym);
-      if (s && s.status === "closed") {
+      // A rule change can make the replay "close" a trade in the past (an exit dated before we last saw it open,
+      // like BAC on a support 19 cents from entry). That never happened live, so it's ignored: the trade stays open
+      // and is managed with the stop and target it already has (held), until price really reaches one of them.
+      const seen = x.seen || (x.at ? x.at / 1000 : x.t), nowS = Date.now() / 1000;
+      const retro = s && s.status === "closed" && s.exitT != null && s.exitT < seen - 4 * 3600;
+      const newer = (m.signals || []).some((q) => q.t > x.t && q.status !== "no-safety");
+      if (retro || (x.held && !(s && s.status === "open")) || (!s && !newer)) {
+        x.held = true;
+        const stopH = x.stopLive != null ? x.stopLive : x.stopNow != null ? x.stopNow : x.stop, tgH = x.target && x.target.price;
+        const hitStop = stopH != null && sign * (m.price - stopH) <= 0, hitTg = tgH != null && sign * (m.price - tgH) >= 0;
+        if (hitStop || hitTg) {
+          const px = hitStop ? stopH : tgH, r = Math.round(((sign * (px - x.entry)) / x.risk) * 100) / 100;
+          Object.assign(x, { status: "closed", exitR: r, exitPx: px, closedAt: Date.now(), how: hitStop ? "stop order" : "take profit" });
+          exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(r), tag: "exit-" + x.key, url: "/",
+            body: (hitStop ? "Stop order hit at " : "Target reached at ") + px + ". Trade over: " + R1(r) + "." });
+        } else x.nowR = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
+      } else if (s && s.status === "closed") {
         Object.assign(x, { status: "closed", exitR: s.exitR, exitPx: s.exitPx, closedAt: Date.now(), how: s.exitHow, ...(s.exitTo ? { exitTo: s.exitTo } : {}) });
         const dd = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
         const hit = s.exitTo ? (s.exitTo.kind === "sr" ? (x.dir === "long" ? "Resistance" : "Support") + " reached at " + s.exitTo.price + " (price turned there " + s.exitTo.touches + " times)" : "The " + s.exitTo.tf + " trendline (" + dd(s.exitTo.t0) + " to " + dd(s.exitTo.t1) + ") reached") : null;
@@ -154,12 +173,13 @@ module.exports = async function handler(req, res) {
           exits += await sendAll(toView, { title: "Move stop: " + name, tag: "stop-" + x.key, url: "/",
             body: "New stop " + s.stop + " (was " + was + "), trailing the safety line. Trade now " + R1(s.nowR) + "." });
         }
-      } else if ((m.signals || []).length) {
+      } else if (newer) {
         const r = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
         Object.assign(x, { status: "closed", exitR: r, exitPx: m.price, closedAt: Date.now(), how: "replaced by a newer callout" });
         exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(r), tag: "exit-" + x.key, url: "/",
           body: "A newer callout on " + show(x.sym) + " replaces this trade. Close it near " + m.price + " (" + R1(r) + ")." });
       } else x.nowR = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
+      if (x.status === "open") { x.seen = nowS; if (s && s.status === "open") delete x.held; } // last time it was seen running
       await S.hsetJSON("tf:live", lk, x);
     }
     reply(res, { ran: true, notified, alerted, exits, dropped, phones: Object.keys(subs).length });
