@@ -738,7 +738,7 @@ function recentTrades() {
   if (!done.length) return "";
   const pc = (v, d = 1) => (Math.abs(v) < 0.5 * Math.pow(10, -d) ? "0." + "0".repeat(d) + "%" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d) + "%"), day = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const rows = done.map((x) => {
-    const m = data.markets.find((q) => q.sym === x.sym), d = (m && m.digits) || 2, sign = x.dir === "long" ? 1 : -1;
+    const m = data.markets.find((q) => q.sym === x.sym), d = x.kind === "stocks" ? 2 : (m && m.digits) || 2, sign = x.dir === "long" ? 1 : -1;
     const exitPx = x.exitPx != null ? x.exitPx : x.entry + sign * x.exitR * x.risk, oe = x.kind === "stocks" ? optEst(x, exitPx) : null;
     let h = '<div class="trr"><span><b>' + esc(show(x.sym)) + " " + (x.dir === "long" ? "long" : "short") + '</b> <span class="note">' + esc(x.setup || "") + " · " + day(x.t * 1000) + (x.closedAt ? " → " + day(x.closedAt) : "") + "</span></span>" +
       '<b class="' + (x.exitR >= 0 ? "ok" : "bad") + '">' + pc(x.exitR) + "</b></div>" +
@@ -778,7 +778,7 @@ function openTrades() {
   const ot = ((pushInfo && pushInfo.live) || []).filter((x) => x.status === "open" && x.kind === kind && (x.view || "4H") === chartTF() && !stillIn(x)).sort((a, b) => b.t - a.t); // newest first
   if (!ot.length) return "";
   const rows = ot.map((x) => {
-    const m = data.markets.find((q) => q.sym === x.sym && !q.error), sign = x.dir === "long" ? 1 : -1, d = (m && m.digits) || 2;
+    const m = data.markets.find((q) => q.sym === x.sym && !q.error), sign = x.dir === "long" ? 1 : -1, d = x.kind === "stocks" ? 2 : (m && m.digits) || 2; // stocks: dollars and cents
     // Stock trades with an option: the option's result (after time decay and spread), since that's what's held.
     const r = tradeR(x, m);
     // The live numbers: from today's scan when it has this callout, else what the alert check last saved.
@@ -794,7 +794,8 @@ function openTrades() {
     const grid = '<div class="gr otg"><div><small>Entry</small>' + num(x.entry, d) + "</div><div><small>Now</small>" + (price != null ? num(price, d) : "—") + "</div>" +
       '<div><small>Stop' + (moved ? " (trailing)" : "") + "</small>" + (stop != null ? num(stop, d) : "—") + (moved ? '<small class="was">was ' + num(x.stop, d) + "</small>" : "") + "</div>" +
       '<div><small>Nearest ' + srName + "</small>" + (sr ? num(sr.p, d) + '<small class="was">price turned there ' + sr.n + " times</small>" : "—") + "</div></div>";
-    const exitWhen = '<div class="note mini"><b>Main exit:</b> the trailing stop' + (stop != null ? " (" + num(stop, d) + ")" : "") + (line != null ? ", or a 4H candle closing " + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line)" : "") + ".</div>" +
+    const exitWhen = (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") +
+      (stop != null ? '<div class="note mini"><b>Backup:</b> the stop order at ' + num(stop, d) + ", just past the safety line, in case price spikes through it before the candle closes.</div>" : "") +
       (tg ? '<div class="note mini"><b>Take profit if price gets there:</b> ' + num(tg.price, d) + " (" + esc(tgName) + ")" + "" + ".</div>" : "");
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +
       '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + grid + exitWhen + openOpt(x, m) + tradeChart(x) };
