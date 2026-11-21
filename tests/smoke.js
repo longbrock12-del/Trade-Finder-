@@ -338,13 +338,13 @@ async function scanTests() {
       fN++;
       if (x.setup === "bounce") { bounces++; if (tAt(x.t).dir !== (x.dir === "long" ? "up" : "down")) against++; }
       if (/=F$/.test(sym)) futKinds.add(x.setup === "bounce" ? "bounce" : x.setup === "break & retest" ? "retest" : "break");
-      else if (x.setup !== "break & retest") stockNonBreak++; // stocks: retests only
+      else stockNonBreak += x.setup === "bounce" && tAt(x.t).dir !== (x.dir === "long" ? "up" : "down") ? 1 : 0; // stocks: her rules too (bounces only with the trend)
     });
     ok(mk.trend && "dir" in mk.trend, sym + ": the market says its trend now (" + (mk.trend.dir || "none") + (mk.trend.from ? ", " + mk.trend.from : "") + ")");
   });
   ok(fN > 0 && bounces > 0 && !against, "futures: every bounce goes with her top-down trend (none when it's choppy)", bounces + " bounces, " + against + " against");
   ok(futKinds.has("break") && futKinds.has("bounce"), "futures: all of her setups trade (breaks need no trend: they're reversals)", [...futKinds].join());
-  ok(!stockNonBreak, "stocks: break & retests only", stockNonBreak + " other setups");
+  ok(!stockNonBreak, "stocks: the same rules as futures (bounces only with the trend)", stockNonBreak + " against the trend");
   const once1 = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { once: true } }).record, live1 = scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record;
   ok(once1.trades <= live1.trades && scanLive(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"] }).record.trades === live1.trades, "one attempt per trendline (not hers) is a test setting only", live1.trades + " / " + once1.trades);
   const must = TL.scan(...gcArgs(), { sym: "MGC=F", now: NOW, tfs: ["4H"], rules: { short: 0.05 } }).record;
@@ -593,7 +593,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok(lgs.length && lgs.every((t) => /^Rising lines\s*Falling lines/.test(t) && !/candles/.test(t) && (!/S\/R level/.test(t) || /S\/R level \(×touches\)$/.test(t)) && (!/Dashed = safety line/.test(t) || t.indexOf("Dashed = safety line") < t.indexOf("Thick = action line"))), "chart legends read in order: rising, falling, dashed safety, thick action, marks, S/R last; no candle note", lgs[0]);
   const stn = await page.evaluate(() => [stratNote({ kind: "stocks", sym: "BAC" }), stratNote({ kind: "futures", sym: "MGC=F" }), stratNote({ kind: "futures", sym: "MCL=F" })].map((x) => x.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&")));
   const stShown = await page.evaluate(() => [...document.querySelectorAll(".chart")].filter((c) => c.querySelector(".stn")).length === document.querySelectorAll(".chart").length && document.querySelectorAll(".chart").length > 0);
-  ok(stShown && /^Strategy: break & retest only · exit at the next bigger-timeframe line or the safety line$/.test(stn[0]) && /bounces with the trend/.test(stn[1]) && /contract switch/.test(stn[2]) && !/bounce/.test(stn[2]), "every chart says the strategy for its market (stocks, gold/copper, crude)", stn.join(" | "));
+  ok(stShown && /^Strategy: breaks, break & retests, bounces with the trend · exit at the next bigger-timeframe line or S\/R level, or the safety line$/.test(stn[0]) && stn[0] === stn[1] && /bounces with the trend/.test(stn[1]) && /contract switch/.test(stn[2]) && !/bounce/.test(stn[2]), "every chart says the strategy for its market (stocks, gold/copper, crude)", stn.join(" | "));
   const srn = await page.evaluate(() => srNote([{ p: 4266.57, n: 6, side: "R" }, { p: 4077.9, n: 5, side: "S" }, { p: 4383.68, n: 5, side: "R" }], 1));
   ok(/S\/R levels: .*R 4,383\.7.*×5.*R 4,266\.6.*×6.*S 4,077\.9.*×5/.test(srn.replace(/<[^>]+>/g, "")), "the S/R levels' prices are listed under the chart, highest first", srn.replace(/<[^>]+>/g, ""));
   ok((lvm.match(/<line/g) || []).length === 3 && (lvm.match(/<text/g) || []).length === 2 && /R ×5/.test(lvm) && /S ×4/.test(lvm) && !/×9/.test(lvm), "S/R levels: dashed lines in the chart's range, labeled with touches, no overlapping labels");

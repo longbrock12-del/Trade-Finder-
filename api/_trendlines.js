@@ -534,9 +534,10 @@ function record(hist, w = {}) {
 // trendline or support/resistance level (4+ turns), whichever price reaches first; else the safety line.
 // Target lines are real trendlines only (swing point to swing point, 6+ candles). 2 years: +22.5% on the three futures.
 const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htfsr" };
-// Stocks take the same bigger-timeframe exit (real trendlines only) and only her break & retests. 2 years, 112
-// stocks: +8.4% over 182 trades (older year -10.0%, last 12 months +18.4%): no proven edge, thinner after option costs.
-const STOCK_RULES = { trend: "bounce", once: false, setups: ["retest"], exit: "htf" };
+// Stocks: exactly her strategy, the same as gold and copper (all three setups, bounces with the trend; exits at the
+// trailing stop / safety line, an S/R level or a bigger-timeframe line). One set of rules for everything; tweaks
+// get tested from here.
+const STOCK_RULES = { ...FUTURE_RULES };
 // Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
 // bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
 // in the 4 trading days up to the front contract's last day.

@@ -79,7 +79,7 @@ async function handler(req, res) {
   // ?trend=0 (no trend filter) / ?trend=1 (trend for every setup) / ?once=1 (one attempt per trendline), to compare.
   const touch = num("touch", 0.02, 1), gap = num("gap", 2, 20), short = num("short", 0, 1), hold = num("hold", 0, 6), pivot = num("pivot", 1, 5), trendOff = sp.get("trend") === "0", trendAll = sp.get("trend") === "1", onceOn = sp.get("once") === "1";
   // ?setups=break,retest,bounce (or all): which of her setups stocks take (the site: break).
-  // ?exit=htf (take profit at the next bigger-timeframe trendline, the live exit) / tp (at a nearby S/R level) / trail (safety line only).
+  // ?exit=htfsr (the live exit: the next bigger-timeframe trendline or an S/R level) / htf (trendline only) / tp / sr / trail (safety line only).
   // ?cost=0.1 (R taken off every trade: commissions, slippage, option spreads) and ?split=1 (older year vs last 12 months).
   const cost = num("cost", 0, 1), split = sp.get("split") === "1", real = sp.get("real") === "1", patOn = sp.get("pattern") === "1", listOn = sp.get("list") === "1" || patOn; // list=1: every trade with its entry details (pattern study); real=1: target lines must be real trendlines
   const ex = sp.get("exit"), exit = ["htf", "htfsr", "sr", "tp", "trail"].includes(ex) ? ex : undefined;
@@ -109,7 +109,7 @@ async function handler(req, res) {
   const scanned = list.length - failed.length;
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
   const R = rules || {};
-  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? (futTest ? "all" : ["retest"]) : R.setups || "all", exit: R.exit === undefined ? "htf" : R.exit || "trail", cost: R.cost || 0, realLines: !!R.realLines }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}), ...(patOn ? { pattern: require("./_pattern.js").summarize(lists, Date.now() / 1000) } : listOn ? { list: lists } : {}) });
+  if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? "all" : R.setups || "all", exit: R.exit === undefined ? "htfsr" : R.exit || "trail", cost: R.cost || 0, realLines: !!R.realLines }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}), ...(patOn ? { pattern: require("./_pattern.js").summarize(lists, Date.now() / 1000) } : listOn ? { list: lists } : {}) });
   send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 
