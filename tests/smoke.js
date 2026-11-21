@@ -161,6 +161,8 @@ async function scannerTests() {
     const sm0 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }), sm1 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { srMin: 1 } });
     const srClose = (r) => r.signals.filter((x) => x.exitTo && x.exitTo.kind === "sr" && Math.abs(x.exitTo.price - x.entry) < (x.risk || 0) * 0.999).length;
     ok(srClose(sm1) === 0, "srmin=1 test: a trade never takes profit at an S/R level closer than 1R to its entry", srClose(sm0) + " -> " + srClose(sm1));
+    const f3 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }), f1 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { far: 1 } });
+    ok(f1.signals.filter((x) => x.status === "too-far").length >= f3.signals.filter((x) => x.status === "too-far").length && f1.signals.every((x) => x.status !== "open" || x.risk <= x.risk), "far= test: her low-risk rule, skip trades whose stop is more than that many ATR away");
     const hs = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { exit: "htfsr" } });
     const tpx = gAll2.signals.filter((x) => x.exitHow === "take profit");
     ok(tpx.length && tpx.every((x) => x.exitTo && (x.exitTo.kind === "sr" ? x.exitTo.touches >= 4 : ["Daily", "Weekly", "Monthly"].includes(x.exitTo.tf) && x.exitTo.t0 && x.exitTo.t1)), "take-profit exits say which target they hit: the trendline (chart and points) or the S/R level", JSON.stringify(tpx.map((x) => x.exitTo)).slice(0, 200));

@@ -33,7 +33,7 @@ let HOLD = 2;            // a tap counts only if the next 2 candles don't close 
 let SHORT_ATR = 0.3;      // how far SHORT of the line a wick may stop and still be a tap (0.05 = must actually touch; test with ?short=)
 // Does a wick touch the line? under: a line under the lows (wick = the low); otherwise over the highs (wick = the high).
 const touches = (w, v, a, under) => { const short = under ? w - v : v - w; return short <= SHORT_ATR * a && -short <= TOUCH_ATR * a; };
-const FAR_ATR = 3;        // my number: "break must be close to the safety line" - skip if risk is over 3 ATR
+let FAR_ATR = 3;          // her "low-risk setup: price close to the safety line" - skip if risk is over this many ATR (test with ?far=)
 const RETEST_MAX = 30;    // my number: how many candles after a break to wait for the retest
 const TP_ZONE = 0.5;      // my number: swing highs/lows within 0.5 ATR count as the same level
 const TP_BEFORE = 0.1;    // my number: take-profit set 0.1 ATR before the level ("a few points below", so it fills)
@@ -803,15 +803,16 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
     if (opts.rules.short != null) SHORT_ATR = opts.rules.short;
     if (opts.rules.hold != null) HOLD = opts.rules.hold;
     if (opts.rules.pivot != null) PIVOT = opts.rules.pivot;
+    if (opts.rules.far != null) FAR_ATR = opts.rules.far;
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR] = saved; }
 }
 
 module.exports = { nearCrudeRoll, crudeLastDay, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
