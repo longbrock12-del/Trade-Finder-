@@ -147,7 +147,7 @@ async function scannerTests() {
   ok(recs.every((r) => r.recent.every((x, k, a) => k === a.length - 1 || a[k + 1].out <= x.t)), "one position per market: each trade ends before the next begins");
   ok(recs.every((r) => r.recent.every((x) => ["safety line", "replaced", "target line"].includes(x.how))), "trades end on the safety line, the target line, or when a newer callout replaces them");
   const clr = M.find((m) => m.sym === "CL=F").record;
-  ok(clr.trades === 27 && clr.totalR === 14.45, "crude's 6 months: 27 trades, +14.45R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
+  ok(clr.trades === 27 && clr.totalR === 18.84, "crude's 6 months: 27 trades, +18.84R (taps must hold; crude rules: breaks and retests, none before a contract switch)", clr.trades + " / " + clr.totalR);
   { const TC = require(path.join(ROOT, "api/_trendlines.js")), cAll = TC.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, tfs: ["4H"], all: true });
     const gAll2 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true });
     const dayOf = (t) => new Date((t + 6 * 3600) * 1000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
@@ -160,6 +160,7 @@ async function scannerTests() {
     ok(rl.record && rl.record.trades > 0 && !rlBad.length, "real=1 test: target lines must be real trendlines (swing point to swing point)");
     const sm0 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }), sm1 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { srMin: 1 } });
     const srClose = (r) => r.signals.filter((x) => x.exitTo && x.exitTo.kind === "sr" && Math.abs(x.exitTo.price - x.entry) < (x.risk || 0) * 0.999).length;
+    ok(srClose(sm0) >= 0 && sm0.signals.every((x) => !(x.exitTo && x.exitTo.kind === "sr") || Math.abs(x.exitTo.price - x.entry) >= 0.5 * (x.risk || 0) - 1e-6), "live rule: no S/R take-profit closer than 0.5R to the entry");
     ok(srClose(sm1) === 0, "srmin=1 test: a trade never takes profit at an S/R level closer than 1R to its entry", srClose(sm0) + " -> " + srClose(sm1));
     const f3 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true }), f1 = TC.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, tfs: ["4H"], all: true, rules: { far: 1 } });
     ok(f1.signals.filter((x) => x.status === "too-far").length >= f3.signals.filter((x) => x.status === "too-far").length && f1.signals.every((x) => x.status !== "open" || x.risk <= x.risk), "far= test: her low-risk rule, skip trades whose stop is more than that many ATR away");
@@ -833,6 +834,10 @@ async function alertTests() {
   const bacR = JSON.parse(H("tf:live").get("4H|BAC|4H|break & retest|short|1794940200"));
   ok(bacR.opt && bacR.opt.mid === 1.85 && bacR.opt.strike === 50 && bacR.opt.type === "put" && bacR.opt.expiry === "2026-12-18", "the BAC trade gets the option you took on it (Dec 18 $50 put at 1.85)", JSON.stringify(bacR.opt));
   ok(bacR.status === "open" && bacR.entry === 49.45 && bacR.exitR == null && !bacR.how && bacR.reopened, "the BAC short that closed on a fake target line is reopened once at the same entry", JSON.stringify(bacR));
+  H("tf:live").set("4H|BAC|4H|break & retest|short|1794940200", JSON.stringify({ ...bacR, status: "closed", exitR: 0.16, exitPx: 49.2, how: "take profit", exitTo: { kind: "sr", price: 49.26, touches: 4 }, closedAt: 2 }));
+  db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+  const bacR2 = JSON.parse(H("tf:live").get("4H|BAC|4H|break & retest|short|1794940200"));
+  ok(bacR2.status === "open" && bacR2.reopened2 && bacR2.entry === 49.45 && !bacR2.exitTo, "BAC's close on the 19-cent S/R level is undone once", JSON.stringify(bacR2).slice(0, 160));
   H("tf:live").delete("4H|BAC|4H|break & retest|short|1794940200");
   { const stSig = { tf: "4H", setup: "break & retest", grade: "A+", dir: "long", entry: 100, stop0: 98, stop: 98, risk: 2, t: NOW - 1800, status: "open", nowR: 0.1, target: { price: 105, tf: "Daily", r: 2.5 } };
     const keepSite = site; site = { scan: { markets: [{ sym: "XYZ", kind: "stocks", price: 100.2, signals: [stSig], watch: [] }] }, options: { price: 100.1, contracts: [{ contract: "XYZ261218C00100000", type: "call", strike: 100, expiry: "2026-12-18", dte: 31, mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, iv: 30, spreadPct: 3, atStop: 2.9 }] } };

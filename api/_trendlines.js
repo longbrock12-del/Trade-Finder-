@@ -533,7 +533,9 @@ function record(hist, w = {}) {
 // exit "htfsr" (futures, her exits exactly): take profit at the nearest bigger-timeframe (Daily, Weekly, Monthly)
 // trendline or support/resistance level (4+ turns), whichever price reaches first; else the safety line.
 // Target lines are real trendlines only (swing point to swing point, 6+ candles). 2 years: +22.5% on the three futures.
-const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htfsr" };
+// srMin 0.5: an S/R level only counts as a target if it's at least half the risk past the entry (not a level a few
+// cents away, like BAC's 49.26 support 19 cents under a 49.45 short).
+const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htfsr", srMin: 0.5 };
 // Stocks: exactly her strategy, the same as gold and copper (all three setups, bounces with the trend; exits at the
 // trailing stop / safety line, an S/R level or a bigger-timeframe line). One set of rules for everything; tweaks
 // get tested from here.
@@ -543,7 +545,7 @@ const STOCK_RULES = { ...FUTURE_RULES };
 // Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
 // bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
 // in the 4 trading days up to the front contract's last day.
-const CRUDE_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], rollBlackout: true, exit: "htfsr" };
+const CRUDE_RULES = { trend: "bounce", once: false, setups: ["break", "retest"], rollBlackout: true, exit: "htfsr", srMin: 0.5 };
 const isCrude = (sym) => /^M?CL=F$/.test(sym || "");
 // Crude's last trading day for the contract that expires in this month: 3 business days before the 25th
 // (4 if the 25th is a weekend day). Holidays aren't counted.

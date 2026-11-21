@@ -107,6 +107,13 @@ module.exports = async function handler(req, res) {
         Object.assign(x, { status: "open", reopened: true });
         await S.hsetJSON("tf:live", lk, x);
       }
+      // Second one-time fix: it closed again on an S/R level 19 cents from the entry (49.26) when stocks got the S/R
+      // exit; S/R exits now need to be at least 0.5R away, so it goes back to open and keeps running.
+      if (x.key === "BAC|4H|break & retest|short|1794940200" && x.status === "closed" && x.how === "take profit" && x.exitTo && x.exitTo.kind === "sr" && !x.reopened2) {
+        ["exitR", "exitPx", "closedAt", "how", "exitTo"].forEach((k) => delete x[k]);
+        Object.assign(x, { status: "open", reopened2: true });
+        await S.hsetJSON("tf:live", lk, x);
+      }
       // The option contract you took on it (BAC Dec 18 $50 put at 1.85; the site didn't save one back then).
       // Delta, gamma, time decay and spread from the Nov 19 Cboe quote, with delta worked back to the 49.45 entry.
       if (x.key === "BAC|4H|break & retest|short|1794940200" && !x.opt) {
