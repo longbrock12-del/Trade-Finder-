@@ -4,7 +4,7 @@
 // 3. Live track record: every callout that was sent is saved, and updated until it closes, with exit alerts
 //    (stop moved, trade closed).
 // Runs at most once every 9 minutes however often it's called, so calling it is harmless.
-const S = require("./_store.js"), P = require("./_push.js");
+const S = require("./_store.js"), P = require("./_push.js"), TL = require("./_trendlines.js");
 const { vapid, subjectOf } = require("./push.js");
 
 // Bump when the callout rules change, so open callouts sent under the old rules get re-checked (and dropped if
@@ -98,6 +98,10 @@ module.exports = async function handler(req, res) {
     // Exit alerts too: when the stop trails to a new level (0.1R or more), and when the trade closes.
     const R1 = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "%"; // account % at 1% risk per trade, like the page
     let exits = 0;
+    // Today in New York, and earnings for the stocks you're in (for the 2-days-ahead warning).
+    const nyDay = (ms) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/New_York" }), today = nyDay(Date.now());
+    const openStocks = [...new Set(Object.values(live).filter((x) => x.status === "open" && x.kind === "stocks").map((x) => x.sym))];
+    const earn = openStocks.length ? ((await get("/api/earnings?s=" + encodeURIComponent(openStocks.join(",")))).earnings || {}) : {};
     let dropped = 0;
     for (const [lk, x] of Object.entries(await S.hgetallJSON("tf:live"))) {
       // One-time fix: the BAC short closed early on a target "line" that wasn't a real trendline (fixed since).
@@ -145,6 +149,30 @@ module.exports = async function handler(req, res) {
       const seen = x.seen || (x.at ? x.at / 1000 : x.t), nowS = Date.now() / 1000;
       const retro = s && s.status === "closed" && s.exitT != null && s.exitT < seen - 4 * 3600;
       const newer = (m.signals || []).some((q) => q.t > x.t && q.status !== "no-safety");
+      // 1. Crude: she gets out before the contract switches. Close the trade the day before the front contract's
+      //    last trading day, at today's price, and tell the phone.
+      if (/^M?CL=F$/.test(x.sym)) {
+        const left = TL.crudeDaysLeft(today);
+        if (left != null && left <= 1) {
+          const r = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;
+          Object.assign(x, { status: "closed", exitR: r, exitPx: m.price, closedAt: Date.now(), how: "contract switch" });
+          exits += await sendAll(toView, { title: "Exit " + name + ": " + R1(r), tag: "exit-" + x.key, url: "/",
+            body: "Close it before the contract switches (the front contract's last trading day is " + (left === 0 ? "today" : "tomorrow") + "), near " + m.price + ". Trade over: " + R1(r) + "." });
+          await S.hsetJSON("tf:live", lk, x);
+          continue;
+        }
+      }
+      // 2. Stocks: earnings in the next 2 days can gap right past the stop (and option prices drop after). Warn once.
+      const er = x.kind === "stocks" && earn[x.sym];
+      if (er) {
+        x.earnings = er;
+        const daysTo = Math.round((Date.parse(er.date + "T12:00:00Z") - Date.parse(today + "T12:00:00Z")) / 86400000);
+        if (daysTo >= 0 && daysTo <= 2 && x.earnWarned !== er.date) {
+          x.earnWarned = er.date;
+          exits += await sendAll(toView, { title: "Earnings soon: " + show(x.sym), tag: "earn-" + x.key, url: "/",
+            body: show(x.sym) + " reports " + (daysTo === 0 ? "today" : daysTo === 1 ? "tomorrow" : "in 2 days") + (er.when ? " " + er.when : "") + ". A gap can jump past your stop, and option prices drop after. Consider closing before." });
+        }
+      } else if (x.earnings) delete x.earnings;
       if (retro || (x.held && !(s && s.status === "open")) || (!s && !newer)) {
         x.held = true;
         const stopH = x.stopLive != null ? x.stopLive : x.stopNow != null ? x.stopNow : x.stop, tgH = x.target && x.target.price;
@@ -168,10 +196,11 @@ module.exports = async function handler(req, res) {
         if (s.line != null) x.line = s.line; // the safety line right now (a candle closing past it ends the trade)
         if (s.chart && s.chart.levels) x.levels = s.chart.levels; // and the chart's S/R levels
         const was = x.stopNow != null ? x.stopNow : x.stop;
-        if (s.stop != null && was != null && sign * (s.stop - was) >= 0.1 * x.risk) {
+        // 3. Every time the trailing stop moves (each new 4-hour candle along a sloped safety line), not only big moves.
+        if (s.stop != null && was != null && sign * (s.stop - was) > 1e-6) {
           x.stopNow = s.stop;
           exits += await sendAll(toView, { title: "Move stop: " + name, tag: "stop-" + x.key, url: "/",
-            body: "New stop " + s.stop + " (was " + was + "), trailing the safety line. Trade now " + R1(s.nowR) + "." });
+            body: "New stop " + s.stop + " (was " + was + "), trailing the safety line" + (s.line != null ? " (" + s.line + ")" : "") + ". Trade now " + R1(s.nowR) + "." });
         }
       } else if (newer) {
         const r = Math.round(((sign * (m.price - x.entry)) / x.risk) * 100) / 100;

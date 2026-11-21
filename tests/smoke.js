@@ -755,6 +755,7 @@ async function alertTests() {
     if (u.startsWith("https://push.test/")) { pushed.push({ u, h: o.headers, body: o.body }); return { ok: true, status: 201 }; }
     if (u.startsWith("https://tf.test/api/")) {
       if (/\/api\/options/.test(u)) return { ok: true, status: 200, json: async () => site.options || { contracts: [] } };
+      if (/\/api\/earnings/.test(u)) return { ok: true, status: 200, json: async () => global.__earn || { earnings: {} } };
       if (/&why=track/.test(u)) return { ok: true, status: 200, json: async () => site.track || { markets: [] } }; // an older trade looked up for tracking
       if (/&ct=/.test(u)) { ctAsks.push(u); return { ok: true, status: 200, json: async () => site.ct || { markets: [{ sym: "MGC=F", trade: { t: 1 } }] } }; } // by default today's rules still make the callout
       const k = /\/api\/scan/.test(u) ? "scan" : /&s=/.test(u) ? "extra" : "trades"; return { ok: true, status: 200, json: async () => site[k] || { markets: [] } };
@@ -771,6 +772,13 @@ async function alertTests() {
     try {
       return await new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; require(path.join(ROOT, file))({ method, url: "/", headers: { host: "tf.test" }, body }, res); });
     } finally { global.fetch = saved; Date.now = realNow; delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; }
+  };
+  const invoke2 = async (file, method, ms) => { // like invoke, at a chosen time
+    const saved = global.fetch, realNow = Date.now;
+    global.fetch = fetcher; Date.now = () => ms;
+    process.env.KV_REST_API_URL = "https://kv.test"; process.env.KV_REST_API_TOKEN = "t";
+    try { return await new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; require(path.join(ROOT, file))({ method, url: "/api/notify", headers: { host: "tf.test" } }, res); }); }
+    finally { global.fetch = saved; Date.now = realNow; delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; }
   };
   ok((await call("api/push.js", "/api/push", async () => ({ ok: false }))).body.configured === false, "without the database, the page is told phone alerts aren't set up");
   const info = await invoke("api/push.js", "GET");
@@ -856,6 +864,23 @@ async function alertTests() {
     ok(z1.status === "open" && z1.held && z1.nowR === 2, "a rule change can't close an open trade in the past: it stays open, held on its own stop and target", JSON.stringify(z1).slice(0, 200));
     ok(z2.status === "closed" && z2.exitPx === 99 && z2.how === "stop order", "a held trade still closes when price really reaches its stop", JSON.stringify(z2).slice(0, 200));
     ok(z3.status === "open" && z3.stopLive === 101 && z3.line === 101.5 && z3.nowR === 2.5, "a trade older than the scan's recent days is looked up and keeps updating (stop, safety line)", JSON.stringify(z3).slice(0, 200)); }
+  { // 1. Crude: closed the day before the front contract's last trading day. 2. Stocks: earnings in 2 days -> one warning.
+    const TLx = require(path.join(ROOT, "api/_trendlines.js"));
+    ok(TLx.crudeDaysLeft("2026-11-19") === 1 && TLx.crudeDaysLeft("2026-11-20") === 0 && TLx.crudeDaysLeft("2026-11-23") === null, "crude: trading days left before the contract switch (Nov 2026: last day Nov 20)");
+    const keep = site, KC = "4H|MCL=F|4H|break|long|1", KS = "4H|QQQ|4H|break|long|1";
+    H("tf:live").set(KC, JSON.stringify({ key: "MCL=F|4H|break|long|1", view: "4H", sym: "MCL=F", kind: "futures", tf: "4H", setup: "break", dir: "long", entry: 80, stop: 78, risk: 2, t: 1, seen: NOW, status: "open", rv: "3" }));
+    H("tf:live").set(KS, JSON.stringify({ key: "QQQ|4H|break|long|1", view: "4H", sym: "QQQ", kind: "stocks", tf: "4H", setup: "break", dir: "long", entry: 500, stop: 490, risk: 10, t: 1, seen: NOW, status: "open", rv: "3" }));
+    site = { trades: { markets: [{ sym: "MCL=F", kind: "futures", price: 81, signals: [], watch: [] }] }, scan: { markets: [{ sym: "QQQ", kind: "stocks", price: 505, signals: [], watch: [] }] }, track: { markets: [] } };
+    db.delete("tf:lastrun"); pushed.length = 0;
+    const nov19 = Date.parse("2026-11-19T15:00:00Z");
+    global.__earn = { earnings: { QQQ: { date: "2026-11-21", when: "after close" } } };
+    await invoke2("api/notify.js", "GET", nov19);
+    const c = JSON.parse(H("tf:live").get(KC)), q = JSON.parse(H("tf:live").get(KS)), msgs = pushed.map((x) => open(x.body));
+    ok(c.status === "closed" && c.how === "contract switch" && c.exitPx === 81 && msgs.some((m) => /Exit BUY MCL/.test(m.title) && /before the contract switches/.test(m.body)), "an open crude trade is closed the day before the contract switch, with an Exit alert", JSON.stringify(c).slice(0, 160));
+    ok(q.status === "open" && q.earnWarned === "2026-11-21" && msgs.filter((m) => /Earnings soon: QQQ/.test(m.title)).length === 1, "an open stock trade with earnings in 2 days gets one warning", JSON.stringify(msgs.map((m) => m.title)));
+    db.delete("tf:lastrun"); pushed.length = 0; await invoke2("api/notify.js", "GET", nov19);
+    ok(!pushed.map((x) => open(x.body)).some((m) => /Earnings soon/.test(m.title)), "the earnings warning is sent only once");
+    H("tf:live").delete(KC); H("tf:live").delete(KS); site = keep; delete global.__earn; }
   { const stSig = { tf: "4H", setup: "break & retest", grade: "A+", dir: "long", entry: 100, stop0: 98, stop: 98, risk: 2, t: NOW - 1800, status: "open", nowR: 0.1, target: { price: 105, tf: "Daily", r: 2.5 } };
     const keepSite = site; site = { scan: { markets: [{ sym: "XYZ", kind: "stocks", price: 100.2, signals: [stSig], watch: [] }] }, options: { price: 100.1, contracts: [{ contract: "XYZ261218C00100000", type: "call", strike: 100, expiry: "2026-12-18", dte: 31, mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, iv: 30, spreadPct: 3, atStop: 2.9 }] } };
     db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site = keepSite;
@@ -865,7 +890,7 @@ async function alertTests() {
   db.delete("tf:lastrun"); pushed.length = 0;
   site = { trades: { markets: [mk(1999, { ...sig, nowR: 0.4, stop: 1990.5 })] } };
   await invoke("api/notify.js", "GET");
-  ok(pushed.length === 0, "a tiny stop change (under 0.1R) doesn't send an alert");
+  { const mv = pushed.map((x) => open(x.body)); ok(mv.length === 1 && /^Move stop/.test(mv[0].title) && /New stop 1990\.5/.test(mv[0].body), "every stop move (each new 4-hour candle) sends a Move stop alert, not only big ones", JSON.stringify(mv)); }
   db.delete("tf:lastrun"); pushed.length = 0;
   site = { trades: { markets: [mk(1980, { ...sig, status: "closed", exitR: -1, exitHow: "stop order", exitPx: 1989 })] } };
   await invoke("api/notify.js", "GET");

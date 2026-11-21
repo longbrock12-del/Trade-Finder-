@@ -556,6 +556,14 @@ function crudeLastDay(y, m) {
   while (n > 0) { d.setUTCDate(d.getUTCDate() - 1); if (biz(d)) n--; }
   return d;
 }
+// Trading days from this day to the front contract's last day (0 = the last day itself), or null after it.
+function crudeDaysLeft(day) {
+  const [y, mo, dd] = day.split("-").map(Number), last = crudeLastDay(y, mo - 1), d = new Date(Date.UTC(y, mo - 1, dd));
+  if (d > last) return null;
+  let n = 0;
+  for (const q = new Date(last); q > d; q.setUTCDate(q.getUTCDate() - 1)) { const w = q.getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
 // True on the last day and the 3 trading days before it.
 function nearCrudeRoll(day) {
   const [y, mo, dd] = day.split("-").map(Number), last = crudeLastDay(y, mo - 1), d = new Date(Date.UTC(y, mo - 1, dd));
@@ -819,4 +827,4 @@ function scan(hChart, dChart, opts = {}) {
   } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR] = saved; }
 }
 
-module.exports = { nearCrudeRoll, crudeLastDay, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
+module.exports = { nearCrudeRoll, crudeLastDay, crudeDaysLeft, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

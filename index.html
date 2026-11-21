@@ -729,6 +729,7 @@ function whyExit(x, exitPx, d) {
   if (x.how === "take profit") return sr ? "price hit " + sr + at + ", where the target trendline" + tg + " also was. She takes profit there." : "price reached the target" + tg + at + ", the next bigger-timeframe trendline, where price often stalls or turns. She takes profit there.";
   if (x.how === "stop order") return "price traded through the stop order" + at + ". The stop sits just past the safety line, so the setup failed.";
   if (x.how === "close through the line") return "a " + esc(x.tf || "4H") + " candle closed through the safety line" + at + ". Her rule: once a candle closes past it, the trade is over.";
+  if (x.how === "contract switch") return "the crude contract was about to switch" + at + ". She gets out before the switch instead of holding through it.";
   if (/replaced/.test(x.how || "")) return "a newer callout on " + esc(show(x.sym)) + " replaced this one, closing it near" + at + ".";
   return "the trade closed" + at + ".";
 }
@@ -794,7 +795,8 @@ function openTrades() {
     const grid = '<div class="gr otg"><div><small>Entry</small>' + num(x.entry, d) + "</div><div><small>Now</small>" + (price != null ? num(price, d) : "—") + "</div>" +
       '<div><small>Stop' + (moved ? " (trailing)" : "") + "</small>" + (stop != null ? num(stop, d) : "—") + (moved ? '<small class="was">was ' + num(x.stop, d) + "</small>" : "") + "</div>" +
       '<div><small>Nearest ' + srName + "</small>" + (sr ? num(sr.p, d) + '<small class="was">price turned there ' + sr.n + " times</small>" : "—") + "</div></div>";
-    const exitWhen = (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") +
+    const erT = x.kind === "stocks" && x.earnings && x.earnings.date >= new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) ? '<div class="note mini warn">⚠ Earnings ' + new Date(x.earnings.date + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) + (x.earnings.when ? " " + esc(x.earnings.when) : "") + ": a gap can jump past the stop, and option prices drop after.</div>" : "";
+    const exitWhen = erT + (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") +
       (stop != null ? '<div class="note mini"><b>Backup:</b> the stop order at ' + num(stop, d) + ", just past the safety line, in case price spikes through it before the candle closes.</div>" : "") +
       (tg ? '<div class="note mini"><b>Take profit if price gets there:</b> ' + num(tg.price, d) + " (" + esc(tgName) + ")" + "" + ".</div>" : "");
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +
