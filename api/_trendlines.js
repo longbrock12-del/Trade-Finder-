@@ -537,7 +537,8 @@ const FUTURE_RULES = { trend: "bounce", once: false, setups: null, exit: "htfsr"
 // Stocks: exactly her strategy, the same as gold and copper (all three setups, bounces with the trend; exits at the
 // trailing stop / safety line, an S/R level or a bigger-timeframe line). One set of rules for everything; tweaks
 // get tested from here.
-const STOCK_RULES = { ...FUTURE_RULES };
+// One difference: stocks skip bounces (2 years, 112 stocks: bounces -43% over 268 trades; breaks and retests about even).
+const STOCK_RULES = { ...FUTURE_RULES, setups: ["break", "retest"] };
 // Crude (MCL/CL): her own crude trades are all breaks and break & retests ("I'm a breakout trader"); crude
 // bounces lost money over 2 years. And she gets out before the contract switches, so no new crude callouts
 // in the 4 trading days up to the front contract's last day.
