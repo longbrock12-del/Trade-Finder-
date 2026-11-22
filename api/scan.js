@@ -110,7 +110,8 @@ async function handler(req, res) {
   found.sort((a, b) => UNIVERSE.indexOf(a.sym) - UNIVERSE.indexOf(b.sym));
   const R = rules || {};
   if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? "all" : R.setups || "all", exit: R.exit === undefined ? "htfsr" : R.exit || "trail", cost: R.cost || 0, realLines: !!R.realLines }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}), ...(patOn ? { pattern: require("./_pattern.js").summarize(lists, Date.now() / 1000) } : listOn ? { list: lists } : {}) });
-  send(res, scanned ? 200 : 502, scanned ? 900 : 0, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
+  // Cached 15 minutes while the market is open, 3 hours while it's closed (nothing changes; saves CPU).
+  send(res, scanned ? 200 : 502, !scanned ? 0 : require("./_hours.js").stocksOpen() ? 900 : 10800, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
 }
 
 // Stocks that respect trendlines: the top 10 by 6-month total R on this chart (3+ trades, positive total).

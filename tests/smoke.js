@@ -749,7 +749,7 @@ async function alertTests() {
     throw new Error("cmd " + c);
   };
   let site = {}; const ctAsks = [];
-  const fetcher = async (u, o = {}) => {
+  let fetcher = async (u, o = {}) => {
     u = String(u);
     if (u.startsWith("https://kv.test/pipeline")) { const out = JSON.parse(o.body).map((c) => ({ result: run(c) })); return { ok: true, status: 200, json: async () => out }; }
     if (u.startsWith("https://push.test/")) { pushed.push({ u, h: o.headers, body: o.body }); return { ok: true, status: 201 }; }
@@ -768,7 +768,7 @@ async function alertTests() {
   const invoke = async (file, method, body) => {
     const saved = global.fetch, realNow = Date.now;
     global.fetch = fetcher; Date.now = () => NOW * 1000;
-    process.env.KV_REST_API_URL = "https://kv.test"; process.env.KV_REST_API_TOKEN = "t";
+    process.env.KV_REST_API_URL = "https://kv.test"; process.env.KV_REST_API_TOKEN = "t"; process.env.TF_ALL_HOURS = global.__hours ? "" : "1";
     try {
       return await new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; require(path.join(ROOT, file))({ method, url: "/", headers: { host: "tf.test" }, body }, res); });
     } finally { global.fetch = saved; Date.now = realNow; delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; }
@@ -776,7 +776,7 @@ async function alertTests() {
   const invoke2 = async (file, method, ms) => { // like invoke, at a chosen time
     const saved = global.fetch, realNow = Date.now;
     global.fetch = fetcher; Date.now = () => ms;
-    process.env.KV_REST_API_URL = "https://kv.test"; process.env.KV_REST_API_TOKEN = "t";
+    process.env.KV_REST_API_URL = "https://kv.test"; process.env.KV_REST_API_TOKEN = "t"; process.env.TF_ALL_HOURS = global.__hours ? "" : "1";
     try { return await new Promise((r) => { const res = { statusCode: 200, setHeader() {}, end(b) { r({ status: res.statusCode, body: JSON.parse(b) }); } }; require(path.join(ROOT, file))({ method, url: "/api/notify", headers: { host: "tf.test" } }, res); }); }
     finally { global.fetch = saved; Date.now = realNow; delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; }
   };
@@ -864,6 +864,18 @@ async function alertTests() {
     ok(z1.status === "open" && z1.held && z1.nowR === 2, "a rule change can't close an open trade in the past: it stays open, held on its own stop and target", JSON.stringify(z1).slice(0, 200));
     ok(z2.status === "closed" && z2.exitPx === 99 && z2.how === "stop order", "a held trade still closes when price really reaches its stop", JSON.stringify(z2).slice(0, 200));
     ok(z3.status === "open" && z3.stopLive === 101 && z3.line === 101.5 && z3.nowR === 2.5, "a trade older than the scan's recent days is looked up and keeps updating (stop, safety line)", JSON.stringify(z3).slice(0, 200)); }
+  { // Saving CPU: the 112-stock scan only runs while stocks trade, once per 4-hour candle; futures only while they trade.
+    const HRx = require(path.join(ROOT, "api/_hours.js")), sat = Date.parse("2026-11-21T15:00:00Z"), mon = Date.parse("2026-11-23T15:00:00Z"), monB = Date.parse("2026-11-23T15:20:00Z");
+    ok(!HRx.stocksOpen(sat) && !HRx.futuresOpen(sat) && HRx.stocksOpen(mon) && HRx.futuresOpen(mon) && HRx.futuresOpen(Date.parse("2026-11-22T23:30:00Z")) && !HRx.stocksOpen(Date.parse("2026-11-22T23:30:00Z")), "market hours: stocks Mon-Fri 9:30-4:30, futures Sun 6 PM-Fri 5 PM");
+    let asks = []; const keepF = fetcher; global.__hours = true;
+    const spyAsk = (u) => { if (/\/api\/(scan|trades)\?tf=/.test(String(u)) && !/&s=/.test(String(u))) asks.push(String(u).replace(/^.*\/api\//, "")); };
+    const wrap = async (u, o) => { spyAsk(u); return keepF(u, o); };
+    fetcher = wrap;
+    db.delete("tf:lastrun"); await invoke2("api/notify.js", "GET", sat); const a1 = asks.slice(); asks = [];
+    db.delete("tf:lastrun"); await invoke2("api/notify.js", "GET", mon); const a2 = asks.slice(); asks = [];
+    db.delete("tf:lastrun"); await invoke2("api/notify.js", "GET", monB); const a3 = asks.slice(); asks = [];
+    fetcher = keepF; delete global.__hours;
+    ok(a1.length === 0 && a2.some((u) => /^scan/.test(u)) && a2.some((u) => /^trades/.test(u)) && !a3.some((u) => /^scan/.test(u)) && a3.some((u) => /^trades/.test(u)), "the alert check skips scans while markets are closed, and scans stocks once per 4-hour candle", JSON.stringify([a1, a2, a3])); }
   { // 1. Crude: closed the day before the front contract's last trading day. 2. Stocks: earnings in 2 days -> one warning.
     const TLx = require(path.join(ROOT, "api/_trendlines.js"));
     ok(TLx.crudeDaysLeft("2026-11-19") === 1 && TLx.crudeDaysLeft("2026-11-20") === 0 && TLx.crudeDaysLeft("2026-11-23") === null, "crude: trading days left before the contract switch (Nov 2026: last day Nov 20)");

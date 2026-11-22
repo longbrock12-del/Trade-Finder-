@@ -4,7 +4,7 @@
 // 3. Live track record: every callout that was sent is saved, and updated until it closes, with exit alerts
 //    (stop moved, trade closed).
 // Runs at most once every 9 minutes however often it's called, so calling it is harmless.
-const S = require("./_store.js"), P = require("./_push.js"), TL = require("./_trendlines.js");
+const S = require("./_store.js"), P = require("./_push.js"), TL = require("./_trendlines.js"), HR = require("./_hours.js");
 const { vapid, subjectOf } = require("./push.js");
 
 // Bump when the callout rules change, so open callouts sent under the old rules get re-checked (and dropped if
@@ -34,8 +34,14 @@ module.exports = async function handler(req, res) {
     // Prices and callouts for each chart setting in use (or tracked in the live record).
     const tfs = [...new Set(Object.values(subs).map((x) => (x.prefs && x.prefs.tf) || "4H").concat(Object.values(live).filter((x) => x.status === "open").map((x) => x.view || "4H")))];
     const byTf = {};
+    // Saving CPU (Vercel's free plan: 4 CPU hours a month). The 112-stock scan only runs while the stock market is
+    // open, once per 4-hour candle (stock callouts only happen when a candle closes): about 3 times a weekday instead
+    // of 96 times a day. Futures only while they trade. Open trades and line alerts are still checked every
+    // 15 minutes below, one symbol at a time.
+    const nowMs = Date.now(), all = process.env.TF_ALL_HOURS === "1"; // (tests: ignore market hours)
+    const runStocks = all || (HR.stocksOpen(nowMs) && !!(await S.one("SET", "tf:scanned:" + HR.stockCandle(nowMs), "1", "NX", "EX", 86400))), runFut = all || HR.futuresOpen(nowMs);
     for (const tf of tfs) {
-      const [a, b] = await Promise.all([get("/api/trades?tf=" + tf), get("/api/scan?tf=" + tf)]);
+      const [a, b] = await Promise.all([runFut ? get("/api/trades?tf=" + tf) : {}, runStocks ? get("/api/scan?tf=" + tf) : {}]);
       byTf[tf] = (a.markets || []).concat(b.markets || []).filter((m) => !m.error);
     }
     // Symbols with line alerts or open live trades that aren't in those lists (e.g. a stock with no setup now).
@@ -211,7 +217,7 @@ module.exports = async function handler(req, res) {
       if (x.status === "open") { x.seen = nowS; if (s && s.status === "open") delete x.held; } // last time it was seen running
       await S.hsetJSON("tf:live", lk, x);
     }
-    reply(res, { ran: true, notified, alerted, exits, dropped, phones: Object.keys(subs).length });
+    reply(res, { ran: true, notified, alerted, exits, dropped, phones: Object.keys(subs).length, scanned: { stocks: runStocks, futures: runFut } });
   } catch (e) {
     reply(res, { ran: false, error: e.message || "failed" });
   }

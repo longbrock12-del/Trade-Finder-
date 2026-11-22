@@ -119,7 +119,8 @@ async function handler(req, res) {
     } catch (e) { return { sym, error: e.message || "failed" }; }
   }));
   const okCount = markets.filter((m) => !m.error).length;
-  send(res, okCount ? 200 : 502, okCount ? 300 : 0, { at: Date.now(), markets });
+  // Cached 5 minutes while futures trade (or for stock look-ups), 1 hour over the weekend and daily break.
+  send(res, okCount ? 200 : 502, !okCount ? 0 : markets.every((m) => /=F$/.test(m.sym)) && !require("./_hours.js").futuresOpen() ? 3600 : 300, { at: Date.now(), markets });
 }
 
 module.exports = handler;
