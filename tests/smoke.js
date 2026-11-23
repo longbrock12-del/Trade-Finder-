@@ -222,6 +222,8 @@ async function scannerTests() {
   ok(tapN > 30 && !tapBad && !tapMis, "every tap counted is in the chart (older ones too) and really touches the line", tapN + " taps, " + tapBad + " off, " + tapMis + " count mismatches");
   const gcAll = T.scan(load("yahoo_GC.json"), load("yahoo_daily_GC.json"), { sym: "MGC=F", now: NOW, all: true, tfs: ["4H"] });
   ok(gcAll.signals.length && gcAll.signals.every((x) => x.real != null && x.real <= x.taps && x.real === x.chart.taps.filter((q) => !q.near).length), "each line carries its real touches (wicks that reached the line), matching the chart's solid dots");
+  ok(gcAll.signals.every((x) => !x.chart.safety || (x.chart.safetyTouches.length && x.chart.lineTouches.length >= x.chart.taps.length)) && gcAll.signals.every((x) => x.chart.lines.every((l) => Array.isArray(l.taps))),
+    "every trendline on the chart, the action and safety lines included, carries a dot for each candle that touched it");
   // Taps must hold: the 2 candles after a tap don't close through the line (a touch the break starts from isn't a tap).
   let holdBad = 0, holdN = 0;
   gcAll.signals.concat(T.scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "MCL=F", now: NOW, all: true, tfs: ["4H"] }).signals).forEach((x) => {

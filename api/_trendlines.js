@@ -243,7 +243,9 @@ function setup(daily, bars, isFuture, tf) {
 
 // Taps on a line from its start up to (not including) candle `upto`: candles whose wick actually touches it (see touches()):
 // the line, the extreme of their neighbors, 6+ candles apart. Daily history counts each day as one tap spot.
-function taps(S, ln, upto, up) {
+// all: every candle whose wick touched the line (for the chart's dots), without the hold and 6-candle rules
+// that decide which taps count.
+function taps(S, ln, upto, up, all) {
   const key = up ? "l" : "h", out = [];
   // Candles in order (daily ones before the intraday ones), so a tap can be checked against the candles after it.
   const seq = S.D.map((d, k) => ({ x: k * S.ppd, c: d.c })).concat(S.bars.slice(0, upto).map((b, i) => ({ x: S.x0 + i, c: b.c })));
@@ -258,7 +260,9 @@ function taps(S, ln, upto, up) {
     return true;
   };
   const consider = (x, p, tol, ext) => {
-    if (x < ln.a.x - 0.01 || !ext || !touches(p, val(ln, x), tol, up) || !held(x)) return;
+    if (x < ln.a.x - 0.01 || !ext || !touches(p, val(ln, x), tol, up)) return;
+    if (all) { out.push(x); return; }
+    if (!held(x)) return;
     if (out.length && x - out[out.length - 1] < MIN_GAP) return;
     out.push(x);
   };
@@ -760,7 +764,8 @@ function scanCore(hChart, dChart, opts = {}) {
     // Every line's own taps (the same tap rules as the action line), so the chart can mark them all.
     // i: candle on this chart (negative = before it), X: daily-candle units for the 3-month and 2-year views.
     const zoff0 = Math.max(0, daily.length - ZOOM);
-    const tapsOf = (ln, up) => taps(s, ln, s.last + 1, up).map((q) => ({ i: q - base, X: q / s.ppd - zoff0, p: px(val(ln, q)), near: nearMiss(s, ln, q) }));
+    // Every touch, so each line shows a dot wherever price touched it (the action line's counted taps stay in taps).
+    const tapsOf = (ln, up) => taps(s, ln, s.last + 1, up, true).map((q) => ({ i: q - base, X: q / s.ppd - zoff0, p: px(val(ln, q)), near: nearMiss(s, ln, q) }));
     const edges = (c, up) => c.slice(1).map((q, k) => [c[k], q])
       .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
       .map(([a, q]) => ({ up, ...loc(lineOf(a, q)), taps: tapsOf(lineOf(a, q), up) })).filter((e) => e.i1 >= -KEEP);
@@ -772,7 +777,7 @@ function scanCore(hChart, dChart, opts = {}) {
       const v = val(ln, xNow);
       return { up, tf: tfOfLine(ln, x.tf), t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, now: px(v), pct: r2((100 * (v - live)) / live, 1),
         action: same(ln, x.action), safety: same(ln, x.safety), X0: ln.a.x / s.ppd - zoff, P0: ln.a.p, slopeX: ln.slope * s.ppd,
-        taps: same(ln, x.action) ? undefined : tapsOf(ln, up).map((q) => ({ X: q.X, p: q.p, near: q.near })) };
+        taps: tapsOf(ln, up).map((q) => ({ X: q.X, p: q.p, near: q.near })) };
     };
     const lines = [[ch.up, true], [ch.dn, false]].flatMap(([c, up]) => c.slice(1).map((q, k) => [c[k], q])
       .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
@@ -783,7 +788,8 @@ function scanCore(hChart, dChart, opts = {}) {
     });
     return {
       bars: b.slice(off).map((q) => [q.t, px(q.o), px(q.h), px(q.l), px(q.c)]),
-      line: loc(x.action), safety: loc(x.safety), tapIdx: x.tapX.map((t) => t - base).filter((t) => t >= 0),
+      line: loc(x.action), safety: loc(x.safety),
+      lineTouches: x.action ? tapsOf(x.action, x.action.slope > 0) : [], safetyTouches: x.safety ? tapsOf(x.safety, x.safety.slope > 0) : [], tapIdx: x.tapX.map((t) => t - base).filter((t) => t >= 0),
       // Every tap on the action line, including ones older than this chart: when (t), where on the line (p),
       // and X in daily-candle units for the 3-month and 2-year views.
       // near: the wick came within the tap distance but stopped more than 0.1 ATR short of the line (a near
