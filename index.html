@@ -810,9 +810,6 @@ function optName(x) {
 }
 // An open stock trade's option contract (the row above already shows the trade's result; the option breakdown
 // shows in Recent trades once it closes).
-function openOpt(x) {
-  return x.kind === "stocks" && x.opt ? '<div class="note mini">Option: <b class="on">' + optName(x) + '</b> · % is the option, after time decay and spread</div>' : "";
-}
 function openTrades() {
   // A callout that's still in Get In Now isn't listed here too: it moves to tracking once it can't be entered
   // (0.5R past entry, through the stop, or a day old).
@@ -840,12 +837,16 @@ function openTrades() {
     // The safety line's two points, so it can be drawn on any chart (from today's scan, or what the alert check saved).
     const sp = (sg && sg.chart && sg.chart.safety && sg.chart.safety.t0 ? sg.chart.safety : null) || x.safetyPts, hiLo = x.dir === "long" ? "low" : "high";
     const spDay = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
-    const spTxt = sp ? '<div class="note mini">Safety line: the ' + spDay(sp.t0) + " " + hiLo + " (" + num(sp.p0, d) + ") → the " + spDay(sp.t1) + " " + hiLo + " (" + num(sp.p1, d) + ")" + (line != null ? ", at " + num(line, d) + " now" : "") + ".</div>" : "";
-    const exitWhen = erT + (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") + spTxt +
-      (stop != null ? '<div class="note mini"><b>Backup:</b> the stop order at ' + num(stop, d) + ", just past the safety line, in case price spikes through it before the candle closes.</div>" : "") +
-      (tg ? '<div class="note mini"><b>Take profit if price gets there:</b> ' + num(tg.price, d) + " (" + esc(tgName) + ")" + "" + ".</div>" : "");
+    // Exit plan in one box, a labelled row each (the same look as the callout cards).
+    const plan = [];
+    if (line != null) plan.push(["Main exit", "a 4H candle closes " + (x.dir === "long" ? "below " : "above ") + "<b>" + num(line, d) + "</b> (safety line)"]);
+    if (stop != null) plan.push(["Stop order", "<b>" + num(stop, d) + "</b> · backup, in case price spikes through before the candle closes"]);
+    if (tg) plan.push(["Take profit", "<b>" + num(tg.price, d) + "</b> · " + esc(tgName) + ", if price gets there"]);
+    if (sp) plan.push(["Safety line", spDay(sp.t0) + " " + hiLo + " " + num(sp.p0, d) + " → " + spDay(sp.t1) + " " + hiLo + " " + num(sp.p1, d)]);
+    if (x.kind === "stocks" && x.opt) plan.push(["Option", optName(x) + '<div class="mu" style="font-size:11.5px">% above is the option, after time decay and spread</div>']);
+    const exitWhen = erT + (plan.length ? '<div class="sec"><div class="sh">Exit plan</div>' + plan.map(([a, b]) => '<div class="pr"><span>' + a + "</span><div>" + b + "</div></div>").join("") + "</div>" : "");
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +
-      '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + grid + exitWhen + openOpt(x, m) + tradeChart(x) };
+      '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + grid + exitWhen + tradeChart(x) };
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;
   // One box: the title, the newest open trade always showing, and a button for the rest.
