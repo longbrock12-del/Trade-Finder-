@@ -431,6 +431,39 @@ function callout(s, e, last, live, px) {
 // (price turned there in the last ~2 years) and the 2 nearest above and 2 nearest below today's price, the first
 // places a trade would stall or bounce.
 const SR_MIN = 4, SR_RECENT = 500, SR_EACH = 2;
+// How a support/resistance level has done each time price came back to it (daily candles, all the history we have):
+// held = price reached the zone (within 0.35 ATR) and turned away 1+ ATR without a daily close through it;
+// fake = a daily close through it, but price was back on the original side within 20 days;
+// broke = a close through it that stayed through (the level's job ended there; old resistance can become support).
+// Only for the few levels the charts show, so it costs next to nothing.
+function srHistory(D, p) {
+  const A = atr(D), out = { tests: 0, held: 0, fake: 0, broke: 0, lastBreak: null };
+  let i = 1;
+  while (i < D.length) {
+    const z = 0.35 * A[i], prev = D[i - 1].c;
+    if (Math.abs(prev - p) <= z) { i++; continue; } // already sitting on the level: wait to see a side
+    const above = prev > p, reach = above ? D[i].l <= p + z : D[i].h >= p - z;
+    if (!reach) { i++; continue; }
+    out.tests++;
+    let j = i, res = null;
+    for (; j < Math.min(D.length, i + 15); j++) {
+      const a = A[j];
+      if (above ? D[j].c < p - 0.35 * a : D[j].c > p + 0.35 * a) { res = "through"; break; }
+      if (above ? D[j].h >= p + a : D[j].l <= p - a) { res = "held"; break; }
+    }
+    if (res === "held") { out.held++; i = j + 1; continue; }
+    if (res === "through") {
+      let k = j + 1, back = false;
+      for (; k < Math.min(D.length, j + 21); k++) if (above ? D[k].c > p : D[k].c < p) { back = true; break; }
+      if (back) { out.fake++; i = k + 1; } else { out.broke++; out.lastBreak = D[j].t; i = j + 21; }
+      continue;
+    }
+    out.tests--; // still undecided (the latest days): don't count it yet
+    break;
+  }
+  return out;
+}
+
 function srLevels(daily, live) {
   const D = daily;
   if (D.length < 30) return [];
@@ -634,7 +667,7 @@ function scanCore(hChart, dChart, opts = {}) {
   // trading since long before the micros started in 2021) when it's given, else this market's own.
   let lvDaily = daily;
   try { if (opts.levelDaily) { const b = hourly(opts.levelDaily).bars; if (b.length > daily.length) lvDaily = b; } } catch (e) {}
-  const LEVELS = srLevels(lvDaily, live).map((x) => ({ ...x, p: px(x.p) }));
+  const LEVELS = srLevels(lvDaily, live).map((x) => ({ ...x, ...srHistory(lvDaily, x.p), p: px(x.p) }));
 
   const hist = []; // every callout over the whole window, for the track record
   // Which setups and filters each kind of market uses (opts.rules overrides any of them, for tests):
@@ -827,4 +860,4 @@ function scan(hChart, dChart, opts = {}) {
   } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR] = saved; }
 }
 
-module.exports = { nearCrudeRoll, crudeLastDay, crudeDaysLeft, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
+module.exports = { srHistory, nearCrudeRoll, crudeLastDay, crudeDaysLeft, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

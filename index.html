@@ -334,10 +334,17 @@ function stratNote(m) {
   return '<div class="note mini stn"><b>Strategy:</b> ' + t + ex + "</div>";
 }
 // The S/R levels' prices in one small line under a chart, highest first: "R 4,383.7 ×5 · R 4,266.6 ×6 · S 4,077.9 ×5".
+// How strong a level has been: how often price came back to it and held vs broke through.
+function srHist(v) {
+  if (!v || !v.tests) return "";
+  const pct = Math.round((100 * v.held) / v.tests), when = v.lastBreak ? new Date(v.lastBreak * 1000).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "";
+  return "held " + v.held + " of " + v.tests + " tests (" + pct + "%)" + (v.fake ? " · " + v.fake + " fake break" + (v.fake > 1 ? "s" : "") : "") + (v.broke ? " · broke for good " + v.broke + "×" + (when ? " (last " + when + ")" : "") : " · never broke for good");
+}
+// The S/R levels under a chart, highest first, one per line: price, turns, and how it has held up.
 function srNote(levels, d) {
   const lv = (levels || []).slice().sort((a, b) => b.p - a.p);
   if (!lv.length) return "";
-  return '<div class="note mini srn">S/R levels: ' + lv.map((v) => '<b style="color:var(--warn)">' + v.side + " " + num(v.p, d) + "</b> ×" + v.n).join(" · ") + "</div>";
+  return '<div class="note mini srn"><div>S/R levels (all the daily history):</div>' + lv.map((v) => '<div><b style="color:var(--warn)">' + v.side + " " + num(v.p, d) + "</b> ×" + v.n + (v.tests ? ' <span class="mu">· ' + srHist(v) + "</span>" : "") + "</div>").join("") + "</div>";
 }
 function chart(m, s) {
   const C = s.chart, B = C.bars, n = B.length, end = n - 1;
@@ -794,7 +801,7 @@ function openTrades() {
     const srName = x.dir === "long" ? "resistance" : "support";
     const grid = '<div class="gr otg"><div><small>Entry</small>' + num(x.entry, d) + "</div><div><small>Now</small>" + (price != null ? num(price, d) : "—") + "</div>" +
       '<div><small>Stop' + (moved ? " (trailing)" : "") + "</small>" + (stop != null ? num(stop, d) : "—") + (moved ? '<small class="was">was ' + num(x.stop, d) + "</small>" : "") + "</div>" +
-      '<div><small>Nearest ' + srName + "</small>" + (sr ? num(sr.p, d) + '<small class="was">price turned there ' + sr.n + " times</small>" : "—") + "</div></div>";
+      '<div><small>Nearest ' + srName + "</small>" + (sr ? num(sr.p, d) + '<small class="was">turned there ' + sr.n + "×" + (sr.tests ? " · held " + Math.round((100 * sr.held) / sr.tests) + "% of " + sr.tests + " tests" : "") + "</small>" : "—") + "</div></div>";
     const erT = x.kind === "stocks" && x.earnings && x.earnings.date >= new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) ? '<div class="note mini warn">⚠ Earnings ' + new Date(x.earnings.date + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) + (x.earnings.when ? " " + esc(x.earnings.when) : "") + ": a gap can jump past the stop, and option prices drop after.</div>" : "";
     const exitWhen = erT + (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") +
       (stop != null ? '<div class="note mini"><b>Backup:</b> the stop order at ' + num(stop, d) + ", just past the safety line, in case price spikes through it before the candle closes.</div>" : "") +
