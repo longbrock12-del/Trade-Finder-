@@ -133,14 +133,14 @@ h2{color:var(--mu)}.ohead,.setsum{color:var(--tx)}.stick{background:var(--bg)}
 .note.stn{background:rgba(52,211,153,.08)}
 /* Eye-catching, in a few places only. */
 @keyframes glow{0%,100%{box-shadow:0 0 0 1px rgba(52,211,153,.55),0 0 14px rgba(52,211,153,.18)}50%{box-shadow:0 0 0 1px rgba(52,211,153,.9),0 0 26px rgba(52,211,153,.38)}}
-.golive,#out>.golive{border-color:transparent!important;animation:rise .35s ease-out both,glow 2.6s ease-in-out .35s infinite}
+.golive,#out>.golive{border-color:transparent!important;animation:glow 2.6s ease-in-out infinite}#out.anim>.golive,#out.anim .golive{animation:rise .35s ease-out both,glow 2.6s ease-in-out .35s infinite}
 @keyframes ping{0%{box-shadow:0 0 0 0 rgba(52,211,153,.7)}80%,100%{box-shadow:0 0 0 7px rgba(52,211,153,0)}}
 .ldot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gd);margin:0 8px 1px 2px;vertical-align:middle;animation:ping 1.8s ease-out infinite}
 @keyframes flup{0%{background:rgba(52,211,153,.30)}100%{background:var(--card)}}@keyframes fldn{0%{background:rgba(242,107,107,.30)}100%{background:var(--card)}}
 .mcard.flup{animation:flup 1.4s ease-out}.mcard.fldn{animation:fldn 1.4s ease-out}
 .trk .big.ok{text-shadow:0 0 18px rgba(52,211,153,.45)}.trk .big.bad{text-shadow:0 0 18px rgba(242,107,107,.4)}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-#out>*{animation:rise .35s ease-out both}#out>*:nth-child(2){animation-delay:.04s}#out>*:nth-child(3){animation-delay:.08s}#out>*:nth-child(4){animation-delay:.12s}#out>*:nth-child(n+5){animation-delay:.16s}
+#out.anim>*{animation:rise .35s ease-out both}#out.anim>*:nth-child(2){animation-delay:.04s}#out.anim>*:nth-child(3){animation-delay:.08s}#out.anim>*:nth-child(4){animation-delay:.12s}#out.anim>*:nth-child(n+5){animation-delay:.16s}
 .tabs button,.chips button{transition:background .25s,color .25s,box-shadow .25s}
 @media (prefers-reduced-motion:reduce){.golive,.ldot,.mcard.flup,.mcard.fldn,#out>*{animation:none!important}.golive{box-shadow:0 0 0 1px rgba(52,211,153,.7),0 0 16px rgba(52,211,153,.25)}}
 </style></head>
@@ -454,7 +454,7 @@ function linesBlock(m, s, k) {
   const tapNote = tp.length ? '<div class="note" style="margin:6px 0 0">○ <b>' + tp.length + " tap" + (tp.length > 1 ? "s" : "") + "</b> on the thick line" + (nNear ? " (" + (tp.length - nNear) + " touch" + (tp.length - nNear === 1 ? "" : "es") + ", " + nNear + " near miss" + (nNear > 1 ? "es" : "") + ")" : "") + ": " + tp.map((q) => td(q.t) + " @ " + num(q.p, d) + (q.near ? " (near)" : "")).join(" · ") +
     (tp.length > (s.chart.tapIdx || []).length && !zoomed[k] ? ". Older ones show on 3 months / 2 years." : "") + "</div>" : "";
   // Folded rows: tap to open (remembered while the page is open).
-  const fold = (id, title, body) => { const f = "f" + id + k, on = !!folds[f]; return '<div class="fd"><button class="fh" data-fold="' + esc(f) + '" aria-expanded="' + on + '"><span>' + title + "</span><span>" + (on ? "▴" : "▾") + "</span></button>" + (on ? '<div class="fb">' + body + "</div>" : "") + "</div>"; };
+  const fold = (id, title, body) => { const f = "f" + id + k, on = !!folds[f]; return '<div class="fd"><button class="fh" data-fold="' + esc(f) + '" aria-expanded="' + on + '"><span>' + title + "</span><span>" + (on ? "▴" : "▾") + "</span></button>" + '<div class="fb"' + (on ? "" : " hidden") + ">" + body + "</div></div>"; };
   const lv = s.chart.levels || [];
   return '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" + stratNote(m) +
     (lv.length ? fold("sr", "S/R levels (" + lv.length + ")", srNote(lv, d)) : "") +
@@ -1052,6 +1052,7 @@ setInterval(countdown, 30000);
 
 const PULL = 90; // pixels to pull down before a refresh
 const SKELETON = '<div class="sk tall"></div><div class="sk"></div><div class="sk"></div>';
+let lastView = "";
 function render() {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   document.querySelectorAll("#kinds button").forEach((b) => b.classList.toggle("on", b.dataset.k === kind));
@@ -1066,6 +1067,9 @@ function render() {
   } else if (lastErr) sub.innerHTML = '<span class="bad">Could not load prices (' + esc(lastErr) + ").</span> Retrying in 5 minutes.";
   const out = $("out"), typing = document.activeElement && document.activeElement.id === "lookIn" ? document.activeElement : null, typed = typing ? [typing.value, typing.selectionStart] : null;
   $("kinds").style.display = tab === "rules" ? "none" : "";
+  // Fade in only when the view changes (tab, futures/stocks, first prices), so taps and refreshes don't blink.
+  const view = tab + "|" + kind + "|" + !!data;
+  out.classList.toggle("anim", view !== lastView); lastView = view;
   if (tab === "rules") out.innerHTML = renderRules();
   else if (!data) out.innerHTML = lastErr ? '<div class="c err empty">Prices didn\'t load. <button class="btn" id="retry">Try again</button></div>' : SKELETON;
   else {
@@ -1102,6 +1106,11 @@ document.addEventListener("click", (e) => {
     const k = t.dataset.opt, o = opts[k];
     if (o && (o.data || o.loading)) { o.shown = !o.shown; render(); return; } // a failed load retries
     data.markets.forEach((m) => (m.signals || []).forEach((s) => { if (keyOf(m, s) === k) loadOptions(m, s, k); }));
+    return;
+  }
+  if (t.classList.contains("fh")) { // a fold row under a chart: open/close in place (no redraw, no blink)
+    const on = (folds[t.dataset.fold] = !folds[t.dataset.fold]), fb = t.nextElementSibling;
+    t.setAttribute("aria-expanded", on); t.lastElementChild.textContent = on ? "▴" : "▾"; if (fb) fb.hidden = !on;
     return;
   }
   if (t.dataset.fold) { folds[t.dataset.fold] = !folds[t.dataset.fold]; if (t.dataset.fold === "live") store.set("liveOpen", folds.live); if (t.dataset.fold === "recentBox") store.set("recentOpen", folds.recentBox); render(); }

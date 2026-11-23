@@ -508,8 +508,10 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await mgc.getAttribute("aria-expanded")) === "false" && (await page.locator(".cl svg").count()) === 0, "tapping the top of an open box closes it");
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
-  ok((await page.locator(".cl .lns .lnr").count()) === 0 && (await page.locator(".cl .fh").count()) >= 2, "the long lists (S/R levels, taps, every line) start folded");
+  ok((await page.locator(".cl .lns .lnr:visible").count()) === 0 && (await page.locator(".cl .fh").count()) >= 2, "the long lists (S/R levels, taps, every line) start folded");
+  await page.evaluate(() => { window.__keep = document.querySelector("#out > *"); });
   await page.locator(".cl .fh", { hasText: "Every line" }).first().click();
+  ok(await page.evaluate(() => window.__keep === document.querySelector("#out > *") && !document.getElementById("out").classList.contains("anim")), "opening a fold row doesn't redraw the page (no blink)");
   ok((await page.locator(".cl .lns .lnr").count()) >= 3 && (await page.locator(".cl .lns .lnr.now").count()) === 1 && (await page.locator(".cl .lns .tag", { hasText: "action" }).count()) === 1, "under the chart: every line on the market, with price now and the action line marked");
   ok((await page.locator(".cl .zsw .btn").allTextContents()).length === 3, "three chart choices: the callout's chart, 3 months, 2 years");
   await page.click(".cl [data-mode=zoom]");
