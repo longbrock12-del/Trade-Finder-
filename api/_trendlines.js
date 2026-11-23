@@ -304,11 +304,13 @@ function nearMiss(S, ln, x) {
 // line0: safety line value at entry; room: distance of the stop order past the line.
 // tpPx: also take profit when a candle reaches that price (exit=tp test), or a moving price, candle by candle
 // (exit "htf": a bigger-timeframe trendline, the futures' live exit).
-function follow(S, long, from, last, line0, room, tpPx) {
-  let line = line0, stop = long ? line0 - room : line0 + room;
+// sl0: the safety line at entry. src = the line the current stop level came from (what the chart draws and Tracking
+// names), which stays the same when a newer line in the chain would be looser.
+function follow(S, long, from, last, line0, room, tpPx, sl0) {
+  let line = line0, stop = long ? line0 - room : line0 + room, src = sl0 || null;
   for (let i = from + 1; i <= last; i++) {
     const sl = long ? S.act[i].up : S.act[i].dn;
-    if (sl) { const v = val(sl, S.x0 + i); line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
+    if (sl) { const v = val(sl, S.x0 + i); if (long ? v > line : v < line) src = sl; line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
     const c = S.bars[i];
     if (long ? c.l <= stop : c.h >= stop) return { status: "closed", at: i, px: long ? Math.min(c.o, stop) : Math.max(c.o, stop), stop, line, how: "stop order" }; // a gap past the stop fills at the open
     const tg = typeof tpPx === "function" ? tpPx(i) : tpPx;
@@ -316,8 +318,8 @@ function follow(S, long, from, last, line0, room, tpPx) {
     if (long ? c.c < line : c.c > line) return { status: "closed", at: i, px: c.c, stop, line, how: "close through the line" };
   }
   const sl = long ? S.act[last + 1].up : S.act[last + 1].dn;
-  if (sl) { const v = val(sl, S.x0 + last + 1); line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
-  return { status: "open", stop, line, safety: sl };
+  if (sl) { const v = val(sl, S.x0 + last + 1); if (long ? v > line : v < line) src = sl; line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
+  return { status: "open", stop, line, safety: src || sl };
 }
 
 // All callouts on one entry chart from candle `from` to `last`.
@@ -400,7 +402,7 @@ function callout(s, e, last, live, px) {
     if (a == null) return srP; if (srP == null) return a;
     return e.long ? Math.min(a, srP) : Math.max(a, srP);
   } : null;
-  const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : tgtAt);
+  const out = follow(s, e.long, from, last, line0, room, tpAt ? tpAt.price : tgtAt, sl);
   // Which target the trade exited at: the bigger-timeframe trendline (its chart and its two points) or the S/R level.
   let exitTo = null;
   if (out.how === "take profit" && !tpAt) {

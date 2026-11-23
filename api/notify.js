@@ -200,6 +200,7 @@ module.exports = async function handler(req, res) {
         if (s.target) x.target = s.target; // the latest target line (it moves with the line), for "why it exited"
         if (s.stop != null) x.stopLive = s.stop; // where the trailing stop is right now (stopNow only moves with an alert)
         if (s.line != null) x.line = s.line; // the safety line right now (a candle closing past it ends the trade)
+        if (s.chart && s.chart.safety && s.chart.safety.t0) x.safetyPts = { t0: s.chart.safety.t0, p0: s.chart.safety.p0, t1: s.chart.safety.t1, p1: s.chart.safety.p1 }; // its two points
         if (s.chart && s.chart.levels) x.levels = s.chart.levels; // and the chart's S/R levels
         const was = x.stopNow != null ? x.stopNow : x.stop;
         // 3. Every time the trailing stop moves (each new 4-hour candle along a sloped safety line), not only big moves.

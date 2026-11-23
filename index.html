@@ -803,7 +803,11 @@ function openTrades() {
       '<div><small>Stop' + (moved ? " (trailing)" : "") + "</small>" + (stop != null ? num(stop, d) : "—") + (moved ? '<small class="was">was ' + num(x.stop, d) + "</small>" : "") + "</div>" +
       '<div><small>Nearest ' + srName + "</small>" + (sr ? num(sr.p, d) + '<small class="was">turned there ' + sr.n + "×" + (sr.tests ? " · held " + Math.round((100 * sr.held) / sr.tests) + "% of " + sr.tests + " tests" : "") + "</small>" : "—") + "</div></div>";
     const erT = x.kind === "stocks" && x.earnings && x.earnings.date >= new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) ? '<div class="note mini warn">⚠ Earnings ' + new Date(x.earnings.date + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) + (x.earnings.when ? " " + esc(x.earnings.when) : "") + ": a gap can jump past the stop, and option prices drop after.</div>" : "";
-    const exitWhen = erT + (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") +
+    // The safety line's two points, so it can be drawn on any chart (from today's scan, or what the alert check saved).
+    const sp = (sg && sg.chart && sg.chart.safety && sg.chart.safety.t0 ? sg.chart.safety : null) || x.safetyPts, hiLo = x.dir === "long" ? "low" : "high";
+    const spDay = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
+    const spTxt = sp ? '<div class="note mini">Safety line: the ' + spDay(sp.t0) + " " + hiLo + " (" + num(sp.p0, d) + ") → the " + spDay(sp.t1) + " " + hiLo + " (" + num(sp.p1, d) + ")" + (line != null ? ", at " + num(line, d) + " now" : "") + ".</div>" : "";
+    const exitWhen = erT + (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") + spTxt +
       (stop != null ? '<div class="note mini"><b>Backup:</b> the stop order at ' + num(stop, d) + ", just past the safety line, in case price spikes through it before the candle closes.</div>" : "") +
       (tg ? '<div class="note mini"><b>Take profit if price gets there:</b> ' + num(tg.price, d) + " (" + esc(tgName) + ")" + "" + ".</div>" : "");
     return { r, html: '<div class="trr"><span><b>' + act + '</b> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +
