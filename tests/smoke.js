@@ -915,9 +915,14 @@ async function alertTests() {
     H("tf:live").delete(KC); H("tf:live").delete(KS); site = keep; delete global.__earn; }
   { const stSig = { tf: "4H", setup: "break & retest", grade: "A+", dir: "long", entry: 100, stop0: 98, stop: 98, risk: 2, t: NOW - 1800, status: "open", nowR: 0.1, target: { price: 105, tf: "Daily", r: 2.5 } };
     const keepSite = site; site = { scan: { markets: [{ sym: "XYZ", kind: "stocks", price: 100.2, signals: [stSig], watch: [] }] }, options: { price: 100.1, contracts: [{ contract: "XYZ261218C00100000", type: "call", strike: 100, expiry: "2026-12-18", dte: 31, mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, iv: 30, spreadPct: 3, atStop: 2.9 }] } };
-    db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site = keepSite;
+    db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); const keepSite2 = site; site = keepSite;
     const sx = [...H("tf:live").values()].map((v) => JSON.parse(v)).find((v) => v.sym === "XYZ");
     ok(sx && sx.opt && sx.opt.mid === 4 && sx.opt.theta === -0.06 && sx.opt.atStop === 2.9 && sx.target && sx.target.tf === "Daily", "a stock callout saves its target line, its chart's S/R levels and the suggested option contract (price, delta, time decay, spread) for the recent-trades estimate", JSON.stringify(sx && sx.opt));
+    { // An open stock trade with no contract saved gets the best one looked up and saved (HOOD).
+      const lv = H("tf:live"), k0 = [...lv.keys()].find((k) => JSON.parse(lv.get(k)).sym === "XYZ"), x0 = JSON.parse(lv.get(k0)); delete x0.opt; lv.set(k0, JSON.stringify(x0));
+      const keep2 = site; site = { ...keepSite2, }; db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site = keep2;
+      const x1 = JSON.parse(lv.get(k0));
+      ok(x1.opt && x1.opt.contract === "XYZ261218C00100000" && x1.opt.late > 0 && x1.opt.price === 100.1, "an open stock trade without a contract gets the best one looked up and saved, with when and the stock price", JSON.stringify(x1.opt)); }
     [...H("tf:live").keys()].filter((k) => k.includes("XYZ")).forEach((k) => H("tf:live").delete(k)); }
   db.delete("tf:lastrun"); pushed.length = 0;
   site = { trades: { markets: [mk(1999, { ...sig, nowR: 0.4, stop: 1990.5 })] } };
@@ -979,6 +984,9 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   ok(oo === "Option: BAC Dec 18 $50 put · bought at 1.85 · % is the option, after time decay and spread", "tracking shows an open stock trade's option contract (no second %; the breakdown is in Recent trades)", oo);
   const tr2 = await page.evaluate(() => { const x = { kind: "stocks", sym: "BAC", dir: "short", entry: 49.45, risk: 1.524, nowR: 0.35, status: "open", t: Math.floor(Date.now() / 1000) - 10 * 86400, opt: { type: "put", strike: 50, expiry: "2026-12-18", mid: 1.85, delta: -0.576, gamma: 0.1044, theta: -0.023, spreadPct: 3.6, atStop: 1.09 } }; return [tradeR(x, { price: 48.92 }), optEst(x, 48.92).total, tradeR({ ...x, opt: null }, { price: 48.92 }), tradeR({ ...x, status: "closed", exitR: 1, exitPx: 47.93, closedAt: Date.now() }, null), optEst({ ...x, closedAt: Date.now() }, 47.93).total]; });
   ok(Math.abs(tr2[0] - tr2[1]) < 1e-9 && Math.abs(tr2[2] - (49.45 - 48.92) / 1.524) < 1e-6 && Math.abs(tr2[3] - tr2[4]) < 1e-9 && tr2[0] < tr2[2], "stock trades with an option count the option's result (after time decay and spread) in tracking and the live record", JSON.stringify(tr2));
+  { const late = await page.evaluate(() => { const x = { kind: "stocks", sym: "HOOD", dir: "short", entry: 72, t: 0, opt: { type: "put", strike: 70, expiry: "2027-01-15", mid: 4, delta: -0.6, gamma: 0, theta: 0, spreadPct: 0, atStop: 2, price: 69, late: Date.now() } };
+      return [optEst(x, 69).total, optName(x)]; });
+    ok(Math.abs(late[0]) < 0.01 && /looked up .*, stock at 69\.00/.test(late[1]), "a contract looked up after the callout counts from its own quote (no move yet at that price) and says when", JSON.stringify(late)); }
   const oe = await page.evaluate(() => optEst({ entry: 100, t: 0, closedAt: 3 * 86400 * 1000, opt: { mid: 4, delta: 0.6, gamma: 0.05, theta: -0.06, spreadPct: 3, atStop: 2.9 } }, 103));
   ok(oe && Math.abs(oe.move - (0.6 * 3 + 0.5 * 0.05 * 9) / 1.1) < 1e-6 && Math.abs(oe.decay + (0.06 * 3) / 1.1) < 1e-6 && Math.abs(oe.spread + 0.12 / 1.1) < 1e-6 && Math.abs(oe.total - (oe.move + oe.decay + oe.spread)) < 1e-6, "stock option estimate: the move (delta, gamma) minus time decay for the days held and the spread, as account % at 1% risk", JSON.stringify(oe));
   const box = page.locator(".ofold");

@@ -747,7 +747,9 @@ function tradeR(x, m) {
 function optEst(x, exitPx) {
   const o = x.opt;
   if (!o || !(o.mid > 0) || !(o.mid > o.atStop)) return null;
-  const L = o.mid - o.atStop, dx = exitPx - x.entry, days = Math.max(0, ((x.closedAt || Date.now()) / 1000 - x.t) / 86400);
+  // A contract looked up after the callout (o.late) counts from then: the stock price and time of that quote.
+  const from = o.late && o.price > 0 ? o.price : x.entry, t0 = o.late ? o.late / 1000 : x.t;
+  const L = o.mid - o.atStop, dx = exitPx - from, days = Math.max(0, ((x.closedAt || Date.now()) / 1000 - t0) / 86400);
   const move = Math.max(-o.mid, o.delta * dx + 0.5 * (o.gamma || 0) * dx * dx), decay = Math.abs(o.theta || 0) * days, spread = ((o.spreadPct || 0) / 100) * o.mid;
   const tot = Math.max(-o.mid, move - decay - spread);
   return { move: move / L, decay: -decay / L, spread: -spread / L, total: tot / L, days };
@@ -803,7 +805,8 @@ function recentTrades() {
 // The option on a stock trade, written out ("BAC Dec 18 $50 put · bought at 1.85").
 function optName(x) {
   const o = x.opt, exp = new Date(o.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return esc(show(x.sym)) + " " + exp + " $" + o.strike + " " + esc(o.type) + " · " + (o.manual ? "bought" : "priced") + " at " + Number(o.mid).toFixed(2);
+  return esc(show(x.sym)) + " " + exp + " $" + o.strike + " " + esc(o.type) + " · " + (o.manual ? "bought" : "priced") + " at " + Number(o.mid).toFixed(2) +
+    (o.late ? " (looked up " + new Date(o.late).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", stock at " + Number(o.price).toFixed(2) + ")" : "");
 }
 // An open stock trade's option contract (the row above already shows the trade's result; the option breakdown
 // shows in Recent trades once it closes).

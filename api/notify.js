@@ -144,6 +144,17 @@ module.exports = async function handler(req, res) {
         if (cm && !cm.error && !cm.trade) { await S.hdel("tf:live", lk); dropped++; continue; }
         if (cm && cm.trade) { x.rv = RULES_VERSION; await S.hsetJSON("tf:live", lk, x); }
       }
+      // An open stock trade with no option contract saved (the lookup at callout time found none, e.g. HOOD's
+      // callout came while the market was closed and spreads were too wide): look up the best contract now,
+      // during market hours, and save it with when and at what stock price, so the trade has one to go by.
+      if (x.kind === "stocks" && !x.opt && (all || HR.stocksOpen(nowMs))) {
+        const tq = x.target && x.target.price != null ? "&target=" + x.target.price : "";
+        const oc = await get("/api/options?sym=" + encodeURIComponent(x.sym) + "&dir=" + x.dir + "&entry=" + x.entry + "&stop=" + x.stop + tq), c = oc && oc.contracts && oc.contracts[0];
+        if (c) {
+          x.opt = { contract: c.contract, type: c.type, strike: c.strike, expiry: c.expiry, dte: c.dte, mid: c.mid, delta: c.delta, gamma: c.gamma, theta: c.theta, iv: c.iv, spreadPct: c.spreadPct, atStop: c.atStop, price: oc.price, late: Date.now() };
+          await S.hsetJSON("tf:live", lk, x);
+        }
+      }
       const m = (byTf[view] || []).find((q) => q.sym === x.sym);
       if (!m) continue;
       let s = (m.signals || []).find((q) => keyOf(m, q) === x.key);
