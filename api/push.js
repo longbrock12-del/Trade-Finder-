@@ -42,7 +42,10 @@ async function handler(req, res) {
     if (b.action === "subscribe") {
       if (!b.sub || !b.sub.keys || !b.sub.keys.p256dh || !b.sub.keys.auth) return send(res, 400, { error: "bad subscription" });
       const tf = ["4H", "1H", "both"].includes(b.prefs && b.prefs.tf) ? b.prefs.tf : "4H";
-      await S.hsetJSON("tf:subs", ep, { sub: { endpoint: ep, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } }, prefs: { tf }, alerts: (cur && cur.alerts) || [], at: Date.now() });
+      // Focus (her 1-1-1 rule): only callouts for these stocks (null = all) and this setup (null = all).
+      const f = (b.prefs && b.prefs.focus) || {}, SETUPS = ["break", "break & retest", "bounce"];
+      const focus = { stocks: Array.isArray(f.stocks) ? f.stocks.filter((x) => typeof x === "string" && /^[A-Z0-9.\-^=]{1,12}$/.test(x)).slice(0, 50) : null, setup: SETUPS.includes(f.setup) ? f.setup : null };
+      await S.hsetJSON("tf:subs", ep, { sub: { endpoint: ep, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } }, prefs: { tf, focus }, alerts: (cur && cur.alerts) || [], at: Date.now() });
       return send(res, 200, { ok: true });
     }
     if (b.action === "unsubscribe") { await S.hdel("tf:subs", ep); return send(res, 200, { ok: true }); }

@@ -651,6 +651,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   const strk = await page.locator(".trk").textContent();
   ok(/^Live record: stocks/.test(strk) && !/futures|Track record/.test(strk), "stocks tab shows the stocks Live record only", strk.slice(0, 160));
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent)); await page.click("[data-k=stocks]");
+  await page.evaluate(() => { store.set("focusN", 0); render(); }); // every stock, not just the Focus top 10
   await page.click("[data-tab=watch]");
   ok((await page.locator(".c .sym", { hasText: "NVDA" }).count()) >= 1, "stocks from the scan appear under Stocks (on the Watch list)");
   await page.click("[data-tab=calls]");
@@ -814,8 +815,15 @@ async function alertTests() {
   const t0 = pushed.length && open(pushed[0].body);
   ok(t0 && t0.title === "Trade Finder" && pushed[0].h["Content-Encoding"] === "aes128gcm" && /^vapid t=.+, k=/.test(pushed[0].h.Authorization), "turning alerts on sends a test alert, encrypted for that phone", JSON.stringify(t0));
   pushed.length = 0;
+  // A second phone focused on bounces only (her 1-1-1 rule) doesn't get a break callout.
+  const sub2 = { ...sub, endpoint: "https://push.test/phone2" };
+  await invoke("api/push.js", "POST", { action: "subscribe", sub: sub2, prefs: { tf: "4H", focus: { stocks: ["AAPL", "bad sym!"], setup: "bounce" } } });
+  const f2 = JSON.parse(H("tf:subs").get(sub2.endpoint)).prefs.focus;
+  ok(f2.setup === "bounce" && JSON.stringify(f2.stocks) === '["AAPL"]', "Focus is saved with the phone's alerts (bad symbols dropped)", JSON.stringify(f2));
   site = { trades: { markets: [mk(1996, sig)] } };
   const n1 = await invoke("api/notify.js", "GET");
+  ok(!pushed.some((x) => /phone2/.test(x.u)) && n1.body.notified === 1, "a phone focused on another setup doesn't get the alert", JSON.stringify(n1.body));
+  H("tf:subs").delete(sub2.endpoint);
   const msg = pushed.map((x) => open(x.body));
   ok(n1.body.ran && n1.body.notified === 1 && msg[0] && msg[0].title === "BUY MGC" && /entry 1995/.test(msg[0].body), "a new Get-in-now callout goes to the phone", JSON.stringify(n1.body) + " " + JSON.stringify(msg));
   ok((await invoke("api/notify.js", "GET")).body.reason === "ran recently", "the check runs at most every 9 minutes");
@@ -1055,7 +1063,19 @@ async function rankPageTests(browser, body, scanBody) {
   ok((await page.locator(".fb").count()) === 0 && ftags.some((t) => /^2-yr: \d+ trades · [+−]\d+\.\d%$/.test(t)), "Futures watch boxes show the 2-yr tag (trades and result), like stocks", ftags.filter((t) => /2-yr/.test(t)).join(" | "));
   await page.click("[data-k=stocks]");
   const shown = await page.locator(".c .sym").allTextContents();
-  ok(shown.includes(inList) && shown.includes(outList), "the watch list still shows every stock with a line (no filter)", shown.join());
+  ok(shown.includes(inList) && !shown.includes(outList), "Focus is on by default: only the top 10 ranked stocks show", shown.join());
+  await page.evaluate(() => { document.getElementById("mine").open = true; });
+  await page.selectOption("#focusN", "0");
+  const all = await page.locator(".c .sym").allTextContents();
+  ok(all.includes(inList) && all.includes(outList), "Focus: All stocks shows every stock with a line again", all.join());
+  await page.selectOption("#focusN", "5");
+  const fshown = await page.locator(".c .sym").allTextContents();
+  ok(fshown.includes(inList) && !fshown.includes(outList) && /Focus: .*ZZZZ/.test(await page.textContent("#focusNow")), "Focus: top 5 stocks shows only those stocks (her 1-1-1 rule)", fshown.join());
+  await page.selectOption("#focusN", "0"); await page.selectOption("#focusS", "bounce");
+  await page.click("[data-tab=calls]");
+  const setups = await page.evaluate(() => callouts().map(({ s }) => s.setup));
+  ok(setups.every((x) => x === "bounce"), "Focus: one setup shows only that setup's callouts", setups.join());
+  await page.selectOption("#focusS", "");
   ok(!errors.length, "no page errors with the ranked list", errors.join(" | "));
   await page.close();
 }
