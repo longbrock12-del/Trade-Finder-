@@ -35,7 +35,10 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .long{background:rgba(19,137,74,.14);color:var(--gd)}.short{background:rgba(201,59,59,.14);color:var(--bad)}
 .ap{background:rgba(27,110,243,.14);color:var(--ac)}.new{background:var(--ac);color:#fff}
 .gr{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 8px}.gr div{background:var(--soft);border-radius:8px;padding:6px 8px;font-size:14px;font-weight:600}
-.gr small{display:block;color:var(--mu);font-size:11px;font-weight:500}
+.gr small{display:block;color:var(--mu);font-size:11px;font-weight:500}.gr small.sub{display:block;font-size:10.5px;margin-top:1px}
+.sec{background:var(--soft);border-radius:10px;padding:8px 10px;margin-top:8px}.sh{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin-bottom:4px}
+.pr{display:grid;grid-template-columns:88px 1fr;gap:8px;font-size:13px;padding:4px 0;border-top:1px solid var(--bd)}.pr:first-of-type{border-top:0}.pr>span{color:var(--mu);font-size:12px}
+.fd{border-top:1px solid var(--bd);margin-top:6px}.fh{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;width:100%;padding:9px 2px;font-size:13px;font-weight:600;color:var(--tx);cursor:pointer}.fb{padding-bottom:6px}.fb .note.srn,.fb .note{margin-top:0}
 .st{font-size:13px;font-weight:600}.ok{color:var(--gd)}.bad{color:var(--bad)}.warn{color:var(--warn)}.mu{color:var(--mu)}
 .note{font-size:12.5px;color:var(--mu);margin-top:6px}
 .ck{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;color:var(--mu);margin-top:6px}.ck b{font-weight:600}
@@ -393,7 +396,7 @@ function chart(m, s) {
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + esc(d0) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + esc(d1) + "</text>";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + TFNAME[s.tf] + " chart of " + esc(show(m.sym)) + ' with the trendlines">' + g + "</svg>" +
     // Legend in reading order: the lines, what the thick and dashed ones are, the marks, then the S/R levels.
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span>' + (C.safety ? "<span>Dashed = safety line</span>" : "") + "<span>Thick = action line</span><span>● touch ◌ near miss</span>" + (C.closedAt != null ? "<span>○ = exit</span>" : "") + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + "</div>" + stratNote(m) + srNote(C.levels, m.digits) + "</div>";
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span>' + (C.safety ? "<span>Dashed = safety line</span>" : "") + "<span>Thick = action line</span><span>● touch ◌ near miss</span>" + (C.closedAt != null ? "<span>○ = exit</span>" : "") + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + "</div></div>";
 }
 
 const TFSHORT = { Monthly: "M", Weekly: "W", Daily: "D", "4-hour": "4H", "1-hour": "1H" };
@@ -434,7 +437,7 @@ function lineView(m, s, mode) {
   const d = (t) => new Date(t * 1000).toLocaleDateString("en-US", mode === "mid" ? { month: "short", day: "numeric" } : { month: "short", year: "numeric" });
   g += '<text x="' + L + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)">' + d(B[0][0]) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" font-size="11" fill="var(--mu)" text-anchor="end">' + d(B[n - 1][0]) + "</text>";
   return '<div class="chart"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + (mode === "mid" ? "4-hour chart, 3 months" : "Daily chart, 2 years") + " of " + esc(show(m.sym)) + ' with trendlines">' + g + "</svg>" +
-    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Dashed = safety line</span><span>Thick = action line</span><span>● touch ◌ near miss</span><span>M W D 4H 1H = the chart each line comes from</span>' + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + "</div>" + stratNote(m) + srNote(C.levels, m.digits) +
+    '<div class="lg"><span><i style="background:#1fa463"></i>Rising lines</span><span><i style="background:#d64545"></i>Falling lines</span><span>Dashed = safety line</span><span>Thick = action line</span><span>● touch ◌ near miss</span><span>M W D 4H 1H = the chart each line comes from</span>' + ((C.levels || []).length ? '<span><i style="background:var(--warn);opacity:.6"></i>S/R level (×touches)</span>' : "") + "</div>" +
     (lines.length ? "" : '<div class="note">No ' + (mode === "mid" ? "Daily or 4-hour" : "") + " lines on this market right now.</div>") + "</div>";
 }
 
@@ -450,10 +453,15 @@ function linesBlock(m, s, k) {
   const nNear = tp.filter((q) => q.near).length;
   const tapNote = tp.length ? '<div class="note" style="margin:6px 0 0">○ <b>' + tp.length + " tap" + (tp.length > 1 ? "s" : "") + "</b> on the thick line" + (nNear ? " (" + (tp.length - nNear) + " touch" + (tp.length - nNear === 1 ? "" : "es") + ", " + nNear + " near miss" + (nNear > 1 ? "es" : "") + ")" : "") + ": " + tp.map((q) => td(q.t) + " @ " + num(q.p, d) + (q.near ? " (near)" : "")).join(" · ") +
     (tp.length > (s.chart.tapIdx || []).length && !zoomed[k] ? ". Older ones show on 3 months / 2 years." : "") + "</div>" : "";
-  return tapNote + '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" +
-    '<div class="note" style="margin:8px 0 2px">Every line on ' + esc(show(m.sym)) + ", Monthly down to " + TFNAME[s.tf] + ", and where it is now:</div>" +
-    above.map(row).join("") + '<div class="lnr now"><span>Price now</span><b>' + num(m.price, d) + "</b></div>" + below.map(row).join("") +
-    (ls.length ? "" : '<div class="note">No lines yet.</div>') + "</div>";
+  // Folded rows: tap to open (remembered while the page is open).
+  const fold = (id, title, body) => { const f = "f" + id + k, on = !!folds[f]; return '<div class="fd"><button class="fh" data-fold="' + esc(f) + '" aria-expanded="' + on + '"><span>' + title + "</span><span>" + (on ? "▴" : "▾") + "</span></button>" + (on ? '<div class="fb">' + body + "</div>" : "") + "</div>"; };
+  const lv = s.chart.levels || [];
+  return '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" + stratNote(m) +
+    (lv.length ? fold("sr", "S/R levels (" + lv.length + ")", srNote(lv, d)) : "") +
+    (tp.length ? fold("tp", "Taps on the action line (" + tp.length + ")", tapNote) : "") +
+    fold("ln", "Every line on " + esc(show(m.sym)) + " (" + ls.length + ")", '<div class="note" style="margin:0 0 2px">Monthly down to ' + TFNAME[s.tf] + ", and where each is now:</div>" +
+      above.map(row).join("") + '<div class="lnr now"><span>Price now</span><b>' + num(m.price, d) + "</b></div>" + below.map(row).join("") +
+      (ls.length ? "" : '<div class="note">No lines yet.</div>')) + "</div>";
 }
 
 function checks(s) {
@@ -578,20 +586,27 @@ function card(m, s) {
     '<div class="mu" style="font-size:12px;text-align:right;white-space:nowrap">' + ago(s.t) + ' · <span class="tog">Details ▾</span></div></div>' +
     status.replace('style="font-size:15px"', "") + infoLine(m, true) +
     '<div class="mini">Entry <b>' + num(s.entry, d) + "</b> · Stop order <b>" + num(s.stop, d) + "</b>" + (res != null ? ' · <b class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</b>" : "") + "</div>" + sizeLine(m, s, true) + "</article>";
-  return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '" aria-expanded="true">' + head +
-    '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop order now (trailing)" : "Stop order") + "</small>" + num(s.stop, d) + "</div>" +
-    "<div><small>Starting risk</small>" + num(s.risk, d) + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
-    (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" : "—") + "</div></div>" +
-    (pv && s.risk != null ? '<div class="note" style="margin:-2px 0 6px">Per micro contract: starting risk <b>' + perC(s.risk) + "</b>" + (res != null ? " · " + (open ? "now " : "result ") + '<b class="' + (res >= 0 ? "ok" : "bad") + '">' + (res >= 0 ? "+" : "−") + perC(res * s.risk) + "</b>" : "") + " ($" + pv + " per 1.00 move)</div>" : "") +
-    status + infoLine(m, true) + sizeLine(m, s) +
-    (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
-    (open ? '<div class="note">Set your stop order at <b>' + num(s.stop, d) + "</b>, just past the safety line, and trail it as the line moves. Get out early if a " + TFNAME[s.tf] + " candle closes through the safety line (now at " + num(s.line, d) + ").</div>" : "") +
-    (open && s.target ? '<div class="note">Target: <b>' + num(s.target.price, d) + "</b> (" + signR(s.target.r) + "), " + (s.target.tf === "S/R" ? "the " + (s.dir === "long" ? "resistance" : "support") + " level ahead (price turned there " + s.target.touches + " times)" : "the " + esc(s.target.tf) + " trendline ahead (it moves with the line)") + ". Her exit: take profit when price gets there, or the safety line breaks first.</div>" : "") +
-    (open && s.tp && !s.target ? '<div class="note">Optional take-profit, her quick-win exit: <b>' + num(s.tp.price, d) + "</b> (" + signR(s.tp.r) + "), just before a level price turned at " + s.tp.touches + " times. Trailing usually lets winners run further; the track record uses trailing.</div>" : "") +
-    (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "") +
-    (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) + setupOdds(m, s) +
-    '<div class="note">' + (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
-    (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "") + "</div>" +
+  // Expanded: the numbers, then three short sections (exit plan, why this trade, chart). Long lists fold away.
+  const dol = (x) => (pv ? '<small class="sub">' + x + "</small>" : "");
+  const plan = [];
+  if (open) {
+    plan.push(["Stop order", "<b>" + num(s.stop, d) + "</b> · just past the safety line; trail it as the line moves"]);
+    plan.push(["Exit early", "a " + TFNAME[s.tf] + " candle closes through the safety line (now <b>" + num(s.line, d) + "</b>)"]);
+    if (s.target) plan.push(["Target", "<b>" + num(s.target.price, d) + "</b> (" + signR(s.target.r) + ") · " + (s.target.tf === "S/R" ? "the " + (s.dir === "long" ? "resistance" : "support") + " level ahead (turned " + s.target.touches + "×)" : "the " + esc(s.target.tf) + " trendline ahead (moves with the line)")]);
+    else if (s.tp) plan.push(["Take profit", "<b>" + num(s.tp.price, d) + "</b> (" + signR(s.tp.r) + ") · optional, just before a level price turned at " + s.tp.touches + "×"]);
+  }
+  const warns = (s.liveThrough ? '<div class="note warn">Price is through the safety line on the candle that\'s still forming. If it closes there, the trade is over.</div>' : "") +
+    (s.mixed ? '<div class="note warn">Mixed signal: another line on this market says the opposite on the same candle. Be careful here.</div>' : "");
+  const why = (s.setup === "bounce" ? "Tagged" : s.setup === "break & retest" ? "Broke, then retested," : "Broke") + " a " + lineWord + " <b>" + esc(s.lineTF) + "</b> line (from " + dateOf(s.lineFrom) + ") on the " + TFNAME[s.tf] + " chart · " + when(s.t) +
+    (s.replaced ? " · replaced " + s.replaced + " older callout" + (s.replaced > 1 ? "s" : "") : "");
+  return '<article class="c cl" tabindex="0" data-k="' + esc(k) + '" aria-expanded="true">' + head + status + infoLine(m, true) +
+    '<div class="gr"><div><small>Entry</small>' + num(s.entry, d) + "</div><div><small>" + (open ? "Stop now" : "Stop order") + "</small>" + num(s.stop, d) + "</div>" +
+    "<div><small>Risk</small>" + num(s.risk, d) + (pv && s.risk != null ? dol(perC(s.risk) + " / micro") : "") + "</div><div><small>" + (open ? "Now" : s.status === "closed" ? "Result" : "—") + "</small>" +
+    (res != null ? '<span class="' + (res >= 0 ? "ok" : "bad") + '">' + signR(res) + "</span>" + (pv && s.risk != null ? dol((res >= 0 ? "+" : "−") + perC(res * s.risk) + " / micro") : "") : "—") + "</div></div>" +
+    sizeLine(m, s) + warns +
+    (plan.length ? '<div class="sec"><div class="sh">Exit plan</div>' + plan.map(([a, b]) => '<div class="pr"><span>' + a + "</span><div>" + b + "</div></div>").join("") + "</div>" : "") +
+    '<div class="sec"><div class="sh">Why this trade</div><div class="note" style="margin-top:0;color:var(--tx)">' + why + "</div>" +
+    (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) + setupOdds(m, s) + "</div>" +
     (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k)) +
     optionsBlock(m, s, k) + "</article>";
 }

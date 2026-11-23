@@ -471,7 +471,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await mgcBox.locator(".sym").click();
   const opened = await mgcBox.evaluate((e) => e.getBoundingClientRect().height);
   ok((await mgcBox.getAttribute("aria-expanded")) === "true" && opened > shut * 2 && (await mgcBox.locator("svg").count()) >= 1, "tapping a box opens the full details and chart", Math.round(shut) + " → " + Math.round(opened) + "px");
-  ok((await page.locator(".cl .gr", { hasText: "Stop order now (trailing)" }).count()) >= 1 && (await page.locator(".cl .note", { hasText: "just past the safety line" }).count()) >= 1, "live cards show the stop order to set, just past the safety line");
+  ok((await page.locator(".cl .gr", { hasText: "Stop now" }).count()) >= 1 && (await page.locator(".cl .sec .pr", { hasText: "just past the safety line" }).count()) >= 1 && (await page.locator(".cl .sec .sh", { hasText: "Exit plan" }).count()) >= 1 && (await page.locator(".cl .sec .sh", { hasText: "Why this trade" }).count()) >= 1, "live cards: the numbers, then an Exit plan (stop order just past the safety line) and Why this trade");
   const mgcTxt = await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent();
   ok(mgcTxt.includes("Opens 6:00 PM"), "Monday 5:48 PM: futures card says the market is in its daily break", mgcTxt.slice(0, 300));
   ok(/⚠ Big: Tue 8:30 AM Core CPI m\/m \+1/.test(mgcTxt) && !/Crude Oil Inventories/.test(mgcTxt), "caution line: Big: CPI tomorrow morning, how many more, and no crude report on gold", mgcTxt.slice(0, 400));
@@ -495,7 +495,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   const syms = await page.locator(".cl .sym").allTextContents();
   ok(syms.includes("MGC") && !syms.some((x) => x.includes("=F")), "futures show as MGC and MCL, without Yahoo's =F", syms.join(","));
   ok(!/=F/.test(await page.textContent("#mkList")), "your-markets list shows MGC, MCL without =F");
-  ok(/Per micro contract: starting risk \$[\d,]+.*\(\$10 per 1\.00 move\)/.test(await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent()), "Micro Gold callout shows risk per contract");
+  ok(/Risk[\d.,]+\$[\d,]+ \/ micro/.test(await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent()), "Micro Gold callout shows risk per contract");
   // TradingView: a link on every card to the same market and chart, and the lines as points and a Pine Script.
   ok((await page.locator("a[href*='tradingview.com']").count()) === 0, "no TradingView links on the cards");
   const mgc = page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first();
@@ -508,6 +508,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await mgc.getAttribute("aria-expanded")) === "false" && (await page.locator(".cl svg").count()) === 0, "tapping the top of an open box closes it");
   await page.locator(".cl").first().click();
   ok((await page.locator(".cl svg line").count()) > 50, "tapping a callout opens its chart");
+  ok((await page.locator(".cl .lns .lnr").count()) === 0 && (await page.locator(".cl .fh").count()) >= 2, "the long lists (S/R levels, taps, every line) start folded");
+  await page.locator(".cl .fh", { hasText: "Every line" }).first().click();
   ok((await page.locator(".cl .lns .lnr").count()) >= 3 && (await page.locator(".cl .lns .lnr.now").count()) === 1 && (await page.locator(".cl .lns .tag", { hasText: "action" }).count()) === 1, "under the chart: every line on the market, with price now and the action line marked");
   ok((await page.locator(".cl .zsw .btn").allTextContents()).length === 3, "three chart choices: the callout's chart, 3 months, 2 years");
   await page.click(".cl [data-mode=zoom]");
@@ -530,6 +532,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.fill("#lookIn", "aapl"); await page.press("#lookIn", "Enter");
   await page.waitForSelector(".wc .sym:text('AAPL') >> xpath=ancestor::article//svg", { timeout: 5000 }).catch(() => {});
   const lkCard = page.locator("article.wc", { has: page.locator("[data-lookx]") });
+  await lkCard.locator(".fh", { hasText: "Every line" }).first().click().catch(() => {});
   ok(/s=AAPL&tf=4H&look=1/.test(lookAsk) && (await lkCard.locator(".chart svg").count()) === 1 && /Nearest: (Rising|Falling) /.test(await lkCard.textContent()) && (await lkCard.locator(".lns .lnr").count()) >= 2, "Look up: any stock shows its chart, nearest line and every line", lookAsk);
   await lkCard.locator("[data-lookx]").last().click();
   ok((await page.locator("[data-lookx]").count()) === 0 && (await page.locator("#lookIn").count()) === 1, "Look up: Close removes it, the box stays");
@@ -584,6 +587,8 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.route("**/api/trades**", (r) => { const u = decodeURIComponent(r.request().url()); if (!/wchart=1/.test(u)) asked.push(u); if (/wchart=1/.test(u)) { wAsk = u; r.fulfill({ json: { at: Date.now(), markets: [amzWChart] } }); } else r.fulfill({ json: body }); });
   await wl.locator("[data-wch]").click();
   await page.waitForSelector(".wc .chart svg", { timeout: 5000 }).catch(() => {});
+  await wl.locator(".fh", { hasText: "Every line" }).first().click().catch(() => {});
+  await wl.locator(".fh", { hasText: "Taps on" }).first().click().catch(() => {});
   ok(/s=AMZN&tf=4H&wchart=1/.test(wAsk) && (await wl.locator(".chart svg").count()) === 1 && (await wl.locator(".lns .lnr").count()) >= 2, "watch box: Show chart loads that stock's chart with every line", wAsk);
   const wTaps = amzWChart.watch[0].chart.taps.length;
   ok(new RegExp("○ " + wTaps + " taps? on the thick line( \\([^)]*\\))?: ").test(await wl.textContent()), "watch chart lists every tap with its date and price", wTaps);
@@ -597,7 +602,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   const lgs = await page.evaluate(() => [...document.querySelectorAll(".chart .lg")].map((x) => x.textContent));
   ok(lgs.length && lgs.every((t) => /^Rising lines\s*Falling lines/.test(t) && !/candles/.test(t) && (!/S\/R level/.test(t) || /S\/R level \(×touches\)$/.test(t)) && (!/Dashed = safety line/.test(t) || t.indexOf("Dashed = safety line") < t.indexOf("Thick = action line"))), "chart legends read in order: rising, falling, dashed safety, thick action, marks, S/R last; no candle note", lgs[0]);
   const stn = await page.evaluate(() => [stratNote({ kind: "stocks", sym: "BAC" }), stratNote({ kind: "futures", sym: "MGC=F" }), stratNote({ kind: "futures", sym: "MCL=F" })].map((x) => x.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&")));
-  const stShown = await page.evaluate(() => [...document.querySelectorAll(".chart")].filter((c) => c.querySelector(".stn")).length === document.querySelectorAll(".chart").length && document.querySelectorAll(".chart").length > 0);
+  const stShown = await page.evaluate(() => document.querySelectorAll(".lns > .stn").length === document.querySelectorAll(".lns").length && document.querySelectorAll(".lns").length > 0);
   ok(stShown && /^Strategy: breaks, break & retests, bounces with the trend · exit at the next bigger-timeframe line or S\/R level, or the safety line$/.test(stn[0]) && stn[0] === stn[1] && /bounces with the trend/.test(stn[1]) && /contract switch/.test(stn[2]) && !/bounce/.test(stn[2]), "every chart says the strategy for its market (stocks, gold/copper, crude)", stn.join(" | "));
   const srn = await page.evaluate(() => srNote([{ p: 4266.57, n: 6, side: "R", tests: 16, held: 10, fake: 3, broke: 3, lastBreak: 1790568000 }, { p: 4077.9, n: 5, side: "S", tests: 19, held: 14, fake: 5, broke: 0 }, { p: 4383.68, n: 5, side: "R" }], 1));
   const srT = srn.replace(/<\/div>/g, "|").replace(/<[^>]+>/g, "");
@@ -999,6 +1004,7 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   await page.route("**/api/trades**ct=**", (r) => { ctAsk = decodeURIComponent(r.request().url()); r.fulfill({ json: { at: Date.now(), markets: [withTrade] } }); });
   await page.locator(".ofold [data-och]").first().click();
   await page.waitForSelector(".ofold .chart svg", { timeout: 5000 }).catch(() => {});
+  await page.locator(".ofold .fh", { hasText: "Every line" }).first().click().catch(() => {});
   ok(/ct=\d+&cd=(long|short)/.test(ctAsk) && (await page.locator(".ofold .chart svg").count()) === 1 && (await page.locator(".ofold .lns .lnr").count()) >= 2, "tracking box: 📈 Chart shows that callout's own chart and lines", ctAsk);
   await page.locator(".ofold [data-och]").first().click();
   ok((await page.locator(".ofold .chart").count()) === 0, "tapping again hides it");
