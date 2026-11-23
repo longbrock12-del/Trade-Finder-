@@ -78,8 +78,8 @@ module.exports = async function handler(req, res) {
           }
           await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}), ...(s.target ? { target: s.target } : {}), ...(s.chart && s.chart.levels ? { levels: s.chart.levels } : {}) });
           live[tf + "|" + k] = { status: "open" };
-          // Each phone's Focus (her 1-1-1 rule): only its chosen stocks and setup. The callout is still recorded above.
-          const wants = (x) => { const f = (x.prefs && x.prefs.focus) || {}; return (!f.setup || f.setup === s.setup) && (m.kind !== "stocks" || !f.stocks || f.stocks.includes(m.sym)); };
+          // Each phone's Focus (her 1-1-1 rule): stocks only for its top-10 list. The callout is still recorded above.
+          const wants = (x) => { const f = (x.prefs && x.prefs.focus) || {}; return m.kind !== "stocks" || !f.stocks || f.stocks.includes(m.sym); };
           notified += await sendAll((x) => ((x.prefs && x.prefs.tf) || "4H") === tf && wants(x), {
             title: actionOf(m, s) + " " + show(m.sym), tag: k, url: "/",
             body: s.tf + " " + s.setup + " · " + s.grade + " · entry " + s.entry + " · stop " + s.stop + " (trail it on the safety line)",
