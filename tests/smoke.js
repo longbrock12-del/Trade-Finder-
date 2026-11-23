@@ -1066,6 +1066,15 @@ async function rankPageTests(browser, body, scanBody) {
   const shown = await page.locator(".c .sym").allTextContents();
   ok(shown.includes(inList) && !shown.includes(outList) && !shown.includes("ZZZZ"), "Focus: only the top ranked stocks with heavily traded options show", shown.join());
   ok((await page.locator("#focusN, #focusS").count()) === 0, "no Focus settings to pick: every setup shows");
+  { const lost = await page.evaluate(() => {
+      // A callout the site already sent for a stock outside the top 10 still shows in Tracking.
+      const m = data.markets.find((q) => q.kind === "stocks" && !q.error && !inFocus(q.sym, q.kind) && (q.signals || []).some((x) => canEnter(x)));
+      if (!m) return "none";
+      const sg = m.signals.find((x) => canEnter(x));
+      pushInfo = { ...(pushInfo || {}), live: [{ key: m.sym + "|" + sg.tf + "|" + sg.setup + "|" + sg.dir + "|" + sg.t, view: "4H", sym: m.sym, kind: "stocks", tf: sg.tf, setup: sg.setup, dir: sg.dir, entry: sg.entry, stop: sg.stop, risk: sg.risk, t: sg.t, status: "open", nowR: 0 }] };
+      return openTrades().includes(show(m.sym)) ? "" : m.sym;
+    });
+    ok(lost === "" || lost === "none", "a sent callout for a stock outside the top 10 still shows in Tracking", lost); }
   ok(!errors.length, "no page errors with the ranked list", errors.join(" | "));
   await page.close();
 }
