@@ -449,7 +449,10 @@ function linesBlock(m, s, k) {
   const nNear = tp.filter((q) => q.near).length;
   const tapNote = tp.length ? '<div class="note" style="margin:6px 0 0">○ <b>' + tp.length + " tap" + (tp.length > 1 ? "s" : "") + "</b> on the thick line" + (nNear ? " (" + (tp.length - nNear) + " touch" + (tp.length - nNear === 1 ? "" : "es") + ", " + nNear + " near miss" + (nNear > 1 ? "es" : "") + ")" : "") + ": " + tp.map((q) => td(q.t) + " @ " + num(q.p, d) + (q.near ? " (near)" : "")).join(" · ") +
     (tp.length > (s.chart.tapIdx || []).length && !zoomed[k] ? ". Older ones show on 3 months / 2 years." : "") + "</div>" : "";
-  return tapNote + '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" +
+  // The safety line's touches too (the dashed line), so it can be checked on any chart.
+  const sfl = (s.chart.lines || []).find((l) => l.safety), sft = ((sfl && sfl.taps) || []).filter((q) => q.t);
+  const sfNote = sft.length ? '<div class="note" style="margin:4px 0 0">◇ <b>' + sft.length + " touch" + (sft.length > 1 ? "es" : "") + "</b> on the safety line (dashed): " + sft.map((q) => td(q.t) + " @ " + num(q.p, d) + (q.near ? " (near)" : "")).join(" · ") + "</div>" : "";
+  return tapNote + sfNote + '<div class="lns"><div class="zsw">' + opt("", TFNAME[s.tf] + " chart") + opt("mid", "3 months") + opt("zoom", "2 years") + "</div>" +
     '<div class="note" style="margin:8px 0 2px">Every line on ' + esc(show(m.sym)) + ", Monthly down to " + TFNAME[s.tf] + ", and where it is now:</div>" +
     above.map(row).join("") + '<div class="lnr now"><span>Price now</span><b>' + num(m.price, d) + "</b></div>" + below.map(row).join("") +
     (ls.length ? "" : '<div class="note">No lines yet.</div>') + "</div>";
@@ -806,7 +809,9 @@ function openTrades() {
     // The safety line's two points, so it can be drawn on any chart (from today's scan, or what the alert check saved).
     const sp = (sg && sg.chart && sg.chart.safety && sg.chart.safety.t0 ? sg.chart.safety : null) || x.safetyPts, hiLo = x.dir === "long" ? "low" : "high";
     const spDay = (t) => new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
-    const spTxt = sp ? '<div class="note mini">Safety line: the ' + spDay(sp.t0) + " " + hiLo + " (" + num(sp.p0, d) + ") → the " + spDay(sp.t1) + " " + hiLo + " (" + num(sp.p1, d) + ")" + (line != null ? ", at " + num(line, d) + " now" : "") + ".</div>" : "";
+    const sfL = sg && sg.chart && (sg.chart.lines || []).find((l) => l.safety), sfT = ((sfL && sfL.taps) || []).filter((q) => q.t);
+    const spTxt = sp ? '<div class="note mini">Safety line: the ' + spDay(sp.t0) + " " + hiLo + " (" + num(sp.p0, d) + ") → the " + spDay(sp.t1) + " " + hiLo + " (" + num(sp.p1, d) + ")" + (line != null ? ", at " + num(line, d) + " now" : "") + "." +
+      (sfT.length ? " Touches: " + sfT.map((q) => spDay(q.t) + " " + num(q.p, d) + (q.near ? " (near)" : "")).join(" · ") + "." : "") + "</div>" : "";
     const exitWhen = erT + (line != null ? '<div class="note mini"><b>Main exit:</b> a 4H candle closes ' + (x.dir === "long" ? "below " : "above ") + num(line, d) + " (safety line).</div>" : "") + spTxt +
       (stop != null ? '<div class="note mini"><b>Backup:</b> the stop order at ' + num(stop, d) + ", just past the safety line, in case price spikes through it before the candle closes.</div>" : "") +
       (tg ? '<div class="note mini"><b>Take profit if price gets there:</b> ' + num(tg.price, d) + " (" + esc(tgName) + ")" + "" + ".</div>" : "");

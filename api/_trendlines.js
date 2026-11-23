@@ -760,7 +760,10 @@ function scanCore(hChart, dChart, opts = {}) {
     // Every line's own taps (the same tap rules as the action line), so the chart can mark them all.
     // i: candle on this chart (negative = before it), X: daily-candle units for the 3-month and 2-year views.
     const zoff0 = Math.max(0, daily.length - ZOOM);
-    const tapsOf = (ln, up) => taps(s, ln, s.last + 1, up).map((q) => ({ i: q - base, X: q / s.ppd - zoff0, p: px(val(ln, q)), near: nearMiss(s, ln, q) }));
+    const tapsOf = (ln, up) => taps(s, ln, s.last + 1, up).map((q) => {
+      const c = q < s.x0 ? s.D[Math.round(q / s.ppd)] : s.bars[q - s.x0]; // the candle that touched (daily before the 4-hour chart)
+      return { i: q - base, X: q / s.ppd - zoff0, p: px(val(ln, q)), near: nearMiss(s, ln, q), t: c ? c.t : null };
+    });
     const edges = (c, up) => c.slice(1).map((q, k) => [c[k], q])
       .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
       .map(([a, q]) => ({ up, ...loc(lineOf(a, q)), taps: tapsOf(lineOf(a, q), up) })).filter((e) => e.i1 >= -KEEP);
@@ -772,7 +775,7 @@ function scanCore(hChart, dChart, opts = {}) {
       const v = val(ln, xNow);
       return { up, tf: tfOfLine(ln, x.tf), t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, now: px(v), pct: r2((100 * (v - live)) / live, 1),
         action: same(ln, x.action), safety: same(ln, x.safety), X0: ln.a.x / s.ppd - zoff, P0: ln.a.p, slopeX: ln.slope * s.ppd,
-        taps: same(ln, x.action) ? undefined : tapsOf(ln, up).map((q) => ({ X: q.X, p: q.p, near: q.near })) };
+        taps: same(ln, x.action) ? undefined : tapsOf(ln, up).map((q) => ({ X: q.X, p: q.p, near: q.near, t: q.t })) };
     };
     const lines = [[ch.up, true], [ch.dn, false]].flatMap(([c, up]) => c.slice(1).map((q, k) => [c[k], q])
       .filter(([a, q]) => a.piv && q.piv && q.x - a.x >= MIN_GAP && q.p !== a.p)
