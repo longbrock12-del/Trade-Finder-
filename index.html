@@ -737,6 +737,17 @@ async function fillExitTo(x) {
     if (to && Math.abs(to.price - px) <= 0.003 * px) { x.exitTo = to; render(); }
   } catch (e) { /* keeps the general wording */ }
 }
+// Points A and B for an open trade the alert check hasn't saved them on yet: load its chart in the background
+// (kept closed) and redraw, so the Action line and Safety line rows fill in right away.
+async function loadPts(x) {
+  const k = "O" + x.sym + "|" + x.t + "|" + x.dir;
+  wcharts[k] = { shown: false, loading: true };
+  try {
+    const m = ((await (await fetch("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=4H&ct=" + x.t + "&cd=" + x.dir)).json()).markets || [])[0];
+    wcharts[k] = m && m.trade && m.trade.chart ? { shown: false, m, s: m.trade } : { shown: false, error: "This callout's chart isn't available anymore." };
+  } catch (e) { wcharts[k] = { shown: false, error: "The chart didn't load." }; }
+  render();
+}
 async function loadTradeChart(id) {
   const [sym, t, dir] = id.split("|"), k = "O" + id;
   wcharts[k] = { shown: true, loading: true }; render();
@@ -860,6 +871,7 @@ function openTrades() {
     if (stop != null) plan.push(["Stop order", "<b>" + num(stop, d) + "</b> · backup, in case price spikes through before the candle closes"]);
     if (tg) plan.push(["Take profit", "<b>" + num(tg.price, d) + "</b> · " + esc(tgName) + ", if price gets there"]);
     const lp = (sg && sg.chart && sg.chart.line && sg.chart.line.t0 ? sg.chart.line : null) || x.linePts || (ocC && ocC.line && ocC.line.t0 ? ocC.line : null);
+    if (!lp && !oc) loadPts(x); // no points saved yet: fetch the trade's chart quietly so they show now
     if (lp) plan.push(["Action line", ptsHtml(lp, d, x.tf)]);
     if (sp) plan.push(["Safety line", sameLn(lp, sp) ? "the same line as the action line" : ptsHtml(sp, d, x.tf)]);
     if (x.kind === "stocks" && x.opt) plan.push(["Option", optName(x) + '<div class="mu" style="font-size:11.5px">% above is the option, after time decay and spread</div>']);

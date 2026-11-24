@@ -1005,6 +1005,16 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   const box = page.locator(".ofold");
   ok((await box.count()) === 1 && /Open \(1\) · tracking · [+−]\d+\.\d%/.test(await box.locator(".ohead").textContent()) && (await box.locator(".trr", { hasText: /MGC\s*(LONG|SHORT).*since/ }).count()) === 1, "the tracking box shows its title and the newest open callout without tapping");
   const og = await box.locator(".otg").first().textContent(), ow = await box.textContent();
+  { const got = await page.evaluate(async () => {
+      // A trade with no saved points: the page loads its chart quietly and fills in the Action line row.
+      const L = { t0: 1790000000, p0: 1900, t1: 1793000000, p1: 1950 }, x = pushInfo.live.find((q) => q.status === "open"), keep = { ...x };
+      delete x.linePts; delete x.safetyPts; delete wcharts["O" + x.sym + "|" + x.t + "|" + x.dir];
+      const f0 = window.fetch; window.fetch = async (u) => /ct=/.test(u) ? { json: async () => ({ markets: [{ sym: x.sym, trade: { chart: { line: L, safety: { t0: 1791000000, p0: 1990, t1: 1792000000, p1: 1960 } } } }] }) } : f0(u);
+      render(); await new Promise((r) => setTimeout(r, 300));
+      const txt = document.querySelector(".ofold").textContent; window.fetch = f0; Object.assign(x, keep); delete wcharts["O" + x.sym + "|" + x.t + "|" + x.dir]; render();
+      return txt + " || keys " + Object.keys(wcharts).join(",");
+    });
+    ok(/Action line\s*A .*1,900\.0/.test(got) && /Safety line\s*A .*1,990\.0/.test(got), "tracking: a trade with no saved points fills them in right away from its chart", got.slice(-400)); }
   ok(await page.evaluate(() => { const o = document.querySelector(".ofold"), keep = pushInfo.live, x = keep.find((q) => q.status === "open"); pushInfo.live = keep.concat([{ ...x, t: x.t - 3600, key: x.key + "b" }]); folds.openLive = true; render();
       const blocks = [...document.querySelectorAll(".ofold .otr")], ok2 = blocks.length === 2 && getComputedStyle(blocks[1]).borderTopStyle === "solid" && getComputedStyle(blocks[0]).borderTopStyle === "none";
       pushInfo.live = keep; folds.openLive = false; render(); return ok2; }), "tracking: a line separates each trade from the next");
