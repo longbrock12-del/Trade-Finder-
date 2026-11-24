@@ -140,6 +140,10 @@ module.exports = async function handler(req, res) {
         x.opt = { contract: "BAC261218P00050000", type: "put", strike: 50, expiry: "2026-12-18", dte: 31, mid: 1.85, delta: -0.576, gamma: 0.1044, theta: -0.023, iv: 26.5, spreadPct: 3.6, atStop: 1.09, price: 49.45, manual: true };
         await S.hsetJSON("tf:live", lk, x);
       }
+      // One-time: points A and B for the two trades open before they were saved (worked out from the same
+      // Yahoo candles the site uses): HOOD's short (Nov 23) and MCD's long (Nov 24).
+      if (x.status === "open" && !x.linePts && x.sym === "HOOD" && x.dir === "short") { Object.assign(x, { linePts: {t0: 1722864600, p0: 13.979999542236328, t1: 1794925800, p1: 67.25360107421875, d0: true, d1: false}, safetyPts: {t0: 1794421800, p0: 86.14990234375, t1: 1795098600, p1: 74.04000091552734, d0: false, d1: false} }); await S.hsetJSON("tf:live", lk, x); }
+      if (x.status === "open" && !x.linePts && x.sym === "MCD" && x.dir === "long") { Object.assign(x, { linePts: {t0: 1794321000, p0: 283.5295104980469, t1: 1795185000, p1: 278.2900085449219, d0: false, d1: false}, safetyPts: {t0: 1791984600, p0: 234.2301025390625, t1: 1795098600, p1: 267.4704895019531, d0: false, d1: false} }); await S.hsetJSON("tf:live", lk, x); }
       if (x.status !== "open") continue;
       // One-time cleanup: the SBUX short from the false 3rd tap (the break candle) is taken off tracking for good.
       if (x.sym === "SBUX") { await S.hdel("tf:live", lk); dropped++; continue; }
