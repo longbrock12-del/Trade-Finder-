@@ -637,8 +637,8 @@ function card(m, s) {
     '<div class="sec"><div class="sh">Why this trade</div><div class="note" style="margin-top:0;color:var(--tx)">' + why + "</div>" +
     (s.note ? '<div class="note">' + esc(s.note) + "</div>" : "") + checks(s) + setupOdds(m, s) + "</div>" +
     (s.chart && (s.chart.line || s.chart.safety) ? '<div class="sec"><div class="sh">Draw the lines (point A → point B)</div>' +
-      (s.chart.line ? '<div class="pr"><span>Trend line</span><div>' + ptsHtml(s.chart.line, d, s.tf) + "</div></div>" : "") +
-      (s.chart.safety ? '<div class="pr"><span>Safety line</span><div>' + (sameLn(s.chart.line, s.chart.safety) ? "the same line (the trend line is also the safety line)" : ptsHtml(s.chart.safety, d, s.tf)) + "</div></div>" : "") + "</div>" : "") +
+      (s.chart.line ? '<div class="pr"><span>Action line</span><div>' + ptsHtml(s.chart.line, d, s.tf) + "</div></div>" : "") +
+      (s.chart.safety ? '<div class="pr"><span>Safety line</span><div>' + (sameLn(s.chart.line, s.chart.safety) ? "the same line (the action line is also the safety line)" : ptsHtml(s.chart.safety, d, s.tf)) + "</div></div>" : "") + "</div>" : "") +
     (!s.chart ? '<div class="note">Chart not available for this callout.</div>' : (zoomed[k] ? lineView(m, s, zoomed[k]) : chart(m, s)) + linesBlock(m, s, k)) +
     optionsBlock(m, s, k) + "</article>";
 }
@@ -860,8 +860,8 @@ function openTrades() {
     if (stop != null) plan.push(["Stop order", "<b>" + num(stop, d) + "</b> · backup, in case price spikes through before the candle closes"]);
     if (tg) plan.push(["Take profit", "<b>" + num(tg.price, d) + "</b> · " + esc(tgName) + ", if price gets there"]);
     const lp = (sg && sg.chart && sg.chart.line && sg.chart.line.t0 ? sg.chart.line : null) || x.linePts || (ocC && ocC.line && ocC.line.t0 ? ocC.line : null);
-    if (lp) plan.push(["Trend line", ptsHtml(lp, d, x.tf)]);
-    if (sp) plan.push(["Safety line", sameLn(lp, sp) ? "the same line as the trend line" : ptsHtml(sp, d, x.tf)]);
+    if (lp) plan.push(["Action line", ptsHtml(lp, d, x.tf)]);
+    if (sp) plan.push(["Safety line", sameLn(lp, sp) ? "the same line as the action line" : ptsHtml(sp, d, x.tf)]);
     if (x.kind === "stocks" && x.opt) plan.push(["Option", optName(x) + '<div class="mu" style="font-size:11.5px">% above is the option, after time decay and spread</div>']);
     const exitWhen = erT + (plan.length ? '<div class="sec"><div class="sh">Exit plan</div>' + plan.map(([a, b]) => '<div class="pr"><span>' + a + "</span><div>" + b + "</div></div>").join("") + "</div>" : "");
     return { r, html: '<div class="otr"><div class="trr oth"><span><b class="sym">' + esc(show(x.sym)) + '</b> <span class="tag ' + x.dir + '">' + (x.dir === "long" ? "LONG" : "SHORT") + '</span> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +

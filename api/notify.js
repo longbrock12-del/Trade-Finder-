@@ -141,8 +141,9 @@ module.exports = async function handler(req, res) {
         await S.hsetJSON("tf:live", lk, x);
       }
       // One-time: points A and B for the two trades open before they were saved (worked out from the same
-      // Yahoo candles the site uses): HOOD's short (Nov 23) and MCD's long (Nov 24).
+      // Yahoo candles the site uses): HOOD's short (Nov 23), MCD's long (Nov 24) and BAC's short (Nov 18).
       if (x.status === "open" && !x.linePts && x.sym === "HOOD" && x.dir === "short") { Object.assign(x, { linePts: {t0: 1722864600, p0: 13.979999542236328, t1: 1794925800, p1: 67.25360107421875, d0: true, d1: false}, safetyPts: {t0: 1794421800, p0: 86.14990234375, t1: 1795098600, p1: 74.04000091552734, d0: false, d1: false} }); await S.hsetJSON("tf:live", lk, x); }
+      if (x.status === "open" && !x.linePts && x.key === "BAC|4H|break & retest|short|1794940200") { Object.assign(x, { linePts: {t0: 1744205400, p0: 33.06999969482422, t1: 1793975400, p1: 49.27000045776367, d0: true, d1: false}, safetyPts: {t0: 1789133400, p0: 63.83000183105469, t1: 1793889000, p1: 53.025001525878906, d0: false, d1: false} }); await S.hsetJSON("tf:live", lk, x); }
       if (x.status === "open" && !x.linePts && x.sym === "MCD" && x.dir === "long") { Object.assign(x, { linePts: {t0: 1794321000, p0: 283.5295104980469, t1: 1795185000, p1: 278.2900085449219, d0: false, d1: false}, safetyPts: {t0: 1791984600, p0: 234.2301025390625, t1: 1795098600, p1: 267.4704895019531, d0: false, d1: false} }); await S.hsetJSON("tf:live", lk, x); }
       if (x.status !== "open") continue;
       // One-time cleanup: the SBUX short from the false 3rd tap (the break candle) is taken off tracking for good.
