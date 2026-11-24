@@ -167,6 +167,14 @@ module.exports = async function handler(req, res) {
           await S.hsetJSON("tf:live", lk, x);
         }
       }
+      // Points A and B not saved yet: the scan only sends charts for trades still in Get In Now, so an older open
+      // trade (most futures ones) never got them. Look the callout up (with its chart) and save them.
+      if (!x.linePts && (x.ptsTries || 0) < 4) { // a few tries, in case a lookup fails
+        x.ptsTries = (x.ptsTries || 0) + 1;
+        const lk3 = await get("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=" + view + "&ct=" + x.t + "&cd=" + x.dir + "&pts=1"), pm = (lk3.markets || [])[0];
+        if (pm && pm.trade) Object.assign(x, ptsOf(pm.trade));
+        await S.hsetJSON("tf:live", lk, x);
+      }
       const m = (byTf[view] || []).find((q) => q.sym === x.sym);
       if (!m) continue;
       let s = (m.signals || []).find((q) => keyOf(m, q) === x.key);

@@ -764,7 +764,7 @@ async function alertTests() {
     if (c === "SADD") { const st = db.get(k) || new Set(); db.set(k, st); if (st.has(a[0])) return 0; st.add(a[0]); return 1; }
     throw new Error("cmd " + c);
   };
-  let site = {}; const ctAsks = [];
+  let site = {}; const ctAsks = [], ptsAsks = [];
   let fetcher = async (u, o = {}) => {
     u = String(u);
     if (u.startsWith("https://kv.test/pipeline")) { const out = JSON.parse(o.body).map((c) => ({ result: run(c) })); return { ok: true, status: 200, json: async () => out }; }
@@ -773,6 +773,7 @@ async function alertTests() {
       if (/\/api\/options/.test(u)) return { ok: true, status: 200, json: async () => site.options || { contracts: [] } };
       if (/\/api\/earnings/.test(u)) return { ok: true, status: 200, json: async () => global.__earn || { earnings: {} } };
       if (/&why=track/.test(u)) return { ok: true, status: 200, json: async () => site.track || { markets: [] } }; // an older trade looked up for tracking
+      if (/&pts=1/.test(u)) { ptsAsks.push(u); return { ok: true, status: 200, json: async () => site.pts || { markets: [] } }; }
       if (/&ct=/.test(u)) { ctAsks.push(u); return { ok: true, status: 200, json: async () => site.ct || { markets: [{ sym: "MGC=F", trade: { t: 1 } }] } }; } // by default today's rules still make the callout
       const k = /\/api\/scan/.test(u) ? "scan" : /&s=/.test(u) ? "extra" : "trades"; return { ok: true, status: 200, json: async () => site[k] || { markets: [] } };
     }
@@ -853,6 +854,15 @@ async function alertTests() {
   ok(ctAsks.length === 1 && /ct=7&cd=long/.test(ctAsks[0]) && JSON.parse(H("tf:live").get("old|keep")).rv === "3", "a callout sent under older rules is re-checked once and kept (marked) when today's rules still make it", ctAsks[0]);
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   ok(ctAsks.length === 1, "once checked, a callout isn't checked again until the rules change");
+  { // An open trade with no points A and B (out of Get In Now, so the scan sent no chart) gets them looked up once.
+    const L = { t0: 1790000000, p0: 1900, t1: 1793000000, p1: 1950, d0: false, d1: false };
+    site.pts = { markets: [{ sym: "MGC=F", trade: { t: 7, chart: { line: L, safety: { ...L, p0: 1980, p1: 1960 } } } }] };
+    { const x0 = JSON.parse(H("tf:live").get("old|keep")); delete x0.ptsTries; delete x0.linePts; x0.status = "open"; H("tf:live").set("old|keep", JSON.stringify(x0)); }
+    const before = ptsAsks.length; db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+    const xo = JSON.parse(H("tf:live").get("old|keep"));
+    db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
+    ok(xo.linePts && xo.linePts.p0 === 1900 && xo.safetyPts && xo.safetyPts.p0 === 1980 && ptsAsks.length - before === 1, "an open trade missing points A and B gets them looked up and saved, then not again", JSON.stringify({ pts: xo.linePts, asks: ptsAsks.length - before }));
+    delete site.pts; }
   H("tf:live").delete("old|keep");
   H("tf:live").set("old|SBUX", JSON.stringify({ key: "SBUX|4H|3-touch break|short|5", view: "4H", sym: "SBUX", kind: "stocks", tf: "4H", dir: "short", entry: 100, stop: 101, risk: 1, t: 5, status: "open", nowR: 0.1 }));
   db.delete("tf:lastrun"); site.ct = { markets: [{ sym: "SBUX" }] }; // today's rules don't make this one
