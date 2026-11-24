@@ -566,7 +566,7 @@ async function pageTests(browser, body, optBody, scanBody) {
   await page.reload(); await page.waitForFunction(() => /Updated/.test(document.getElementById("sub").textContent));
   await page.click("[data-tab=watch]"); await page.click("[data-k=stocks]");
   const hs = await page.locator("#out article.wc").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
-  ok(hs.length === 5 && hs.every((h) => h < 175), "watch-list boxes are compact (under 175px tall on a phone, with a news/market line and Show chart)", hs.map(Math.round).join(","));
+  ok(hs.length === 5 && hs.every((h) => h < 215), "watch-list boxes are compact (under 215px tall on a phone, with points A and B, a news/market line and Show chart)", hs.map(Math.round).join(","));
   ok((await page.locator("#out article.wc .wl3.warn").count()) === 0 && (await page.locator("#out article.wc .ck").count()) === 0, "A+ watch boxes show no \"Missing\" note and no long checklist");
   ok((await page.locator("#out article.c").count()) === 5 && (await page.locator("[data-wall]").textContent()) === "Show all 8", "stocks watch list shows the top 5 with a \"Show all 8\" button");
   await page.click("[data-wall]");
@@ -1080,6 +1080,8 @@ async function rankPageTests(browser, body, scanBody) {
   await page.click("[data-k=stocks]");
   const shown = await page.locator(".c .sym").allTextContents();
   ok(shown.includes(inList) && !shown.includes(outList) && !shown.includes("ZZZZ"), "Focus: only the top ranked stocks with heavily traded options show", shown.join());
+  { const wd = await page.locator("article.wc .wl3", { hasText: "Draw it:" }).allTextContents();
+    ok(wd.length >= 1 && wd.every((t) => /Draw it: A .*candle, (high|low) [\d,.]+B .*candle, (high|low) [\d,.]+/.test(t)), "watch list: every box says where to put point A and point B", (wd[0] || "") + " (" + wd.length + " of " + (await page.locator("article.wc").count()) + ")"); }
   ok((await page.locator("#focusN, #focusS").count()) === 0, "no Focus settings to pick: every setup shows");
   { const lost = await page.evaluate(() => {
       // A callout the site already sent for a stock outside the top 10 still shows in Tracking.

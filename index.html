@@ -193,6 +193,8 @@ function ptsHtml(L, d, tf) {
   const hl = L.p1 < L.p0 ? "high" : "low", one = (t, p, daily) => (daily ? dayFmt.format(new Date(t * 1000)) + " Daily candle" : etFmt.format(new Date(t * 1000)) + " " + esc(tf || "4H") + " candle") + ", " + hl + " <b>" + num(p, d) + "</b>";
   return "<b>A</b> " + one(L.t0, L.p0, L.d0) + "<br><b>B</b> " + one(L.t1, L.p1, L.d1);
 }
+// Watch-list boxes: the line's points A and B in one small block.
+const drawNote = (L, d, tf) => (L && L.t0 ? '<div class="wl3 mu" style="font-size:12px;line-height:1.45">Draw it: ' + ptsHtml(L, d, tf) + "</div>" : "");
 const sameLn = (a, b) => !!(a && b && a.t0 === b.t0 && a.t1 === b.t1);
 // The entry candle, by the time it opened (how TradingView labels candles): "Mon, Nov 9, 4:00 PM 4H candle".
 const entryCandle = (t, tf) => '<small class="sub">' + etFmt.format(new Date(t * 1000)) + " " + esc(tf || "4H") + " candle</small>";
@@ -850,13 +852,14 @@ function openTrades() {
       '<div><small>Nearest ' + srName + "</small>" + (sr ? num(sr.p, d) + '<small class="was">turned there ' + sr.n + "×" + (sr.tests ? " · held " + Math.round((100 * sr.held) / sr.tests) + "% of " + sr.tests + " tests" : "") + "</small>" : "—") + "</div></div>";
     const erT = x.kind === "stocks" && x.earnings && x.earnings.date >= new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) ? '<div class="note mini warn">⚠ Earnings ' + new Date(x.earnings.date + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) + (x.earnings.when ? " " + esc(x.earnings.when) : "") + ": a gap can jump past the stop, and option prices drop after.</div>" : "";
     // The safety line's two points, so it can be drawn on any chart (from today's scan, or what the alert check saved).
-    const sp = (sg && sg.chart && sg.chart.safety && sg.chart.safety.t0 ? sg.chart.safety : null) || x.safetyPts;
+    const oc = wcharts["O" + x.sym + "|" + x.t + "|" + x.dir], ocC = oc && oc.s && oc.s.chart; // the trade's chart, once 📈 Chart was tapped
+    const sp = (sg && sg.chart && sg.chart.safety && sg.chart.safety.t0 ? sg.chart.safety : null) || x.safetyPts || (ocC && ocC.safety && ocC.safety.t0 ? ocC.safety : null);
     // Exit plan in one box, a labelled row each (the same look as the callout cards).
     const plan = [];
     if (line != null) plan.push(["Main exit", "a 4H candle closes " + (x.dir === "long" ? "below " : "above ") + "<b>" + num(line, d) + "</b> (safety line)"]);
     if (stop != null) plan.push(["Stop order", "<b>" + num(stop, d) + "</b> · backup, in case price spikes through before the candle closes"]);
     if (tg) plan.push(["Take profit", "<b>" + num(tg.price, d) + "</b> · " + esc(tgName) + ", if price gets there"]);
-    const lp = (sg && sg.chart && sg.chart.line && sg.chart.line.t0 ? sg.chart.line : null) || x.linePts;
+    const lp = (sg && sg.chart && sg.chart.line && sg.chart.line.t0 ? sg.chart.line : null) || x.linePts || (ocC && ocC.line && ocC.line.t0 ? ocC.line : null);
     if (lp) plan.push(["Trend line", ptsHtml(lp, d, x.tf)]);
     if (sp) plan.push(["Safety line", sameLn(lp, sp) ? "the same line as the trend line" : ptsHtml(sp, d, x.tf)]);
     if (x.kind === "stocks" && x.opt) plan.push(["Option", optName(x) + '<div class="mu" style="font-size:11.5px">% above is the option, after time decay and spread</div>']);
@@ -929,7 +932,7 @@ function watchCard(m, w) {
     (soon != null ? '<span class="tag ap">A+ in ' + soon + " day" + (soon > 1 ? "s" : "") + "</span>" : "") + '</div><b class="wp">' + num(w.lineNow, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(w.lineTF) + " line</span><span>" + away(m, w) + "</span></div>" +
     nearBar(w.dist) +
-    '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
+    '<div class="wl3">' + esc(plan) + "</div>" + drawNote(w.line, m.digits, w.tf) + infoLine(m) + (miss.length ? '<div class="wl3 warn">Missing: ' + esc(miss.join(", ")) + "</div>" : "") +
     (pushInfo && pushInfo.configured ? '<div class="tv sm"><button class="btn" data-lal="' + esc(m.sym + "|" + w.tf + "|" + w.key) + '">' + (store.get("lineAlerts", {})[m.sym + "|" + w.tf + "|" + w.key] ? "🔔 Alert set ✓" : "🔔 Alert me at this line") + "</button></div>" : "") +
     watchChart(m, w) + "</article>";
 }
@@ -965,7 +968,7 @@ function lookBox() {
   const m = looked.m, L = m.look, s = { tf: "4H", chart: L.chart, status: "watch", entry: null, stop: null, checks: L.checks, taps: L.taps, angle: L.angle, days: L.days }, k = "L" + m.sym;
   return h + '<article class="c wc">' + top + '<span class="tag ' + (L.grade === "A+" ? "ap" : "") + '">' + L.grade + " · " + L.passed + "/4</span>" + touchBadge(L) + '</div><b class="wp">' + num(m.price, m.digits) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (L.up ? "#1fa463" : "#d64545") + '"></i>Nearest: ' + (L.up ? "Rising " : "Falling ") + esc(L.lineTF) + " line at " + num(L.lineNow, m.digits) + "</span><span>" + away(m, L) + "</span></div>" +
-    infoLine(m) + checks(s) + chart(m, s) + linesBlock(m, s, k) +
+    drawNote(L.line || (L.chart && L.chart.line), m.digits, "4H") + infoLine(m) + checks(s) + chart(m, s) + linesBlock(m, s, k) +
     '<button class="btn" data-lookx="1" style="width:100%;margin-top:8px">Close</button></article>';
 }
 async function lookUp(q) {
@@ -1016,7 +1019,7 @@ function nearCard(m) {
     '</div><b class="wp">' + num(L.lineNow, d) + "</b></div>" +
     '<div class="wl2"><span><i style="background:' + (up ? "#1fa463" : "#d64545") + '"></i>' + (up ? "Rising " : "Falling ") + esc(L.lineTF) + " line</span><span>" + away(m, L) + "</span></div>" +
     nearBar(L.dist) +
-    '<div class="wl3">' + esc(plan) + "</div>" + infoLine(m) + '<div class="note mini ' + (ok ? "" : "warn") + '">' + esc(why) + "</div>" +
+    '<div class="wl3">' + esc(plan) + "</div>" + drawNote(L.line, d, "4H") + infoLine(m) + '<div class="note mini ' + (ok ? "" : "warn") + '">' + esc(why) + "</div>" +
     '<div class="tv sm"><button class="btn" data-nch="' + esc(m.sym) + '" aria-expanded="' + !!(c && c.shown) + '">' + (c && c.shown ? "Hide chart" : "📈 Show chart") + "</button></div>";
   if (c && c.shown) {
     if (c.loading) h += '<div class="note"><span class="sp"></span> Loading chart…</div>';

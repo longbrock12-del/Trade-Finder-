@@ -735,7 +735,7 @@ function scanCore(hChart, dChart, opts = {}) {
       const g = grade(s, ln, last + 1 > b.length - 1 ? b.length - 1 : last + 1, up);
       if (!qualifies(g)) return; // only lines that would make a real callout if price breaks or bounces off them
       watch.push({ tf, grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, real: g.real, days: g.days, angle: g.angle, lineTF: tfOfLine(ln, tf), key: ln.a.t + ":" + ln.b.t,
-        line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up },
+        line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, up, d0: ln.a.x < s.x0, d1: ln.b.x < s.x0 },
         _ln: ln, _safety: up ? s.act[last + 1].dn : s.act[last + 1].up, _tapX: g.tapX,
         kind: up ? "rising line under lows" : "falling line over highs", lineNow: px(v), dist: r2(d, 1),
         plan: up ? tf + " close below " + px(v) + " = short break. Tag and hold = long bounce." : tf + " close above " + px(v) + " = long break. Tag and reject = short bounce." });
@@ -828,6 +828,7 @@ function scanCore(hChart, dChart, opts = {}) {
       const [ln, up] = ends.sort((p, q) => Math.abs(val(p[0], s.x0 + i) - live) - Math.abs(val(q[0], s.x0 + i) - live))[0];
       const other = up ? s.act[i].dn : s.act[i].up, g = grade(s, ln, Math.min(i, s.bars.length - 1), up), v = val(ln, s.x0 + i);
       look = { tf: "4H", lineTF: tfOfLine(ln, "4H"), up, lineNow: px(v), dist: r2(Math.abs(live - v) / s.A[s.last], 1), grade: g.grade, passed: g.passed, checks: g.checks, taps: g.taps, real: g.real, days: g.days, angle: g.angle,
+        line: { t0: ln.a.t, p0: ln.a.p, t1: ln.b.t, p1: ln.b.p, d0: ln.a.x < s.x0, d1: ln.b.x < s.x0 }, // its points A and B
         chart: opts.lookup ? chartFor({ tf: "4H", action: ln, safety: other || null, tapX: g.tapX, at: s.last, from: null, closedAt: null }) : null };
     }
   }
