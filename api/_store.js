@@ -32,4 +32,14 @@ async function hgetallJSON(key) {
 const hsetJSON = (key, field, val) => one("HSET", key, field, JSON.stringify(val));
 const hdel = (key, field) => one("HDEL", key, field);
 
-module.exports = { config, redis, one, hgetallJSON, hsetJSON, hdel };
+// Saves CPU on Vercel's free plan: a heavy result (the 2-year backtests, the stock scan) is kept in the database
+// for secs, so it isn't worked out again when Vercel's own cache is emptied (every deploy empties it).
+// compute() returns { body, keep }: keep=false (a partial result) isn't saved. No database: just compute.
+async function cached(key, secs, compute) {
+  if (config()) { try { const v = await one("GET", key); if (v) return JSON.parse(v); } catch (e) { /* compute below */ } }
+  const { body, keep } = await compute();
+  if (keep && config()) { try { await one("SET", key, JSON.stringify(body), "EX", String(Math.max(60, Math.round(secs)))); } catch (e) { /* still return it */ } }
+  return body;
+}
+
+module.exports = { config, redis, one, hgetallJSON, hsetJSON, hdel, cached };

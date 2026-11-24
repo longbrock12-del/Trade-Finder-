@@ -2,6 +2,7 @@
 // Pulls 6 months of hourly and 10 years of daily bars per symbol from Yahoo Finance and runs the top-down
 // Tori Trades trendline scanner (api/_trendlines.js). Cached 5 minutes at Vercel's edge.
 const { scan } = require("./_trendlines.js");
+const ST = require("./_store.js");
 
 const FUTURES = ["MGC=F", "MCL=F", "MHG=F"]; // Micro Gold, Crude and Copper. Stocks come from api/scan.js.
 // A micro trades at the same price as its full-size contract, so if Yahoo has no data for the micro, use the full one.
@@ -98,19 +99,27 @@ async function handler(req, res) {
     if (cost != null && !(cost >= 0 && cost <= 1)) return send(res, 400, 0, { error: "cost must be 0-1 (R per trade)" });
     if (tmin != null && !(tmin >= 0 && tmin <= 5)) return send(res, 400, 0, { error: "tmin must be 0-5 (R)" });
     const roll = sq.get("roll") === "1", exit = ["tp", "htf", "htfsr", "sr", "trail"].includes(sq.get("exit")) ? sq.get("exit") : null, test = roll || !!exit || tmin != null || cost != null || split || real || listOn || srMin != null || far != null;
+    // The live 2-year records: kept in the database for a week (a deploy empties Vercel's cache).
+    const k2 = test ? null : "tf:cache:fut2y:" + list.join(",");
+    if (k2 && ST.config()) { try { const v = await ST.one("GET", k2); if (v) return send(res, 200, 86400, JSON.parse(v)); } catch (e) { /* work it out below */ } }
     const out = await Promise.all(list.map(async (sym) => { try {
       const args = await both(sym, "2y"), rolls = roll && /^M?CL=F$/.test(sym) ? rollAdjust(...args) : undefined;
       const m = scan(...args, { sym, tfs: ["4H"], tradeList: listOn, split, ...(exit || tmin != null || cost != null || real || srMin != null || far != null ? { rules: { ...(srMin != null ? { srMin } : {}), ...(far != null ? { far } : {}), ...(exit ? { exit: exit === "trail" ? null : exit } : {}), ...(tmin != null ? { tmin } : {}), ...(cost != null ? { cost } : {}), ...(real ? { realLines: true } : {}) } } : {}) });
       return m.error ? { sym, error: m.error } : { sym, record: m.record, ...(m.split ? { split: m.split } : {}), ...(rolls ? { rolls } : {}) };
     } catch (e) { return { sym, error: e.message || "failed" }; } }));
     if (test) return send(res, 200, 1800, { at: Date.now(), years: 2, test: { roll, exit: exit || "live", ...(tmin != null ? { tmin } : {}), ...(cost != null ? { cost } : {}), split, real }, markets: out });
-    const ok = out.filter((x) => x.record).length;
-    return send(res, ok ? 200 : 502, ok === out.length ? 86400 : ok ? 1800 : 0, { at: Date.now(), years: 2, markets: out });
+    const ok = out.filter((x) => x.record).length, body = { at: Date.now(), years: 2, markets: out };
+    if (k2 && ok === out.length && ST.config()) { try { await ST.one("SET", k2, JSON.stringify(body), "EX", String(7 * 86400)); } catch (e) { /* still send it */ } }
+    return send(res, ok ? 200 : 502, ok === out.length ? 86400 : ok ? 1800 : 0, body);
   }
   const sp = new URL(req.url, "http://x").searchParams, one = list.length === 1;
   // ?ct=<time>&cd=long|short: one callout the site sent earlier, with its chart (the tracking box).
   const ct = Number(sp.get("ct")), tradeAt = one && ct > 0 && ["long", "short"].includes(sp.get("cd")) ? { t: ct, dir: sp.get("cd") } : null;
   const tfs = chartsFrom(req), watchCharts = sp.get("wchart") === "1" && one, lookup = sp.get("look") === "1" && one; // one market: its watch-line charts / a look-up chart
+  // The futures page data (no s=): kept in the database 5 minutes (1 hour when futures are closed), so a deploy or
+  // many page loads don't rescan.
+  const H = require("./_hours.js"), fk = !q && !tradeAt && !watchCharts && !lookup ? "tf:cache:fut:" + tfs.join(",") + ":" + (H.futuresOpen() ? "open" : "closed") : null;
+  if (fk && ST.config()) { try { const v = await ST.one("GET", fk); if (v) return send(res, 200, H.futuresOpen() ? 300 : 3600, JSON.parse(v)); } catch (e) { /* scan below */ } }
   const markets = await Promise.all(list.map(async (sym) => {
     try {
       // A micro's support/resistance levels use its full-size contract's 10 years of daily candles.
@@ -120,7 +129,9 @@ async function handler(req, res) {
   }));
   const okCount = markets.filter((m) => !m.error).length;
   // Cached 5 minutes while futures trade (or for stock look-ups), 1 hour over the weekend and daily break.
-  send(res, okCount ? 200 : 502, !okCount ? 0 : markets.every((m) => /=F$/.test(m.sym)) && !require("./_hours.js").futuresOpen() ? 3600 : 300, { at: Date.now(), markets });
+  const body = { at: Date.now(), markets };
+  if (fk && okCount === markets.length && ST.config()) { try { await ST.one("SET", fk, JSON.stringify(body), "EX", String(H.futuresOpen() ? 300 : 3600)); } catch (e) { /* still send it */ } }
+  send(res, okCount ? 200 : 502, !okCount ? 0 : markets.every((m) => /=F$/.test(m.sym)) && !H.futuresOpen() ? 3600 : 300, body);
 }
 
 module.exports = handler;

@@ -170,7 +170,7 @@ module.exports = async function handler(req, res) {
       }
       // Points A and B not saved yet: the scan only sends charts for trades still in Get In Now, so an older open
       // trade (most futures ones) never got them. Look the callout up (with its chart) and save them.
-      if (!x.linePts && (x.ptsTries || 0) < 4) { // a few tries, in case a lookup fails
+      if (!x.linePts && (x.ptsTries || 0) < 2) { // two tries, in case a lookup fails
         x.ptsTries = (x.ptsTries || 0) + 1;
         const lk3 = await get("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=" + view + "&ct=" + x.t + "&cd=" + x.dir + "&pts=1"), pm = (lk3.markets || [])[0];
         if (pm && pm.trade) Object.assign(x, ptsOf(pm.trade));

@@ -798,6 +798,14 @@ async function alertTests() {
     finally { global.fetch = saved; Date.now = realNow; delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; }
   };
   ok((await call("api/push.js", "/api/push", async () => ({ ok: false }))).body.configured === false, "without the database, the page is told phone alerts aren't set up");
+  { // Heavy results (2-year backtests, the stock scan) are kept in the database, so a deploy doesn't rerun them.
+    const ST = require(path.join(ROOT, "api/_store.js")), saved = global.fetch; let n = 0;
+    global.fetch = fetcher; process.env.KV_REST_API_URL = "https://kv.test"; process.env.KV_REST_API_TOKEN = "t";
+    try {
+      const a1 = await ST.cached("tf:cache:t", 60, async () => ({ keep: true, body: { v: ++n } })), a2 = await ST.cached("tf:cache:t", 60, async () => ({ keep: true, body: { v: ++n } }));
+      const b1 = await ST.cached("tf:cache:p", 60, async () => ({ keep: false, body: { v: ++n } })), b2 = await ST.cached("tf:cache:p", 60, async () => ({ keep: false, body: { v: ++n } }));
+      ok(a1.v === 1 && a2.v === 1 && b1.v === 2 && b2.v === 3, "saving CPU: a heavy result is worked out once and reused from the database (partial results aren't kept)", JSON.stringify([a1, a2, b1, b2]));
+    } finally { global.fetch = saved; delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; db.delete("tf:cache:t"); } }
   const info = await invoke("api/push.js", "GET");
   ok(info.body.configured && /^[A-Za-z0-9_-]{87}$/.test(info.body.publicKey), "with the database, the site makes its alert key once", info.body.publicKey);
   ok((await invoke("api/push.js", "GET")).body.publicKey === info.body.publicKey, "the alert key stays the same");

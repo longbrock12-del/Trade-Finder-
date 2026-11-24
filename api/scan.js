@@ -4,6 +4,8 @@
 // Cached 15 minutes at Vercel's edge, so Yahoo sees one scan per 15 minutes however many people look.
 const { scan } = require("./_trendlines.js");
 const { both, chartsFrom } = require("./trades.js");
+const ST = require("./_store.js"), HRS = require("./_hours.js");
+const WEEK = 7 * 86400;
 
 const UNIVERSE = [
   // ETFs
@@ -59,13 +61,18 @@ async function stats(req, res, sp) {
     return send(res, r.scanned ? 200 : 502, r.scanned ? 86400 : 0, { at: Date.now(), ...r });
   }
   const host = req.headers && (req.headers["x-forwarded-host"] || req.headers.host);
-  const parts = await Promise.all(Array.from({ length: PARTS }, (_, i) => host
-    ? fetch("https://" + host + "/api/scan?stats=1&part=" + i, { signal: AbortSignal.timeout(115000) }).then((r) => r.json()).catch(() => ({ recs: [], failed: [], scanned: 0 }))
-    : statsPart(i)));
-  const recs = parts.flatMap((x) => x.recs || []), scanned = parts.reduce((a, x) => a + (x.scanned || 0), 0), whole = parts.every((x) => x.scanned);
-  send(res, scanned ? 200 : 502, !scanned ? 0 : whole ? 86400 : 1800, { at: Date.now(), years: 2, scanned, failed: parts.flatMap((x) => x.failed || []), record: combine(recs), ranks: ranks(recs),
-    // each stock's own 2-year result, for the 2-yr badge on its cards
-    bySym: Object.fromEntries(recs.map((r) => [r.sym, { trades: r.trades, wins: r.wins, totalR: Math.round(r.totalR * 10) / 10 }])) });
+  // The heaviest work on the site (110 stocks x 2 years): kept in the database for a week, so a deploy (which
+  // empties Vercel's cache) doesn't run it again. 2-year results barely change in a week.
+  const body = await ST.cached("tf:cache:stats2y", WEEK, async () => {
+    const parts = await Promise.all(Array.from({ length: PARTS }, (_, i) => host
+      ? fetch("https://" + host + "/api/scan?stats=1&part=" + i, { signal: AbortSignal.timeout(115000) }).then((r) => r.json()).catch(() => ({ recs: [], failed: [], scanned: 0 }))
+      : statsPart(i)));
+    const recs = parts.flatMap((x) => x.recs || []), scanned = parts.reduce((a, x) => a + (x.scanned || 0), 0), whole = parts.every((x) => x.scanned);
+    return { keep: whole, body: { at: Date.now(), years: 2, scanned, whole, failed: parts.flatMap((x) => x.failed || []), record: combine(recs), ranks: ranks(recs),
+      // each stock's own 2-year result, for the 2-yr badge on its cards
+      bySym: Object.fromEntries(recs.map((r) => [r.sym, { trades: r.trades, wins: r.wins, totalR: Math.round(r.totalR * 10) / 10 }])) } };
+  });
+  send(res, body.scanned ? 200 : 502, !body.scanned ? 0 : body.whole ? 86400 : 1800, body);
 }
 
 async function handler(req, res) {
@@ -90,6 +97,10 @@ async function handler(req, res) {
   const futTest = sp.get("market") === "futures";
   if ((rules || yr != null || futTest || split || listOn) && !range) return send(res, 400, 0, { error: "years must be 0.5, 1 or 2" });
   const testMode = !!(rules || yr != null || futTest || split || listOn), list = futTest ? FUT_TEST : UNIVERSE, hourRange = testMode ? range : "6mo";
+  // The live scan: kept in the database too (15 minutes while the market is open, 3 hours when it's closed),
+  // so page loads and deploys don't rescan 110 stocks.
+  const liveKey = testMode ? null : "tf:cache:scan:" + tfs.join(",") + ":" + (HRS.stocksOpen() ? HRS.stockCandle(Date.now()) : "closed"); // a new 4-hour candle = a fresh scan
+  if (liveKey && ST.config()) { try { const v = await ST.one("GET", liveKey); if (v) return send(res, 200, HRS.stocksOpen() ? 900 : 10800, JSON.parse(v)); } catch (e) { /* scan below */ } }
   if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold) || Number.isNaN(pivot) || Number.isNaN(cost))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles), pivot 1-5 (candles), cost 0-1 (R)" });
   let next = 0;
   async function worker() {
@@ -111,7 +122,9 @@ async function handler(req, res) {
   const R = rules || {};
   if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? "all" : R.setups || "all", exit: R.exit === undefined ? "htfsr" : R.exit || "trail", cost: R.cost || 0, realLines: !!R.realLines }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}), ...(patOn ? { pattern: require("./_pattern.js").summarize(lists, Date.now() / 1000) } : listOn ? { list: lists } : {}) });
   // Cached 15 minutes while the market is open, 3 hours while it's closed (nothing changes; saves CPU).
-  send(res, scanned ? 200 : 502, !scanned ? 0 : require("./_hours.js").stocksOpen() ? 900 : 10800, { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) });
+  const out = { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) };
+  if (liveKey && scanned && failed.length < 10 && ST.config()) { try { await ST.one("SET", liveKey, JSON.stringify(out), "EX", String(HRS.stocksOpen() ? 900 : 10800)); } catch (e) { /* still send it */ } }
+  send(res, scanned ? 200 : 502, !scanned ? 0 : HRS.stocksOpen() ? 900 : 10800, out);
 }
 
 // Stocks that respect trendlines: the top 10 by 6-month total R on this chart (3+ trades, positive total).
