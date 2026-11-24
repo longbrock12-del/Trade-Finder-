@@ -23,6 +23,14 @@ function reply(res, obj) {
   res.end(JSON.stringify(obj));
 }
 
+// Points A and B of a callout's trend line (the one it broke or tagged) and its safety line, with the candle
+// times and prices, so they can be drawn exactly on TradingView.
+function ptsOf(s) {
+  const pick = (L) => L && L.t0 ? { t0: L.t0, p0: L.p0, t1: L.t1, p1: L.p1, d0: !!L.d0, d1: !!L.d1 } : null, o = {};
+  if (s.chart && pick(s.chart.line)) o.linePts = pick(s.chart.line);
+  if (s.chart && pick(s.chart.safety)) o.safetyPts = pick(s.chart.safety);
+  return o;
+}
 module.exports = async function handler(req, res) {
   if (!S.config()) return reply(res, { ran: false, reason: "no database" });
   try {
@@ -76,7 +84,7 @@ module.exports = async function handler(req, res) {
             const oc = await get("/api/options?sym=" + encodeURIComponent(m.sym) + "&dir=" + s.dir + "&entry=" + s.entry + "&stop=" + s.stop0 + tq), c = oc && oc.contracts && oc.contracts[0];
             if (c) opt = { contract: c.contract, type: c.type, strike: c.strike, expiry: c.expiry, dte: c.dte, mid: c.mid, delta: c.delta, gamma: c.gamma, theta: c.theta, iv: c.iv, spreadPct: c.spreadPct, atStop: c.atStop, price: oc.price };
           }
-          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}), ...(s.target ? { target: s.target } : {}), ...(s.chart && s.chart.levels ? { levels: s.chart.levels } : {}) });
+          await S.hsetJSON("tf:live", tf + "|" + k, { key: k, view: tf, sym: m.sym, kind: m.kind, tf: s.tf, setup: s.setup, grade: s.grade, dir: s.dir, entry: s.entry, stop: s.stop0, risk: s.risk, t: s.t, at: Date.now(), status: "open", nowR: s.nowR, exitR: null, rv: RULES_VERSION, ...(opt ? { opt } : {}), ...(s.target ? { target: s.target } : {}), ...(s.chart && s.chart.levels ? { levels: s.chart.levels } : {}), ...ptsOf(s) });
           live[tf + "|" + k] = { status: "open" };
           // Each phone's Focus (her 1-1-1 rule): stocks only for its top-10 list. The callout is still recorded above.
           const wants = (x) => { const f = (x.prefs && x.prefs.focus) || {}; return m.kind !== "stocks" || !f.stocks || f.stocks.includes(m.sym); };
@@ -213,7 +221,7 @@ module.exports = async function handler(req, res) {
         if (s.target) x.target = s.target; // the latest target line (it moves with the line), for "why it exited"
         if (s.stop != null) x.stopLive = s.stop; // where the trailing stop is right now (stopNow only moves with an alert)
         if (s.line != null) x.line = s.line; // the safety line right now (a candle closing past it ends the trade)
-        if (s.chart && s.chart.safety && s.chart.safety.t0) x.safetyPts = { t0: s.chart.safety.t0, p0: s.chart.safety.p0, t1: s.chart.safety.t1, p1: s.chart.safety.p1 }; // its two points
+        Object.assign(x, ptsOf(s)); // the trend line's and safety line's points A and B, to draw them on any chart
         if (s.chart && s.chart.levels) x.levels = s.chart.levels; // and the chart's S/R levels
         const was = x.stopNow != null ? x.stopNow : x.stop;
         // 3. Every time the trailing stop moves (each new 4-hour candle along a sloped safety line), not only big moves.

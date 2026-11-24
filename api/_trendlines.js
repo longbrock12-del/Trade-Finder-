@@ -757,7 +757,8 @@ function scanCore(hChart, dChart, opts = {}) {
   const chartFor = (x) => {
     const s = S[x.tf], b = s.bars, end = s.last + (b[b.length - 1].live ? 1 : 0), off = Math.max(0, end + 1 - KEEP), base = s.x0 + off;
     // t0/t1: the times of point A and point B, so the line can be redrawn on TradingView.
-    const loc = (ln) => ln && { i0: ln.a.x - base, p0: ln.a.p, slope: ln.slope, i1: ln.b.x - base, p1: ln.b.p, t0: ln.a.t, t1: ln.b.t };
+    // d0/d1: the point is on a daily candle (older than the 4-hour data), so only its date matters.
+    const loc = (ln) => ln && { i0: ln.a.x - base, p0: ln.a.p, slope: ln.slope, i1: ln.b.x - base, p1: ln.b.p, t0: ln.a.t, t1: ln.b.t, d0: ln.a.x < s.x0, d1: ln.b.x < s.x0 };
     const ch = s.chainsBefore(s.last + 1);
     // Only real trendlines: swing point to swing point, 6+ candles, not flat (the same rule as action lines).
     // The short pieces in between would draw as a bend, and they're never traded.
