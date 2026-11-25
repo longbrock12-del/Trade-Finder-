@@ -420,6 +420,10 @@ async function optionsTests() {
   ok(all.every((c) => c.oi >= 100 && c.spreadPct <= 10 && c.bid > 0 && c.ask > c.bid), "open interest 100+, spread under 10%");
   ok(all.every((c) => typeof c.theta === "number" && c.theta < 0 && typeof c.volume === "number"), "contracts include theta (time decay per day) and volume");
   ok(all.every((c) => c.atTargetPct > 0 && c.atStopPct < 0 && c.cost === Math.round(c.mid * 100)), "gains at target, loses at stop, cost is 100 shares");
+  { // Backup source: Nasdaq's chain (no greeks) turned into Cboe's shape, greeks worked out from each price.
+    const O = require(path.join(ROOT, "api/_options.js")), nowN = Date.UTC(2026, 10, 25, 20);
+    const ch = O.fromNasdaq(load("nasdaq_HOOD.json"), "HOOD", nowN), best = O.pick(ch, { dir: "short", entry: 67.54, stop: 71.38 }, nowN).contracts[0];
+    ok(ch.data.current_price === 66.005 && ch.data.options.length === 6 && best && best.contract === "HOOD270115P00070000" && best.delta < -0.45 && best.delta > -0.75 && best.oi === 9233 && best.iv > 50, "option backup: Nasdaq's chain picks HOOD's Jan 15 $70 put with the same rules (greeks worked out)", JSON.stringify(best)); }
   ok(S.target === 334 && S.targetIsDefault, "no target on the callout: uses 2R");
   ok(L.contracts[0].contract === "AAPL261218C00350000", "AAPL long 350 to 375: best pick is the Dec 18 350 call", L.contracts[0].contract);
   const none = pick(chain, { dir: "long", entry: 350, stop: 340, target: 375 }, Date.UTC(2027, 5, 1));
@@ -436,6 +440,13 @@ async function optionsTests() {
   ok(a.status === 200 && a.body.contracts.length === 1, "options API returns the best contract");
   ok(f.status === 400 && /futures/.test(f.body.error), "options API turns away futures");
   ok(z.status === 404 && /No listed options/.test(z.body.error), "options API explains a stock with no options");
+  { // Cboe down: the options API falls back to Nasdaq's chain.
+    let asked = "";
+    global.fetch = async (u) => { u = String(u); if (/cboe/.test(u)) throw new Error("blocked"); asked = u; return { ok: true, status: 200, json: async () => load("nasdaq_HOOD.json") }; };
+    Date.now = () => Date.UTC(2026, 10, 25, 20);
+    const h = await call("/api/options?sym=HOOD&dir=short&entry=67.54&stop=71.38");
+    global.fetch = saved; Date.now = realNow;
+    ok(h.status === 200 && h.body.contracts[0] && h.body.contracts[0].contract === "HOOD270115P00070000" && /api\.nasdaq\.com\/api\/quote\/HOOD\/option-chain/.test(asked), "options API: when Cboe's feed fails, Nasdaq's chain gives the best contract", JSON.stringify(h.body).slice(0, 200)); }
   return a.body;
 }
 

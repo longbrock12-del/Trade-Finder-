@@ -67,4 +67,42 @@ function pick(chain, q, now = Date.now()) {
   };
 }
 
-module.exports = { pick, parse };
+// Backup source when Cboe's free feed fails: Nasdaq's option chain (bid, ask, open interest; no greeks).
+// Turned into Cboe's shape, with implied volatility and delta, gamma, theta worked out (Black-Scholes, 4% rate)
+// from each contract's mid price, so pick() treats it the same.
+const Ncdf = (x) => { const t = 1 / (1 + 0.2316419 * Math.abs(x)), d = 0.3989423 * Math.exp(-x * x / 2), p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return x > 0 ? 1 - p : p; };
+const npdf = (x) => Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
+function bs(S, K, T, v, put, r = 0.04) {
+  const d1 = (Math.log(S / K) + (r + v * v / 2) * T) / (v * Math.sqrt(T)), d2 = d1 - v * Math.sqrt(T), df = Math.exp(-r * T);
+  return {
+    price: put ? K * df * Ncdf(-d2) - S * Ncdf(-d1) : S * Ncdf(d1) - K * df * Ncdf(d2),
+    delta: put ? Ncdf(d1) - 1 : Ncdf(d1), gamma: npdf(d1) / (S * v * Math.sqrt(T)),
+    theta: (-S * npdf(d1) * v / (2 * Math.sqrt(T)) + (put ? r * K * df * Ncdf(-d2) : -r * K * df * Ncdf(d2))) / 365,
+  };
+}
+function impliedVol(S, K, T, mid, put) {
+  let lo = 0.01, hi = 4;
+  for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (bs(S, K, T, m, put).price > mid) hi = m; else lo = m; }
+  return (lo + hi) / 2;
+}
+function fromNasdaq(j, sym, now = Date.now()) {
+  const d = j && j.data, rows = (d && d.table && d.table.rows) || [];
+  const S = Number(String((d && d.lastTrade) || "").replace(/[^0-9.]/g, " ").trim().split(/\s+/)[0]);
+  if (!(S > 0) || !rows.length) return null;
+  const n = (x) => { const v = Number(String(x == null ? "" : x).replace(/,/g, "")); return isFinite(v) ? v : NaN; };
+  const options = [];
+  rows.forEach((r) => {
+    const m = /--?(\d{6})c(\d{8})$/i.exec(r.drillDownURL || "");
+    if (!m) return;
+    ["c", "p"].forEach((side) => {
+      const put = side === "p", code = sym + m[1] + (put ? "P" : "C") + m[2], p = parse(code);
+      const bid = n(r[side + "_Bid"]), ask = n(r[side + "_Ask"]);
+      if (!p || !(bid > 0) || !(ask > bid)) return;
+      const T = Math.max(1, (p.exp - now) / 86400000) / 365, mid = (bid + ask) / 2, v = impliedVol(S, p.strike, T, mid, put), g = bs(S, p.strike, T, v, put);
+      options.push({ option: code, bid, ask, delta: g.delta, gamma: g.gamma, theta: g.theta, iv: v, open_interest: n(r[side + "_Openinterest"]) || 0, volume: n(r[side + "_Volume"]) || 0 });
+    });
+  });
+  return { data: { symbol: sym, current_price: S, options } };
+}
+
+module.exports = { pick, parse, fromNasdaq };

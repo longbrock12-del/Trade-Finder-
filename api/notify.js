@@ -153,6 +153,11 @@ module.exports = async function handler(req, res) {
         Object.assign(x, { status: "closed", exitPx: 48.773, exitR: 0.52, closedAt: 1795026600 * 1000, how: "take profit", exitTo: { kind: "sr", price: 48.773, touches: 6 }, closedByHand: true });
         delete x.held; await S.hsetJSON("tf:live", lk, x);
       }
+      // The best contracts for HOOD and MCD, looked up Nov 25 from Nasdaq's chain (Cboe's feed wasn't answering), picked
+      // with the site's rules: 21-75 days, delta 0.45-0.75, open interest 100+, spread under 10%.
+      const LATE = Date.UTC(2026, 10, 25, 19, 55);
+      if (x.status === "open" && !x.opt && x.sym === "HOOD" && x.dir === "short") { x.opt = { contract: "HOOD270115P00070000", type: "put", strike: 70, expiry: "2027-01-15", dte: 51, mid: 9.2, delta: -0.525, gamma: 0.0224, theta: -0.064, iv: 72, spreadPct: 1.1, atStop: 6.69, price: 66.005, late: LATE }; await S.hsetJSON("tf:live", lk, x); }
+      if (x.status === "open" && !x.opt && x.sym === "MCD" && x.dir === "long") { x.opt = { contract: "MCD270115C00280000", type: "call", strike: 280, expiry: "2027-01-15", dte: 51, mid: 11.15, delta: 0.616, gamma: 0.0183, theta: -0.096, iv: 19.6, spreadPct: 4.5, atStop: 4.7, price: 283.74, late: LATE }; await S.hsetJSON("tf:live", lk, x); }
       if (x.status !== "open") continue;
       // One-time cleanup: the SBUX short from the false 3rd tap (the break candle) is taken off tracking for good.
       if (x.sym === "SBUX") { await S.hdel("tf:live", lk); dropped++; continue; }

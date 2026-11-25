@@ -1,0 +1,5 @@
+{"data":{"lastTrade":"LAST TRADE: $66.005 (AS OF NOV 25, 2026 2:55 PM ET)","table":{"rows":[
+{"expirygroup":"January 15, 2027","drillDownURL":null},
+{"expiryDate":"Jan 15","strike":"60.00","c_Bid":"10.55","c_Ask":"10.80","c_Volume":"244","c_Openinterest":"3149","p_Bid":"4.40","p_Ask":"4.50","p_Volume":"680","p_Openinterest":"7054","drillDownURL":"/market-activity/stocks/hood/option-chain/call-put-options/hood--270115c00060000"},
+{"expiryDate":"Jan 15","strike":"65.00","c_Bid":"7.75","c_Ask":"7.90","c_Volume":"328","c_Openinterest":"1773","p_Bid":"6.50","p_Ask":"6.60","p_Volume":"396","p_Openinterest":"11136","drillDownURL":"/market-activity/stocks/hood/option-chain/call-put-options/hood--270115c00065000"},
+{"expiryDate":"Jan 15","strike":"70.00","c_Bid":"5.45","c_Ask":"5.50","c_Volume":"533","c_Openinterest":"5045","p_Bid":"9.15","p_Ask":"9.25","p_Volume":"442","p_Openinterest":"9233","drillDownURL":"/market-activity/stocks/hood/option-chain/call-put-options/hood--270115c00070000"}]}}}
