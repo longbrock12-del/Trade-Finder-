@@ -1135,6 +1135,15 @@ async function rankPageTests(browser, body, scanBody) {
   ok(shown.includes(inList) && !shown.includes(outList) && !shown.includes("ZZZZ"), "Focus: only the top ranked stocks with heavily traded options show", shown.join());
   { const wd = await page.locator("article.wc .wl3", { hasText: "Draw it:" }).allTextContents();
     ok(wd.length >= 1 && wd.every((t) => /Draw it: A .*candle, (high|low) [\d,.]+B .*candle, (high|low) [\d,.]+/.test(t)), "watch list: every box says where to put point A and point B", (wd[0] || "") + " (" + wd.length + " of " + (await page.locator("article.wc").count()) + ")"); }
+  { const fit = await page.evaluate(() => {
+      // "Hide trades that risk more than my %": off by default; on, with a tiny account, Get In Now trades are hidden and counted.
+      const before = callouts().length, off = !document.getElementById("fitOnly").checked;
+      store.set("acct", 100); store.set("riskP", 1); store.set("fitOnly", true); render();
+      const after = callouts().filter(({ s }) => s.risk != null).length, txt = document.getElementById("out").textContent;
+      store.set("fitOnly", false); store.set("acct", 0); render();
+      return { before, off, after, back: callouts().length, note: /hidden: risks? more than your 1%/.test(txt) || !before };
+    });
+    ok(fit.off && fit.after === 0 && fit.back === fit.before && fit.note, "settings: a switch hides trades too big for your account (off by default), and says how many it hid", JSON.stringify(fit)); }
   ok((await page.locator("#focusN, #focusS").count()) === 0, "no Focus settings to pick: every setup shows");
   { const lost = await page.evaluate(() => {
       // A callout the site already sent for a stock outside the top 10 still shows in Tracking.
