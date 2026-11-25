@@ -908,7 +908,7 @@ async function alertTests() {
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   const bacR = JSON.parse(H("tf:live").get("4H|BAC|4H|break & retest|short|1794940200"));
   ok(bacR.opt && bacR.opt.mid === 1.85 && bacR.opt.strike === 50 && bacR.opt.type === "put" && bacR.opt.expiry === "2026-12-18", "the BAC trade gets the option you took on it (Dec 18 $50 put at 1.85)", JSON.stringify(bacR.opt));
-  ok(bacR.status === "open" && bacR.entry === 49.45 && bacR.exitR == null && !bacR.how && bacR.reopened, "the BAC short that closed on a fake target line is reopened once at the same entry", JSON.stringify(bacR));
+  ok(bacR.reopened && bacR.entry === 49.45 && bacR.status === "closed" && bacR.closedByHand && bacR.exitPx === 48.773 && bacR.exitR === 0.52 && bacR.how === "take profit" && bacR.exitTo.kind === "sr", "the BAC short (reopened once after a fake target line) is closed where today's rules exit it: take profit at support 48.77, +0.52R", JSON.stringify(bacR));
   H("tf:live").set("4H|BAC|4H|break & retest|short|1794940200", JSON.stringify({ ...bacR, status: "closed", exitR: 0.16, exitPx: 49.2, how: "take profit", exitTo: { kind: "sr", price: 49.26, touches: 4 }, closedAt: 2 }));
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   const bacR2 = JSON.parse(H("tf:live").get("4H|BAC|4H|break & retest|short|1794940200"));

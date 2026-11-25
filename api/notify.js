@@ -147,6 +147,12 @@ module.exports = async function handler(req, res) {
       if (x.status === "open" && x.key === "BAC|4H|break & retest|short|1794940200" && x.linePts && !x.pts2) { Object.assign(x, { linePts: {t0: 1744205400, p0: 33.06999969482422, t1: 1793716200, p1: 49.16999816894531, d0: true, d1: false}, pts2: true }); await S.hsetJSON("tf:live", lk, x); }
       if (x.status === "open" && !x.linePts && x.key === "BAC|4H|break & retest|short|1794940200") { Object.assign(x, { linePts: {t0: 1744205400, p0: 33.06999969482422, t1: 1793975400, p1: 49.27000045776367, d0: true, d1: false}, safetyPts: {t0: 1789133400, p0: 63.83000183105469, t1: 1793889000, p1: 53.025001525878906, d0: false, d1: false} }); await S.hsetJSON("tf:live", lk, x); }
       if (x.status === "open" && !x.linePts && x.sym === "MCD" && x.dir === "long") { Object.assign(x, { linePts: {t0: 1794321000, p0: 283.5295104980469, t1: 1795185000, p1: 278.2900085449219, d0: false, d1: false}, safetyPts: {t0: 1791984600, p0: 234.2301025390625, t1: 1795098600, p1: 267.4704895019531, d0: false, d1: false} }); await S.hsetJSON("tf:live", lk, x); }
+      // BAC closed by hand where today's rules exit it: take profit at the support level 48.77 (price turned there
+      // 6 times) on the Wed Nov 18 12:30 PM CT candle, +0.52R. It was being held on an old Monthly target instead.
+      if (x.key === "BAC|4H|break & retest|short|1794940200" && x.status === "open" && !x.closedByHand) {
+        Object.assign(x, { status: "closed", exitPx: 48.773, exitR: 0.52, closedAt: 1795026600 * 1000, how: "take profit", exitTo: { kind: "sr", price: 48.773, touches: 6 }, closedByHand: true });
+        delete x.held; await S.hsetJSON("tf:live", lk, x);
+      }
       if (x.status !== "open") continue;
       // One-time cleanup: the SBUX short from the false 3rd tap (the break candle) is taken off tracking for good.
       if (x.sym === "SBUX") { await S.hdel("tf:live", lk); dropped++; continue; }
