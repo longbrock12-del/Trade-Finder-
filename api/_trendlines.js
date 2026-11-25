@@ -326,9 +326,20 @@ function nearMiss(S, ln, x) {
 // (exit "htf": a bigger-timeframe trendline, the futures' live exit).
 // sl0: the safety line at entry. src = the line the current stop level came from (what the chart draws and Tracking
 // names), which stays the same when a newer line in the chain would be looser.
+// KEEP_LINE: the safety line in use keeps trailing down (or up) its own slope every candle, until a candle CLOSES
+// through it (the exit). A wick that pokes through doesn't stop it (HOOD: Nov 23's 70.24 wick above the Nov 11-19
+// line used to freeze the stop at 71.38 instead of following the line to about 68 by Nov 24). A newer, tighter line
+// still takes over. KEEP_LINE = false: the old way (the stop only moved with the newest line), for comparing.
+let KEEP_LINE = true;
 function follow(S, long, from, last, line0, room, tpPx, sl0) {
   let line = line0, stop = long ? line0 - room : line0 + room, src = sl0 || null;
+  const keep = (i) => { // the line in use, carried on along its slope
+    if (!KEEP_LINE || !src) return;
+    const v = val(src, S.x0 + i);
+    line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room);
+  };
   for (let i = from + 1; i <= last; i++) {
+    keep(i);
     const sl = long ? S.act[i].up : S.act[i].dn;
     if (sl) { const v = val(sl, S.x0 + i); if (long ? v > line : v < line) src = sl; line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
     const c = S.bars[i];
@@ -337,6 +348,7 @@ function follow(S, long, from, last, line0, room, tpPx, sl0) {
     if (tg != null && (long ? c.h >= tg : c.l <= tg)) return { status: "closed", at: i, px: long ? Math.max(c.o, tg) : Math.min(c.o, tg), stop, line, how: "take profit" };
     if (long ? c.c < line : c.c > line) return { status: "closed", at: i, px: c.c, stop, line, how: "close through the line" };
   }
+  keep(last + 1);
   const sl = long ? S.act[last + 1].up : S.act[last + 1].dn;
   if (sl) { const v = val(sl, S.x0 + last + 1); if (long ? v > line : v < line) src = sl; line = long ? Math.max(line, v) : Math.min(line, v); stop = long ? Math.max(stop, v - room) : Math.min(stop, v + room); }
   return { status: "open", stop, line, safety: src || sl };
@@ -874,7 +886,7 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR, KEEP_LINE];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
@@ -883,8 +895,9 @@ function scan(hChart, dChart, opts = {}) {
     if (opts.rules.pivot != null) PIVOT = opts.rules.pivot;
     if (opts.rules.far != null) FAR_ATR = opts.rules.far;
     if (opts.rules.wick != null) { WICK_OK = !!opts.rules.wick; if (opts.rules.wick > 0 && opts.rules.wick !== true && opts.rules.wick !== 1) WICK_ATR = opts.rules.wick; } // ?wick=0: the old drawing; ?wick=0.1: allowance in ATR
+    if (opts.rules.keep != null) KEEP_LINE = !!opts.rules.keep; // ?keep=0: the old trailing (only the newest line moves the stop)
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR, KEEP_LINE] = saved; }
 }
 
 const setWick = (on) => { WICK_OK = !!on; }; // tests: switch the live drawing on or off
