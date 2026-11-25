@@ -165,6 +165,7 @@ h2{color:var(--mu)}.ohead,.setsum{color:var(--tx)}.stick{background:var(--bg)}
   <div class="st" style="margin-top:14px">Position size</div>
   <div class="note" style="margin-top:2px">Her rule: risk 1–2% of your account on each trade. Enter yours and every callout shows how many contracts or shares to trade. Saved on this phone only.</div>
   <form class="bar" id="sizeF"><input id="acct" inputmode="decimal" placeholder="Account size, e.g. 10000" aria-label="Account size in dollars" style="text-transform:none"><input id="riskP" inputmode="decimal" placeholder="Risk %" aria-label="Risk percent per trade" style="max-width:90px;text-transform:none"><button class="btn">Save</button></form>
+  <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--tx)"><input type="checkbox" id="fitOnly" style="width:18px;height:18px;accent-color:var(--ac)"> Hide trades that risk more than my % with 1 contract or share</label>
 </details>
 
 </div>
@@ -305,8 +306,16 @@ async function load() {
 function callouts() {
   if (!data) return [];
   const out = [];
-  data.markets.forEach((m) => { if (!m.error && m.kind === kind && inFocus(m.sym, m.kind)) (m.signals || []).forEach((s) => out.push({ m, s })); });
+  data.markets.forEach((m) => { if (!m.error && m.kind === kind && inFocus(m.sym, m.kind)) (m.signals || []).forEach((s) => { if (fits(m, s)) out.push({ m, s }); }); });
   return out;
+}
+// "Hide trades that risk more than my %" (off by default): a callout fits if 1 micro contract (futures) or 1 share
+// (stocks) risks no more than the account x risk % set above. Needs an account size; otherwise everything shows.
+function fits(m, s) {
+  const acct = store.get("acct", 0), pct = store.get("riskP", 1);
+  if (!store.get("fitOnly", false) || !acct || s.risk == null) return true;
+  const per = m.pointValue ? s.risk * m.pointValue : s.risk;
+  return per <= (acct * pct) / 100;
 }
 // Focus (her 1-1-1 rule, fewer markets so you learn them inside out): stocks are only the top 10 of the
 // "Respects trendlines" ranking (2-year record on her rules), counting only stocks whose options trade heavily
@@ -717,7 +726,11 @@ function renderCalls() {
   if (folds.live == null) folds.live = store.get("liveOpen", true); // a bar you open and close; remembered per browser
   const bar = live.length ? '<h2><button class="btn" data-fold="live" aria-expanded="' + !!folds.live + '" style="width:100%;text-align:left;text-transform:none;letter-spacing:0;font-size:13px">' +
     (folds.live ? "▾ " : "▸ ") + '<span class="ldot"></span>Get In Now (' + live.length + ")</button></h2>" + (folds.live ? live.map(({ m, s }) => card(m, s).replace('<article class="c cl', '<article class="c cl golive')).join("") : "") : "";
-  return marketStrip() + trackBox() + getInBox(live) + bar + openTrades() + recentTrades(); // fresh callouts first, already-running ones under them, then finished ones
+  // Trades the "too big for my account" switch is hiding, so they don't vanish without a word.
+  let hid = 0;
+  if (data && store.get("fitOnly", false)) data.markets.forEach((m) => { if (!m.error && m.kind === kind && inFocus(m.sym, m.kind)) (m.signals || []).forEach((q) => { if (canEnter(q) && !fits(m, q)) hid++; }); });
+  const hidNote = hid ? '<div class="note mini" style="margin:-4px 2px 10px">' + hid + " trade" + (hid > 1 ? "s" : "") + " hidden: risk" + (hid > 1 ? "" : "s") + " more than your " + store.get("riskP", 1) + "% (switch in ⚙ settings)</div>" : "";
+  return marketStrip() + trackBox() + getInBox(live) + hidNote + bar + openTrades() + recentTrades(); // fresh callouts first, already-running ones under them, then finished ones
 }
 
 // Callouts the site sent that are still open (from the live record), in a small bar that stays closed until
@@ -1232,6 +1245,8 @@ $("sizeF").addEventListener("submit", (e) => {
   render();
 });
 (() => { const a = store.get("acct", 0), p = store.get("riskP", 0); if (a) $("acct").value = a; if (p) $("riskP").value = p; })();
+$("fitOnly").checked = store.get("fitOnly", false);
+$("fitOnly").addEventListener("change", (e) => { store.set("fitOnly", e.target.checked); render(); });
 document.addEventListener("submit", (e) => { if (e.target.id === "lookF") { e.preventDefault(); lookUp($("lookIn").value); } });
 $("add").addEventListener("submit", (e) => {
   e.preventDefault();
