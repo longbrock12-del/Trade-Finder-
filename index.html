@@ -36,7 +36,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);
 .ap{background:rgba(27,110,243,.14);color:var(--ac)}.new{background:var(--ac);color:#fff}
 .gr{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 8px}.gr div{background:var(--soft);border-radius:8px;padding:6px 8px;font-size:14px;font-weight:600}
 .gr small{display:block;color:var(--mu);font-size:11px;font-weight:500}
-.otr+.otr{border-top:2px solid var(--bd);margin-top:16px;padding-top:2px}.otr{padding-bottom:6px}.trr.oth{margin:14px -12px 0;padding:10px 12px;border-top:0;border-left:4px solid var(--ac);background:var(--soft);border-radius:0 10px 10px 0;align-items:center}.trr.oth .sym{font-size:19px;letter-spacing:.02em}.trr.oth .tag{vertical-align:3px}.gr small.sub{display:block;font-size:10.5px;margin-top:1px}
+.otr+.otr{border-top:2px solid var(--bd);margin-top:16px;padding-top:2px}.otr{padding-bottom:6px}.optl{display:block;font-size:12.5px;margin-top:4px;color:var(--tx);font-family:Inter,-apple-system,system-ui,sans-serif}.optl b{color:var(--ac);font-weight:700}.trr.oth{margin:14px -12px 0;padding:10px 12px;border-top:0;border-left:4px solid var(--ac);background:var(--soft);border-radius:0 10px 10px 0;align-items:center}.trr.oth .sym{font-size:19px;letter-spacing:.02em}.trr.oth .tag{vertical-align:3px}.gr small.sub{display:block;font-size:10.5px;margin-top:1px}
 .sec{background:var(--soft);border-radius:10px;padding:8px 10px;margin-top:8px}.sh{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin-bottom:4px}
 .pr{display:grid;grid-template-columns:88px 1fr;gap:8px;font-size:13px;padding:4px 0;border-top:1px solid var(--bd)}.pr:first-of-type{border-top:0}.pr>span{color:var(--mu);font-size:12px}
 .fd{border-top:1px solid var(--bd);margin-top:6px}.fh{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;width:100%;padding:9px 2px;font-size:13px;font-weight:600;color:var(--tx);cursor:pointer}.fb{padding-bottom:6px}.fb .note.srn,.fb .note{margin-top:0}
@@ -840,6 +840,30 @@ function optName(x) {
 }
 // An open stock trade's option contract (the row above already shows the trade's result; the option breakdown
 // shows in Recent trades once it closes).
+// The best option contract, right under the stock's name in Tracking: the one saved with the trade, or (if none
+// was saved) looked up once and kept on this phone for the day, so it shows even after Get In Now.
+const optLook = {};
+function optLine(x) {
+  if (x.kind !== "stocks") return "";
+  const wrap = (h) => '<div class="optl">' + h + "</div>";
+  if (x.opt) return wrap("Best option: <b>" + optName(x) + "</b>" + (x.opt.manual ? "" : ' <span class="mu">· % is the option, after decay and spread</span>'));
+  const k = "opt:" + x.sym + "|" + x.t + "|" + x.dir + "|" + new Date().toLocaleDateString("en-CA"), got = optLook[k] || store.get(k, null);
+  if (!got) { optLook[k] = { loading: true }; loadOptFor(x, k); return wrap('Best option: <span class="mu">looking it up…</span>'); }
+  if (got.loading) return wrap('Best option: <span class="mu">looking it up…</span>');
+  if (!got.c) return wrap('Best option: <span class="mu">' + esc(got.note || "none passed the filters right now") + "</span>");
+  const c = got.c, exp = new Date(c.expiry + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return wrap("Best option: <b>" + esc(show(x.sym)) + " " + exp + " $" + c.strike + " " + (c.type === "call" ? "call" : "put") + " · about $" + Number(c.mid).toFixed(2) + "</b>" + ' <span class="mu">(today\'s price)</span>');
+}
+async function loadOptFor(x, k) {
+  let got = { c: null };
+  try {
+    const tq = x.target && x.target.price != null ? "&target=" + x.target.price : "";
+    const j = await (await fetch("/api/options?sym=" + encodeURIComponent(x.sym) + "&dir=" + x.dir + "&entry=" + x.entry + "&stop=" + x.stop + tq)).json();
+    got = j.contracts && j.contracts[0] ? { c: j.contracts[0] } : { c: null, note: j.error || j.note || null };
+    if (j.contracts) store.set(k, got); // keep a real answer for the day; retry an error on the next visit
+  } catch (e) { got = { c: null, note: "option prices didn't load" }; }
+  optLook[k] = got; render();
+}
 function openTrades() {
   // A callout that's still in Get In Now isn't listed here too: it moves to tracking once it can't be entered
   // (0.5R past entry, through the stop, or a day old).
@@ -876,9 +900,8 @@ function openTrades() {
     if (!lp && !oc) loadPts(x); // no points saved yet: fetch the trade's chart quietly so they show now
     if (lp) plan.push(["Action line", ptsHtml(lp, d, x.tf)]);
     if (sp) plan.push(["Safety line", sameLn(lp, sp) ? "the same line as the action line" : ptsHtml(sp, d, x.tf)]);
-    if (x.kind === "stocks" && x.opt) plan.push(["Option", optName(x) + '<div class="mu" style="font-size:11.5px">% above is the option, after time decay and spread</div>']);
     const exitWhen = erT + (plan.length ? '<div class="sec"><div class="sh">Exit plan</div>' + plan.map(([a, b]) => '<div class="pr"><span>' + a + "</span><div>" + b + "</div></div>").join("") + "</div>" : "");
-    return { r, html: '<div class="otr"><div class="trr oth"><span><b class="sym">' + esc(show(x.sym)) + '</b> <span class="tag ' + x.dir + '">' + (x.dir === "long" ? "LONG" : "SHORT") + '</span> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span></span>" +
+    return { r, html: '<div class="otr"><div class="trr oth"><span><b class="sym">' + esc(show(x.sym)) + '</b> <span class="tag ' + x.dir + '">' + (x.dir === "long" ? "LONG" : "SHORT") + '</span> <span class="note">' + esc(x.setup || "") + " · since " + dayS + "</span>" + optLine(x) + "</span>" +
       '<b class="' + (r >= 0 ? "ok" : "bad") + '" title="' + (x.kind === "stocks" && x.opt ? "As an option: time decay and spread taken out" : "") + '">' + (r == null ? "—" : (r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "%") + "</b></div>" + grid + exitWhen + tradeChart(x) + "</div>" }; // one block per trade, a line between them
   });
   const tot = rows.reduce((a, x) => a + (x.r || 0), 0), open = !!folds.openLive;

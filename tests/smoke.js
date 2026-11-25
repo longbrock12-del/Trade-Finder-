@@ -1135,6 +1135,17 @@ async function rankPageTests(browser, body, scanBody) {
   ok(shown.includes(inList) && !shown.includes(outList) && !shown.includes("ZZZZ"), "Focus: only the top ranked stocks with heavily traded options show", shown.join());
   { const wd = await page.locator("article.wc .wl3", { hasText: "Draw it:" }).allTextContents();
     ok(wd.length >= 1 && wd.every((t) => /Draw it: A .*candle, (high|low) [\d,.]+B .*candle, (high|low) [\d,.]+/.test(t)), "watch list: every box says where to put point A and point B", (wd[0] || "") + " (" + wd.length + " of " + (await page.locator("article.wc").count()) + ")"); }
+  { const ol = await page.evaluate(async () => {
+      // Tracking: the best option contract sits under the stock's name: the saved one, or looked up once if none was saved.
+      const keep = pushInfo.live, base = { view: "4H", kind: "stocks", tf: "4H", setup: "break", status: "open", risk: 1, nowR: 0.1, t: Math.floor(Date.now() / 1000) - 86400 };
+      pushInfo.live = [{ ...base, key: "BAC|x", sym: "BAC", dir: "short", entry: 49.45, stop: 51, opt: { type: "put", strike: 50, expiry: "2026-12-18", mid: 1.85, manual: true } },
+        { ...base, key: "MCD|x", sym: "MCD", dir: "long", entry: 280.63, stop: 269.9, t: base.t - 60 }];
+      const f0 = window.fetch; window.fetch = async (u) => /\/api\/options/.test(u) ? { json: async () => ({ contracts: [{ type: "call", strike: 280, expiry: "2027-01-15", mid: 9.4 }] }) } : f0(u);
+      const k0 = kind, t0 = tab; kind = "stocks"; tab = "calls"; folds.openLive = true; render(); await new Promise((r) => setTimeout(r, 100));
+      const heads = [...document.querySelectorAll(".ofold .trr.oth")].map((h) => h.textContent);
+      window.fetch = f0; pushInfo.live = keep; kind = k0; tab = t0; folds.openLive = false; render();
+      return heads.join(" || "); });
+    ok(/BAC\s*SHORT.*Best option: BAC Dec 18 \$50 put · bought at 1\.85/.test(ol) && /MCD\s*LONG.*Best option: MCD Jan 15 \$280 call · about \$9\.40/.test(ol), "tracking: the best option contract shows under each stock's name (saved, or looked up if none was saved)", ol); }
   ok((await page.locator("#focusN, #focusS").count()) === 0, "no Focus settings to pick: every setup shows");
   { const lost = await page.evaluate(() => {
       // A callout the site already sent for a stock outside the top 10 still shows in Tracking.
