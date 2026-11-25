@@ -50,6 +50,7 @@ const CHART_AGE = 26 * 3600; // charts are sent only for live callouts this rece
 const ZOOM = 500;         // daily candles (about 2 years) for the zoomed-out chart
 // Candles per trading day, for each chart: futures trade ~23 hours, stocks 6.5.
 const PER_DAY = { futures: { "4H": 6, "1H": 23 }, stocks: { "4H": 2, "1H": 7 } };
+let PPD_1H = null; // tests only (?ppd=): candles per day when the "1H" chart is fed 15- or 30-minute candles
 // Dollars per 1.00 move for one contract, so callouts can show risk per contract.
 // $ per 1.00 move, per contract. Micros: gold 10 oz, crude 100 bbl, silver 1,000 oz, copper 2,500 lb.
 const POINT_VALUE = { "MGC=F": 10, "MCL=F": 100, "SIL=F": 1000, "MHG=F": 2500, "GC=F": 100, "CL=F": 1000, "SI=F": 5000, "HG=F": 25000 };
@@ -201,7 +202,7 @@ function tfOfLine(ln, tf) {
 // Everything for one entry chart (4H or 1H): the merged daily + intraday points and a way to get the two
 // chains as they stood before any candle.
 function setup(daily, bars, isFuture, tf) {
-  const ppd = PER_DAY[isFuture ? "futures" : "stocks"][tf];
+  const ppd = tf === "1H" && PPD_1H ? PPD_1H : PER_DAY[isFuture ? "futures" : "stocks"][tf];
   const dayOf = (t) => (isFuture ? et(t + 6 * HOUR).day : et(t).day);
   const first = dayOf(bars[0].t);
   const D = daily.filter((d) => et(d.t).day < first);
@@ -886,7 +887,7 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR, KEEP_LINE];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR, KEEP_LINE, PPD_1H];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
@@ -896,8 +897,9 @@ function scan(hChart, dChart, opts = {}) {
     if (opts.rules.far != null) FAR_ATR = opts.rules.far;
     if (opts.rules.wick != null) { WICK_OK = !!opts.rules.wick; if (opts.rules.wick > 0 && opts.rules.wick !== true && opts.rules.wick !== 1) WICK_ATR = opts.rules.wick; } // ?wick=0: the old drawing; ?wick=0.1: allowance in ATR
     if (opts.rules.keep != null) KEEP_LINE = !!opts.rules.keep; // ?keep=0: the old trailing (only the newest line moves the stop)
+    if (opts.rules.ppd != null) PPD_1H = opts.rules.ppd;
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR, KEEP_LINE] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR, KEEP_LINE, PPD_1H] = saved; }
 }
 
 const setWick = (on) => { WICK_OK = !!on; }; // tests: switch the live drawing on or off
