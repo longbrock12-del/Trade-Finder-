@@ -100,7 +100,7 @@ async function handler(req, res) {
     if (tmin != null && !(tmin >= 0 && tmin <= 5)) return send(res, 400, 0, { error: "tmin must be 0-5 (R)" });
     const roll = sq.get("roll") === "1", exit = ["tp", "htf", "htfsr", "sr", "trail"].includes(sq.get("exit")) ? sq.get("exit") : null, test = roll || !!exit || tmin != null || cost != null || split || real || listOn || srMin != null || far != null;
     // The live 2-year records: kept in the database for a week (a deploy empties Vercel's cache).
-    const k2 = test ? null : "tf:cache:fut2y:" + list.join(",");
+    const k2 = test ? null : "tf:cache:fut2y:w1:" + list.join(",");
     if (k2 && ST.config()) { try { const v = await ST.one("GET", k2); if (v) return send(res, 200, 86400, JSON.parse(v)); } catch (e) { /* work it out below */ } }
     const out = await Promise.all(list.map(async (sym) => { try {
       const args = await both(sym, "2y"), rolls = roll && /^M?CL=F$/.test(sym) ? rollAdjust(...args) : undefined;

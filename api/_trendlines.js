@@ -127,6 +127,17 @@ function atr(b, n = 14) {
 // Her three rules - lines connect, catch as many touches as possible, nothing pokes through - give exactly the
 // lower (or upper) hull of the points from that start: each line rests on the extremes and is steeper than the
 // one before. pts must be sorted by x: [{x, p, t}]. Returns the chain's corner points.
+// Her drawing: points A and B sit on the real swing lows/highs, and a later wick that dips just under the line
+// (no more than the tap distance, TOUCH_ATR) and closes back above doesn't move it; only a close through does.
+// (BAC: A Apr 9 2025 33.07 -> B Nov 3 49.17, with Nov 6's 49.27 wick a hair under the line.) q.c = close,
+// q.a = ATR at that candle. WICK_OK = false: the old rule (any wick under the line redraws it), for comparing.
+let WICK_OK = process.env.TF_WICK !== "0", WICK_ATR = 0.03; // (TF_WICK=0: tests built on the old drawing) // how far (in ATR) a wick may dip under and leave the line alone
+function wickOnly(o, a, q, up) { // q dips under the line o-a only by a wick (closes back on the right side)
+  if (!WICK_OK || q.c == null || !(q.a > 0)) return false;
+  const v = o.p + ((a.p - o.p) / (a.x - o.x)) * (q.x - o.x);
+  const depth = up ? v - q.p : q.p - v; // how far the wick went through
+  return depth > 0 && depth <= WICK_ATR * q.a && (up ? q.c >= v : q.c <= v);
+}
 function chain(pts, up) {
   if (pts.length < 2) return pts.slice();
   let s = 0;
@@ -134,12 +145,15 @@ function chain(pts, up) {
   const st = [];
   for (let i = s; i < pts.length; i++) {
     const q = pts[i];
+    let skip = false;
     while (st.length >= 2) {
       const o = st[st.length - 2], a = st[st.length - 1];
       const cr = (a.x - o.x) * (q.p - o.p) - (a.p - o.p) * (q.x - o.x);
-      if (up ? cr <= 0 : cr >= 0) st.pop(); else break;
+      if (!(up ? cr <= 0 : cr >= 0)) break;
+      if (wickOnly(o, a, q, up)) { skip = true; break; } // just a wick through this line: it stays
+      st.pop();
     }
-    st.push(q);
+    if (!skip) st.push(q);
   }
   return st;
 }
@@ -193,15 +207,15 @@ function setup(daily, bars, isFuture, tf) {
   const D = daily.filter((d) => et(d.t).day < first);
   const x0 = D.length * ppd;
   const dSw = swings(D), iSw = swings(bars);
-  const dPts = (key) => D.map((d, k) => ({ x: k * ppd, p: d[key], t: d.t, daily: true, piv: (key === "l" ? dSw.lo : dSw.hi)[k] }));
+  const A = atr(bars), dA = atr(D.length ? D : bars);
+  const dPts = (key) => D.map((d, k) => ({ x: k * ppd, p: d[key], c: d.c, a: dA[k], t: d.t, daily: true, piv: (key === "l" ? dSw.lo : dSw.hi)[k] }));
   // Only the daily hull corners can matter, so keep just those.
   const dUp = chain(dPts("l"), true), dDn = chain(dPts("h"), false);
-  const A = atr(bars), dA = atr(D.length ? D : bars);
   function chainsBefore(i) { // chains from everything up to candle i-1
     const make = (dHull, key, up) => {
       const intra = [];
       const sw = up ? iSw.lo : iSw.hi; // a swing needs its 3 candles after to be finished before candle i
-      for (let j = 0; j < i; j++) intra.push({ x: x0 + j, p: bars[j][key], t: bars[j].t, piv: sw[j] && j + PIVOT < i });
+      for (let j = 0; j < i; j++) intra.push({ x: x0 + j, p: bars[j][key], c: bars[j].c, a: A[j], t: bars[j].t, piv: sw[j] && j + PIVOT < i });
       const ps = intra.map((q) => q.p), m = ps.length ? (up ? Math.min(...ps) : Math.max(...ps)) : null;
       const dm = dHull.length ? dHull[0].p : null;
       const intraWins = dm == null || (m != null && (up ? m < dm : m > dm));
@@ -227,15 +241,17 @@ function setup(daily, bars, isFuture, tf) {
     const c = st[side];
     while (c.length >= 2) {
       const o = c[c.length - 2], a = c[c.length - 1], cr = (a.x - o.x) * (q.p - o.p) - (a.p - o.p) * (q.x - o.x);
-      if (up ? cr <= 0 : cr >= 0) c.pop(); else break;
+      if (!(up ? cr <= 0 : cr >= 0)) break;
+      if (wickOnly(o, a, q, up)) return; // just a wick through this line: it stays (same as chain())
+      c.pop();
     }
     c.push(q);
   };
   for (let i = 0; i <= bars.length; i++) {
     act[i] = { up: activeAt(st.up, i), dn: activeAt(st.dn, i) };
     if (i < bars.length) {
-      add("up", { x: x0 + i, p: bars[i].l, t: bars[i].t, j: i, side: "up" });
-      add("dn", { x: x0 + i, p: bars[i].h, t: bars[i].t, j: i, side: "dn" });
+      add("up", { x: x0 + i, p: bars[i].l, c: bars[i].c, a: A[i], t: bars[i].t, j: i, side: "up" });
+      add("dn", { x: x0 + i, p: bars[i].h, c: bars[i].c, a: A[i], t: bars[i].t, j: i, side: "dn" });
     }
   }
   return { tf, ppd, D, x0, A, dA, bars, chainsBefore, act };
@@ -858,7 +874,7 @@ function scanCore(hChart, dChart, opts = {}) {
 // or shortest line (gap, in candles). Put back right after; scanning is synchronous, so nothing else sees them.
 function scan(hChart, dChart, opts = {}) {
   if (!opts.rules) return scanCore(hChart, dChart, opts);
-  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR];
+  const saved = [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR];
   try {
     if (opts.rules.touch != null) TOUCH_ATR = opts.rules.touch;
     if (opts.rules.gap != null) MIN_GAP = opts.rules.gap;
@@ -866,8 +882,10 @@ function scan(hChart, dChart, opts = {}) {
     if (opts.rules.hold != null) HOLD = opts.rules.hold;
     if (opts.rules.pivot != null) PIVOT = opts.rules.pivot;
     if (opts.rules.far != null) FAR_ATR = opts.rules.far;
+    if (opts.rules.wick != null) { WICK_OK = !!opts.rules.wick; if (opts.rules.wick > 0 && opts.rules.wick !== true && opts.rules.wick !== 1) WICK_ATR = opts.rules.wick; } // ?wick=0: the old drawing; ?wick=0.1: allowance in ATR
     return scanCore(hChart, dChart, opts);
-  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR] = saved; }
+  } finally { [TOUCH_ATR, MIN_GAP, SHORT_ATR, HOLD, PIVOT, FAR_ATR, WICK_OK, WICK_ATR] = saved; }
 }
 
-module.exports = { srHistory, nearCrudeRoll, crudeLastDay, crudeDaysLeft, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };
+const setWick = (on) => { WICK_OK = !!on; }; // tests: switch the live drawing on or off
+module.exports = { setWick, srHistory, nearCrudeRoll, crudeLastDay, crudeDaysLeft, trendSeries, scan, fourHour, oneHour, hourly, atr, chain, active, setup, record };

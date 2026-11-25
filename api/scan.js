@@ -63,7 +63,7 @@ async function stats(req, res, sp) {
   const host = req.headers && (req.headers["x-forwarded-host"] || req.headers.host);
   // The heaviest work on the site (110 stocks x 2 years): kept in the database for a week, so a deploy (which
   // empties Vercel's cache) doesn't run it again. 2-year results barely change in a week.
-  const body = await ST.cached("tf:cache:stats2y", WEEK, async () => {
+  const body = await ST.cached("tf:cache:stats2y:w1", WEEK, async () => {
     const parts = await Promise.all(Array.from({ length: PARTS }, (_, i) => host
       ? fetch("https://" + host + "/api/scan?stats=1&part=" + i, { signal: AbortSignal.timeout(115000) }).then((r) => r.json()).catch(() => ({ recs: [], failed: [], scanned: 0 }))
       : statsPart(i)));

@@ -1,3 +1,6 @@
+// The page and feature tests below were built on the old line drawing (any wick under a line redraws it); the
+// fixtures' watch lines depend on it. The live rule (a small wick dip leaves the line alone) has its own checks.
+process.env.TF_WICK = "0";
 // Trade Finder - smoke test. Run before pushing:  node tests/smoke.js
 // Uses saved Yahoo data in tests/fixtures, so no live prices are fetched:
 //   yahoo_<X>.json        6 months of hourly bars to Nov 9 2026 (gold, crude, Dow, platinum futures; AAPL; AMZN to Nov 10;
@@ -139,6 +142,28 @@ async function scannerTests() {
     }
   }));
   ok(nChk > 400 && mism === 0, "fast candle-by-candle lines match rebuilding the chains (" + nChk + " candles)", mism + " mismatches");
+
+  // The live drawing (her lines): a later wick that dips just under a line and closes back above leaves it alone.
+  T.setWick(true);
+  try {
+    let mm2 = 0, n2 = 0;
+    [["GC", true], ["AAPL", false]].forEach(([f, isF]) => ["4H", "1H"].forEach((tf) => {
+      const hb = hourly(load("yahoo_" + f + ".json")).bars, d = hourly(load("yahoo_daily_" + f + ".json")).bars;
+      const b = tf === "4H" ? fourHour(hb, isF, NOW) : oneHour(hb, isF, NOW), S = T.setup(d, b, isF, tf);
+      for (let i = 0; i <= b.length; i += Math.max(1, Math.floor(b.length / 120))) {
+        n2++; const c = S.chainsBefore(i);
+        ["up", "dn"].forEach((k) => { const A = T.active(c[k]), B = S.act[i][k]; if (!((!A && !B) || (A && B && A.a.x === B.a.x && A.b.x === B.b.x))) mm2++; });
+      }
+    }));
+    ok(n2 > 400 && mm2 === 0, "live drawing: the fast candle-by-candle lines still match rebuilding the chains", mm2 + " mismatches");
+    // A at 10, B at 20 (100 candles later); a candle 6 later dips 0.02 ATR under the line and closes above: A-B stays.
+    // A deeper dip, or a close under the line, redraws it (the old rule).
+    const P = (x, p, c, a = 1) => ({ x, p, c, a }), ab = [P(0, 10, 11), P(50, 16, 17), P(100, 20, 21)], v106 = 10 + 0.1 * 106;
+    const keep = T.chain(ab.concat([P(106, v106 - 0.02, v106 + 1)]), true), deep = T.chain(ab.concat([P(106, v106 - 0.5, v106 + 1)]), true), shut = T.chain(ab.concat([P(106, v106 - 0.02, v106 - 0.01)]), true);
+    ok(keep.length === 2 && keep[1].x === 100 && deep[deep.length - 1].x === 106 && shut[shut.length - 1].x === 106, "live drawing: a small wick dip under the line (closing back above) leaves points A and B where they are (BAC: B stays on Nov 3's 49.17)", JSON.stringify([keep.map((q) => q.x), deep.map((q) => q.x), shut.map((q) => q.x)]));
+    const cl2 = scan(load("yahoo_CL.json"), load("yahoo_daily_CL.json"), { sym: "CL=F", now: NOW }).record;
+    ok(cl2.trades === 28 && cl2.totalR === 19.44, "live drawing: crude's 6 months: 28 trades, +19.44R", cl2.trades + " / " + cl2.totalR);
+  } finally { T.setWick(false); }
 
   // Track record: the same rules replayed over the 6 months.
   const recs = good.map((m) => m.record);
@@ -473,11 +498,11 @@ async function pageTests(browser, body, optBody, scanBody) {
   ok((await mgcBox.getAttribute("aria-expanded")) === "true" && opened > shut * 2 && (await mgcBox.locator("svg").count()) >= 1, "tapping a box opens the full details and chart", Math.round(shut) + " → " + Math.round(opened) + "px");
   { const dl = await page.locator(".cl .sec", { hasText: "Draw the lines" }).first().textContent().catch(() => "");
     ok(/Action line\s*A .*candle, (high|low) [\d,.]+\s*B .*candle, (high|low) [\d,.]+/.test(dl) && /Safety line\s*(A |the same line)/.test(dl), "callouts: where to put point A and point B (candle and price) for the action line and the safety line", dl.slice(0, 300)); }
-  ok(/Entry[\d,.]+\w{3}, \w{3} \d+, \d+:\d\d (AM|PM) \w+ candle/.test(await page.locator(".cl .gr").first().textContent()), "callouts: the entry box says which candle the entry was (date and time it opened)", await page.locator(".cl .gr").first().textContent());
+  ok(/Entry[\d,.]+\w{3}, \w{3} \d+, \d+:\d\d (AM|PM) CT \w+ candle/.test(await page.locator(".cl .gr").first().textContent()), "callouts: the entry box says which candle the entry was (date and time it opened)", await page.locator(".cl .gr").first().textContent());
   ok((await page.locator(".cl .gr", { hasText: "Stop now" }).count()) >= 1 && (await page.locator(".cl .sec .pr", { hasText: "just past the safety line" }).count()) >= 1 && (await page.locator(".cl .sec .sh", { hasText: "Exit plan" }).count()) >= 1 && (await page.locator(".cl .sec .sh", { hasText: "Why this trade" }).count()) >= 1, "live cards: the numbers, then an Exit plan (stop order just past the safety line) and Why this trade");
   const mgcTxt = await page.locator(".cl", { has: page.locator(".sym", { hasText: /^MGC$/ }) }).first().textContent();
   ok(mgcTxt.includes("Opens 6:00 PM"), "Monday 5:48 PM: futures card says the market is in its daily break", mgcTxt.slice(0, 300));
-  ok(/⚠ Big: Tue 8:30 AM Core CPI m\/m \+1/.test(mgcTxt) && !/Crude Oil Inventories/.test(mgcTxt), "caution line: Big: CPI tomorrow morning, how many more, and no crude report on gold", mgcTxt.slice(0, 400));
+  ok(/⚠ Big: Tue 7:30 AM CT Core CPI m\/m \+1/.test(mgcTxt) && !/Crude Oil Inventories/.test(mgcTxt), "caution line: Big: CPI tomorrow morning, how many more, and no crude report on gold", mgcTxt.slice(0, 400));
   const cauH = await page.locator(".cl .cau").first().evaluate((e) => [e.getBoundingClientRect().height, getComputedStyle(e).whiteSpace]);
   ok(cauH[0] < 22 && cauH[1] === "nowrap", "the caution and the news are all on one line", cauH.join());
   const hrs = await page.evaluate(() => [
@@ -1026,7 +1051,7 @@ async function alertPageTests(browser, body, scanBody, pushBody) {
   ok(await page.evaluate(() => { const o = document.querySelector(".ofold"), keep = pushInfo.live, x = keep.find((q) => q.status === "open"); pushInfo.live = keep.concat([{ ...x, t: x.t - 3600, key: x.key + "b" }]); folds.openLive = true; render();
       const blocks = [...document.querySelectorAll(".ofold .otr")], ok2 = blocks.length === 2 && getComputedStyle(blocks[1]).borderTopStyle === "solid" && getComputedStyle(blocks[0]).borderTopStyle === "none";
       pushInfo.live = keep; folds.openLive = false; render(); return ok2; }), "tracking: a line separates each trade from the next");
-  ok(/Entry[\d,.]+\w{3}, \w{3} \d+, \d+:\d\d (AM|PM) 4H candle/.test(og) && (await box.locator(".trr.oth .sym").count()) >= 1, "tracking: the entry box says which candle to look at, and each trade's name stands out", og.slice(0, 120));
+  ok(/Entry[\d,.]+\w{3}, \w{3} \d+, \d+:\d\d (AM|PM) CT 4H candle/.test(og) && (await box.locator(".trr.oth .sym").count()) >= 1, "tracking: the entry box says which candle to look at, and each trade's name stands out", og.slice(0, 120));
   ok(/Entry.*Now.*Stop.*Nearest (support|resistance)/.test(og) && /Exit plan/.test(ow) && /Stop order\s*[\d,.]+ · backup/.test(ow), "each open trade shows entry, current price, the trailing stop and the target, and what ends it", og + " | " + ow);
   const og2 = await page.evaluate(() => { const x = pushInfo.live.find((q) => q.status === "open"), keep = { ...x }; Object.assign(x, { safetyPts: { t0: 1790775000, p0: 1900, t1: 1794421800, p1: 1950 }, stopLive: x.stop + (x.dir === "long" ? 3 : -3), line: x.stop + (x.dir === "long" ? 4 : -4), target: { price: x.entry + (x.dir === "long" ? 50 : -50), tf: "Weekly" }, levels: [{ p: x.dir === "long" ? 99999 : 1, n: 5, side: x.dir === "long" ? "R" : "S" }] }); render(); const t = document.querySelector(".ofold").textContent; Object.keys(x).forEach((k) => delete x[k]); Object.assign(x, keep); render(); return t; });
   ok(/Stop \(trailing\)[\d,.]+was [\d,.]+/.test(og2) && /Nearest (support|resistance)[\d,.]+turned there 5×/.test(og2) && /Main exit\s*a 4H candle closes (below|above) [\d,.]+ \(safety line\)/.test(og2) && /Stop order\s*[\d,.]+ · backup/.test(og2) && /Take profit\s*[\d,.]+ · Weekly trendline, if price gets there/.test(og2), "tracking: trailing stop, nearest S/R and target shown", og2.slice(0, 600));

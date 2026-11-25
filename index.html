@@ -183,21 +183,23 @@ const $ = (id) => document.getElementById(id);
 const show = (sym) => String(sym).replace(/=F$/, "");
 const FUT_ROOTS = ["MGC", "MCL", "GC", "CL", "SI", "SIL", "HG", "MHG", "PL", "NG", "ES", "MES", "NQ", "MNQ", "YM", "MYM", "RTY", "M2K", "ZB", "ZN", "ZC", "ZS", "ZW"];
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const etFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const when = (t) => etFmt.format(new Date(t * 1000)) + " ET";
+// Candle times are shown in Chicago time (CT), the time zone TradingView uses for futures and the one you chart in,
+// so "8:30 AM" here is the 8:30 AM candle on your chart. (Market-hours logic below still runs on New York time.)
+const etFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const when = (t) => etFmt.format(new Date(t * 1000)) + " CT";
 // Points A and B of a line, to draw it on TradingView: the candle (date, and time for 4-hour candles) and the
 // wick price. A falling line runs along highs, a rising line along lows. L: {t0, p0, t1, p1, d0, d1}.
 const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", year: "numeric" });
 function ptsHtml(L, d, tf) {
   if (!L || !L.t0) return "";
-  const hl = L.p1 < L.p0 ? "high" : "low", one = (t, p, daily) => (daily ? dayFmt.format(new Date(t * 1000)) + " Daily candle" : etFmt.format(new Date(t * 1000)) + " " + esc(tf || "4H") + " candle") + ", " + hl + " <b>" + num(p, d) + "</b>";
+  const hl = L.p1 < L.p0 ? "high" : "low", one = (t, p, daily) => (daily ? dayFmt.format(new Date(t * 1000)) + " Daily candle" : etFmt.format(new Date(t * 1000)) + " CT " + esc(tf || "4H") + " candle") + ", " + hl + " <b>" + num(p, d) + "</b>";
   return "<b>A</b> " + one(L.t0, L.p0, L.d0) + "<br><b>B</b> " + one(L.t1, L.p1, L.d1);
 }
 // Watch-list boxes: the line's points A and B in one small block.
 const drawNote = (L, d, tf) => (L && L.t0 ? '<div class="wl3 mu" style="font-size:12px;line-height:1.45">Draw it: ' + ptsHtml(L, d, tf) + "</div>" : "");
 const sameLn = (a, b) => !!(a && b && a.t0 === b.t0 && a.t1 === b.t1);
 // The entry candle, by the time it opened (how TradingView labels candles): "Mon, Nov 9, 4:00 PM 4H candle".
-const entryCandle = (t, tf) => '<small class="sub">' + etFmt.format(new Date(t * 1000)) + " " + esc(tf || "4H") + " candle</small>";
+const entryCandle = (t, tf) => '<small class="sub">' + etFmt.format(new Date(t * 1000)) + " CT " + esc(tf || "4H") + " candle</small>";
 const ago = (t) => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 60 ? m + "m ago" : m < 1440 * 2 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; };
 const num = (x, d) => (x == null ? "—" : Number(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }));
 const symbols = () => DEF.futures.concat(DEF.stocks).concat(extra).filter((s, i, a) => a.indexOf(s) === i && !removed.includes(s));
@@ -251,7 +253,7 @@ function infoLine(m, noTrend) { // noTrend: callout cards (a callout always goes
   // Cautions, all in one line: what's coming and how much it usually moves the market (Big / Moderate).
   // News: the next 24 hours. Stocks: earnings in the next 2 weeks (always Big: a gap can jump the trendline,
   // and option prices drop right after).
-  const cau = [], when = (t) => (t <= now ? "just out" : new Date(t * 1000).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }));
+  const cau = [], when = (t) => (t <= now ? "just out" : new Date(t * 1000).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/Chicago" }) + " CT");
   newsEvents.filter((e) => e.t >= now - 1800 && e.t <= now + 86400 && (!e.crude || crude)).forEach((e) => cau.push({ level: e.level || "big", t: e.t, text: when(e.t) + " " + e.title }));
   const er = m.kind === "stocks" && earnings[m.sym];
   if (er) {
