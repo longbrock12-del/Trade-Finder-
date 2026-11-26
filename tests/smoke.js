@@ -898,6 +898,12 @@ async function alertTests() {
   ok(ctAsks.length === 1 && /ct=7&cd=long/.test(ctAsks[0]) && JSON.parse(H("tf:live").get("old|keep")).rv === "3", "a callout sent under older rules is re-checked once and kept (marked) when today's rules still make it", ctAsks[0]);
   db.delete("tf:lastrun"); await invoke("api/notify.js", "GET");
   ok(ctAsks.length === 1, "once checked, a callout isn't checked again until the rules change");
+  { // A stock trade whose stock isn't in the scan (MCD) still gets its price and trailing stop updated.
+    H("tf:live").set("mcd|keep", JSON.stringify({ key: "MCD|4H|3-touch break|long|7", view: "4H", sym: "MCD", kind: "stocks", tf: "4H", setup: "3-touch break", dir: "long", entry: 280.63, stop: 269.9, risk: 10.73, t: 7, status: "open", nowR: 0, rv: "3", linePts: { t0: 1, p0: 1, t1: 2, p1: 2 } }));
+    const keepCt = site.ct; site.ct = { markets: [{ sym: "MCD", kind: "stocks", price: 283.74, signals: [], watch: [], trade: { t: 7, dir: "long", status: "open", stop: 271.9, line: 273.6, nowR: 0.29 } }] };
+    db.delete("tf:lastrun"); await invoke("api/notify.js", "GET"); site.ct = keepCt;
+    const mx = JSON.parse(H("tf:live").get("mcd|keep")); H("tf:live").delete("mcd|keep");
+    ok(mx.stopLive === 271.9 && mx.line === 273.6 && mx.nowR === 0.29, "tracking: a stock trade not in the scan (MCD) still gets its price and trailing stop updated", JSON.stringify({ stopLive: mx.stopLive, line: mx.line, nowR: mx.nowR })); }
   { // An open trade with no points A and B (out of Get In Now, so the scan sent no chart) gets them looked up once.
     const L = { t0: 1790000000, p0: 1900, t1: 1793000000, p1: 1950, d0: false, d1: false };
     site.pts = { markets: [{ sym: "MGC=F", trade: { t: 7, chart: { line: L, safety: { ...L, p0: 1980, p1: 1960 } } } }] };

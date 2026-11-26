@@ -189,9 +189,16 @@ module.exports = async function handler(req, res) {
         if (pm && pm.trade) Object.assign(x, ptsOf(pm.trade));
         await S.hsetJSON("tf:live", lk, x);
       }
-      const m = (byTf[view] || []).find((q) => q.sym === x.sym);
+      let m = (byTf[view] || []).find((q) => q.sym === x.sym), own = null;
+      // A stock trade whose stock isn't in this run's scan (the scan only lists stocks with a callout or a line near
+      // price, and runs once per 4-hour candle): look that one stock up, with this trade, so its price and trailing
+      // stop keep updating (MCD's had frozen). While the market is closed, once a day is enough.
+      if (!m && x.kind === "stocks" && (all || HR.stocksOpen(nowMs) || x.syncDay !== today)) {
+        const one = await get("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=" + view + "&ct=" + x.t + "&cd=" + x.dir), om = (one.markets || [])[0];
+        if (om && !om.error && om.price > 0) { m = om; own = om.trade || null; x.syncDay = today; }
+      }
       if (!m) continue;
-      let s = (m.signals || []).find((q) => keyOf(m, q) === x.key);
+      let s = (m.signals || []).find((q) => keyOf(m, q) === x.key) || own;
       const sign = x.dir === "long" ? 1 : -1;
       // Older than the scan's few recent days: look the trade up in the replay (like the tracking chart does).
       if (!s) { const lk2 = await get("/api/trades?s=" + encodeURIComponent(x.sym) + "&tf=" + view + "&ct=" + x.t + "&cd=" + x.dir + "&why=track"), tm = (lk2.markets || [])[0]; if (tm && tm.trade) s = tm.trade; }
