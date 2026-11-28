@@ -130,7 +130,7 @@ async function handler(req, res) {
   const okCount = markets.filter((m) => !m.error).length;
   // Cached 5 minutes while futures trade (or for stock look-ups), 1 hour over the weekend and daily break.
   const body = { at: Date.now(), markets };
-  if (fk && okCount === markets.length && ST.config()) { try { await ST.one("SET", fk, JSON.stringify(body), "EX", String(H.futuresOpen() ? 300 : 3600)); } catch (e) { /* still send it */ } }
+  if (fk && okCount === markets.length && ST.config()) { try { await ST.one("SET", fk, JSON.stringify(body), "EX", String(H.futuresOpen() ? 300 : H.secsToOpen(H.futuresOpen))); } catch (e) { /* still send it */ } }
   send(res, okCount ? 200 : 502, !okCount ? 0 : markets.every((m) => /=F$/.test(m.sym)) && !H.futuresOpen() ? 3600 : 300, body);
 }
 

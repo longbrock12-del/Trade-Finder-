@@ -954,7 +954,11 @@ async function alertTests() {
     const spyAsk = (u) => { if (/\/api\/(scan|trades)\?tf=/.test(String(u)) && !/&s=/.test(String(u))) asks.push(String(u).replace(/^.*\/api\//, "")); };
     const wrap = async (u, o) => { spyAsk(u); return keepF(u, o); };
     fetcher = wrap;
-    db.delete("tf:lastrun"); await invoke2("api/notify.js", "GET", sat); const a1 = asks.slice(); asks = [];
+    db.delete("tf:lastrun"); const wk = await invoke2("api/notify.js", "GET", sat); const a1 = asks.slice(); asks = [];
+    ok(wk.body.ran === false && /weekend/.test(wk.body.reason) && a1.length === 0 && HRx.weekend(sat) && HRx.weekend(Date.parse("2026-11-20T22:30:00Z")) && !HRx.weekend(Date.parse("2026-11-20T21:30:00Z")) && HRx.weekend(Date.parse("2026-11-22T22:30:00Z")) && !HRx.weekend(Date.parse("2026-11-22T23:30:00Z")),
+      "weekend (Fri 5 PM to Sun 6 PM ET): the alert check does nothing at all", JSON.stringify(wk.body));
+    ok(Math.round(HRx.secsToOpen(HRx.futuresOpen, sat) / 3600) === 32 && Math.round(HRx.secsToOpen(HRx.stocksOpen, sat) / 3600) === 48, "while closed, results are kept until the market next opens (Saturday 10 AM: futures 32 h, stocks 48 h)");
+    ok(/TZ=America\/New_York date/.test(fs.readFileSync(path.join(ROOT, ".github/workflows/notify.yml"), "utf8")), "the GitHub check skips calling the site over the weekend");
     db.delete("tf:lastrun"); await invoke2("api/notify.js", "GET", mon); const a2 = asks.slice(); asks = [];
     db.delete("tf:lastrun"); await invoke2("api/notify.js", "GET", monB); const a3 = asks.slice(); asks = [];
     fetcher = keepF; delete global.__hours;

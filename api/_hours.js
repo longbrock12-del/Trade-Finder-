@@ -17,4 +17,12 @@ function futuresOpen(ms) {
 }
 // Which 4-hour stock candle has most recently closed today ("a" none yet, "b" the 9:30 one, "c" the 1:30 one).
 function stockCandle(ms) { const t = ny(ms); return t.day + (t.mins < 810 ? "a" : t.mins < 960 ? "b" : "c"); }
-module.exports = { ny, stocksOpen, futuresOpen, stockCandle };
+// The weekend: from Friday's 5 PM futures close to Sunday's 6 PM open, both markets are shut. Nothing runs then.
+function weekend(ms) { const t = ny(ms); return t.wd === 6 || (t.wd === 5 && t.mins >= 1020) || (t.wd === 0 && t.mins < 1080); }
+// Seconds until a market next opens (checked in 15-minute steps, at most 3 days ahead): how long a result worked
+// out while it's closed stays good, since nothing changes until then.
+function secsToOpen(isOpen, ms = Date.now()) {
+  for (let k = 0; k <= 72 * 4; k++) if (isOpen(ms + k * 900000)) return Math.max(600, k * 900);
+  return 72 * 3600;
+}
+module.exports = { ny, stocksOpen, futuresOpen, stockCandle, weekend, secsToOpen };

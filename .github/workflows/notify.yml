@@ -12,4 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - run: curl -fsS --max-time 150 "https://trade-finder-blond.vercel.app/api/notify"
+      # Friday 5 PM to Sunday 6 PM New York time both markets are closed: skip, so the site isn't called at all.
+      - run: |
+          d=$(TZ=America/New_York date +%u); m=$(( 10#$(TZ=America/New_York date +%H) * 60 + 10#$(TZ=America/New_York date +%M) ))
+          if [ "$d" = 6 ] || { [ "$d" = 5 ] && [ $m -ge 1020 ]; } || { [ "$d" = 7 ] && [ $m -lt 1080 ]; }; then echo "Weekend: markets closed, nothing to check."; exit 0; fi
+          curl -fsS --max-time 150 "https://trade-finder-blond.vercel.app/api/notify"

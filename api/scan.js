@@ -100,6 +100,8 @@ async function handler(req, res) {
   // The live scan: kept in the database too (15 minutes while the market is open, 3 hours when it's closed),
   // so page loads and deploys don't rescan 110 stocks.
   const liveKey = testMode ? null : "tf:cache:scan:" + tfs.join(",") + ":" + (HRS.stocksOpen() ? HRS.stockCandle(Date.now()) : "closed"); // a new 4-hour candle = a fresh scan
+  // While closed, the result stays good until the next open (overnight, or Friday close to Monday).
+  const keepFor = HRS.stocksOpen() ? 900 : HRS.secsToOpen(HRS.stocksOpen);
   if (liveKey && ST.config()) { try { const v = await ST.one("GET", liveKey); if (v) return send(res, 200, HRS.stocksOpen() ? 900 : 10800, JSON.parse(v)); } catch (e) { /* scan below */ } }
   if (rules && (Number.isNaN(touch) || Number.isNaN(gap) || Number.isNaN(short) || Number.isNaN(hold) || Number.isNaN(pivot) || Number.isNaN(cost))) return send(res, 400, 0, { error: "touch must be 0.02-1 (ATR), gap 2-20 (candles), short 0-1 (ATR), hold 0-6 (candles), pivot 1-5 (candles), cost 0-1 (R)" });
   let next = 0;
@@ -123,7 +125,7 @@ async function handler(req, res) {
   if (testMode) return send(res, scanned ? 200 : 502, scanned ? 3600 : 0, { at: Date.now(), years, market: futTest ? "futures" : "stocks", failed, test: { touch: R.touch == null ? 0.3 : R.touch, gap: R.gap == null ? 6 : R.gap, short: R.short == null ? 0.3 : R.short, hold: R.hold == null ? 2 : R.hold, pivot: R.pivot == null ? 3 : R.pivot, trend: R.trend === undefined ? "bounce" : R.trend, once: !!R.once, setups: R.setups === undefined ? "all" : R.setups || "all", exit: R.exit === undefined ? "htfsr" : R.exit || "trail", cost: R.cost || 0, realLines: !!R.realLines }, scanned, record: combine(recs), ...(split ? { split: { older: combine(older), last12: combine(last12) } } : {}), ...(patOn ? { pattern: require("./_pattern.js").summarize(lists, Date.now() / 1000) } : listOn ? { list: lists } : {}) });
   // Cached 15 minutes while the market is open, 3 hours while it's closed (nothing changes; saves CPU).
   const out = { at: Date.now(), scanned, failed, markets: found, record: combine(recs), ranks: ranks(recs) };
-  if (liveKey && scanned && failed.length < 10 && ST.config()) { try { await ST.one("SET", liveKey, JSON.stringify(out), "EX", String(HRS.stocksOpen() ? 900 : 10800)); } catch (e) { /* still send it */ } }
+  if (liveKey && scanned && failed.length < 10 && ST.config()) { try { await ST.one("SET", liveKey, JSON.stringify(out), "EX", String(keepFor)); } catch (e) { /* still send it */ } }
   send(res, scanned ? 200 : 502, !scanned ? 0 : HRS.stocksOpen() ? 900 : 10800, out);
 }
 

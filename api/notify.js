@@ -33,6 +33,8 @@ function ptsOf(s) {
 }
 module.exports = async function handler(req, res) {
   if (!S.config()) return reply(res, { ran: false, reason: "no database" });
+  // Friday 5 PM to Sunday 6 PM (New York): both markets are closed, so there's nothing to scan or manage.
+  if (HR.weekend(Date.now()) && process.env.TF_ALL_HOURS !== "1") return reply(res, { ran: false, reason: "weekend: markets closed" });
   try {
     if (!(await S.one("SET", "tf:lastrun", String(Date.now()), "NX", "EX", 540))) return reply(res, { ran: false, reason: "ran recently" });
     const base = "https://" + (req.headers["x-forwarded-host"] || req.headers.host);
